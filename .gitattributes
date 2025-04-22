@@ -1,0 +1,29 @@
+# Normalize all text files to use LF in repo
+* text=auto
+
+# Python files get syntax-aware diff
+*.py diff=python
+
+# JSON and Markdown get basic clean diffs
+*.json diff=default
+*.md diff=markdown
+
+# Treat images and binaries as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
+*.ico binary
+*.pdf binary
+
+# Shell scripts (if needed)
+*.sh text eol=lf
+
+# Ignore Jupyter Notebook cell diff noise (if used)
+*.ipynb text
+
+# Optional: prevent export of test/dev configs
+.env export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
