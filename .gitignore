@@ -52,9 +52,6 @@ coverage.xml
 # pyenv
 .python-version
 
-# dotenv
-.env
-
 # VSCode
 .vscode/
 
@@ -65,6 +62,8 @@ logs/*
 # Mac/Linux OS files
 .DS_Store
 
-# Misc
+# App and secrets
 iris/
 profiles/*
+settings.json
+.env
