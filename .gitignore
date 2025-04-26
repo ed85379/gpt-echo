@@ -71,4 +71,5 @@ memory/*
 !memory/.gitkeep
 voice/*
 !voice/.gitkeep
-app/debug-scripts/
+app/_debug-scripts/
+app/_archive/
