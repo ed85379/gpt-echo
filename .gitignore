@@ -67,8 +67,7 @@ iris/
 profiles/*
 settings.json
 .env
-memory/
-memory/
-assets/
-voice/
+memory/*
+assets/*
+voice/*
 app/debug-scripts/
