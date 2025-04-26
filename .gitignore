@@ -59,8 +59,11 @@ coverage.xml
 .vscode/
 
 # Logs
-logs/
+logs/*
 *.log
 
 # Mac/Linux OS files
 .DS_Store
+
+# Misc
+iris/
