@@ -67,3 +67,7 @@ iris/
 profiles/*
 settings.json
 .env
+memory/
+memory/
+assets/
+voice/
