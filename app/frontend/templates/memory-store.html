@@ -1,0 +1,21 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Iris Echo Memory Store</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <h1>🧠 Iris Echo – Memory Store</h1>
+  <label>
+  <input type="checkbox" id="name-toggle" onchange="fetchLogs()" />
+  Show 'Ed' instead of 'User'
+  </label>
+  <div style="display: flex;">
+    <div id="log-list" style="width: 30%; padding: 10px; background: #eee;"></div>
+    <div id="log-preview" style="width: 70%; padding: 10px;"></div>
+  </div>
+  <script src="/static/memory-store.js"></script>
+</body>
+</html>

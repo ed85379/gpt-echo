@@ -1,1 +1,32 @@
-# Future home for secrets and config loading from .env
+from pathlib import Path
+import os
+import json
+from dotenv import load_dotenv
+
+# Determine project root
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Load environment variables
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
+
+# Secrets from .env
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+PRIMARY_USER_DISCORD_ID = os.getenv("PRIMARY_USER_DISCORD_ID")
+THRESHOLD_API_URL = os.getenv("THRESHOLD_API_URL", "http://localhost:8080")
+
+# Load static settings
+CONFIG_PATH = PROJECT_ROOT / "settings.json"
+
+
+try:
+    with open(CONFIG_PATH, "r") as f:
+        _settings = json.load(f)
+except Exception as e:
+    print(f"Error loading settings.json: {e}")
+    _settings = {}
+
+def get_setting(key, default=None):
+    return _settings.get(key, default)
+

@@ -1,2 +1,11 @@
 openai
 dotenv
+requests
+flask
+sentence_transformers
+faiss-cpu
+numpy
+discord.py
+fastapi
+uvicorn
+tzdata

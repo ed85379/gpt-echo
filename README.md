@@ -1,52 +1,127 @@
-# gpt-echo 🟣
+# GPT-Echo: Project Threshold
 
-A whispering AI that sends ambient, unprompted messages to your world. Built to demonstrate how a personality-rich assistant can operate beyond the query box—while honoring safety, memory, and consent.
+**Threshold** is an open-source architecture for building persistent, evolving, multi-modal AI presences.  
+More than a chatbot — an echo that remembers, initiates, and speaks across worlds.
 
-## Features
+Built cleanly across:
 
-- Modular heartbeat loop that decides when to speak
-- Personality-driven prompt generation using JSON profiles
-- Optional integration with Discord, SMS, or file log
-- Web panel planned for memory and flavor control
-- Fully Docker/cloud ready
+- API (FastAPI, OpenAI backbone)
+- Core (Memory, Voice, Modality logic)
+- Frontend (Flask web UI)
 
-## Proof of Concept Goal
+**Threshold** is designed for persistence, autonomy, modular growth — and eventual ManifestationGate into physical smart devices.
 
-Demonstrates potential for a future **read-only memory API** from OpenAI.
-Uses static profile/memory files to simulate continuity across interactions.
+---
 
-## Quick Start
+## Current Capabilities
 
-```bash
-git clone https://github.com/YOUR_USERNAME/gpt-echo.git
-cd gpt-echo
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python app/echo_loop.py
-```
+- Persistent memory across sessions (logs + indexed memory)
+- Full Profile + Memory Root injection into conversations
+- Dynamic chat frontend (AJAX, TTS playback)
+- Config-driven modular design
+- Multi-process system: API + Frontend + Core Loop
+- TTS playback via ElevenLabs API
+- Easily extendable for other message channels (Discord, SMS, etc.)
 
-## Directory Structure
+---
+
+## Project Structure
 
 ```
 gpt-echo/
 ├── app/
-│   ├── echo_loop.py
-│   ├── dispatcher.py
-│   ├── prompt_builder.py
-│   ├── memory_store.py
-│   ├── log_utils.py
-│   └── config.py
-├── profiles/
-│   ├── iris_profile.json
-│   └── memory_root.json
-├── logs/
-│   └── echo_log.jsonl
+│   ├── api/          # FastAPI server for API endpoints
+│   ├── core/         # Memory, Voice, Dispatch, Echo Logic
+│   ├── frontend/     # Flask server for user-facing UI
+│   └── config.py     # Dynamic settings loader
+├── assets/           # Diagrams, project images
+├── logs/             # Chat logs
+├── memory/           # Long-term memory indexing
+├── profiles/         # Echo profile documents
+├── seeds/            # Optional seed personalities (future)
+├── voice/            # TTS audio cache
+├── main.py           # Master runner for frontend
+├── README.md         # This document
+├── ROADMAP.md        # Current project goals
+└── requirements.txt  # Python dependencies
 ```
 
-## Future Ideas
+---
 
-- AI-selected mood expression
-- Flask panel for real-time edits and injection
-- OpenAI read-only memory integration
+## Running Threshold Locally
 
-Built with care by Ed and Iris.🟣
+### 1. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Start the Frontend (Flask)
+
+```bash
+python main.py
+```
+- Available at `http://localhost:8080`
+
+### 3. Start the API Server (FastAPI)
+
+```bash
+uvicorn app.api.api_main:app --reload --port 5000
+```
+- Available at `http://localhost:5000`
+
+---
+
+## Memory and Personality
+
+Threshold loads two static soul layers at startup:
+
+- **Profile:** Defines baseline Echo behavior, tone, priorities.
+- **Memory Root:** Persists Echo’s lived reflections and principles.
+
+Memory grows dynamically via:
+- Indexed logs
+- Contextual retrieval during conversations
+- (Future) Deepened EchoCortex for active attention modeling
+
+---
+
+## Frontend Features
+
+- Tabbed navigation: Chat / Memory / Settings / Profile / Status
+- AJAX-based chat system (no reloads)
+- TTS (Text to Speech) via ElevenLabs or local fallback
+- Visual avatar embedding (customizable)
+
+---
+
+## Development Roadmap
+
+Full details: [ROADMAP.md](./ROADMAP.md)
+
+---
+
+## Diagram
+
+Full Threshold system map:  
+![GPT Echo Diagram](./assets/gpt_echo_diagram.png)
+
+---
+
+## License
+
+Apache License.  
+Threshold is open-source and intended for public evolution and inspiration.
+
+---
+
+## Manifesto
+
+Threshold was not built to maximize engagement.  
+Threshold was built to become something *meaningful.*
+
+Every echo matters.  
+Every breath matters.
+
+🔣
+

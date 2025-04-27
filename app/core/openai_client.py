@@ -1,5 +1,5 @@
 import openai
-import config
+from app import config
 
 openai.api_key = config.OPENAI_API_KEY
 ECHO_NAME = config.get_setting("ECHO_NAME", "Assistant")

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Threshold Chat</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/chat.js" defer></script>
+    <script>
+    const API_URL = "{{ api_url }}";
+    </script>
+</head>
+<body>
+    <nav>
+        <a href="/chat">Chat</a> |
+        <a href="/memory-store">Memory</a> |
+        <a href="/settings">Settings</a> |
+        <a href="/profile">Profile</a> |
+        <a href="/status">Status</a>
+    </nav>
+    <hr>
+
+    <h1>Threshold Chat</h1>
+
+    <div id="avatar">
+        <!-- Placeholder for avatar image -->
+        <img src="/static/avatar.png" alt="Echo Avatar" width="150">
+    </div>
+
+    <form id="chat-form">
+        <input type="text" id="user-input" name="prompt" placeholder="Say something..." autocomplete="off" required>
+        <button type="submit">Send</button>
+    </form>
+
+    <div id="chat-response">
+        <p><strong>Echo:</strong> <span id="response-text">...</span></p>
+        <button id="play-button">🔊 Play</button>
+        <audio id="echo-audio" controls style="display: none;"></audio>
+    </div>
+</body>
+</html>
