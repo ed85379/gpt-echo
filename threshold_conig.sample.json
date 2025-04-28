@@ -10,6 +10,7 @@
     "PROFILE_DIR": "profiles/",
     "LOGS_DIR": "logs/",
     "INDEX_DIR": "memory/",
+    "JOURNAL_DIR": "journal/",
     "FLAG_PATH": "memory/ingested_flags.json",
     "OPENAI_MODEL": "gpt-4-turbo",
     "OPENAI_WHISPER_MODEL": "gpt-3.5",

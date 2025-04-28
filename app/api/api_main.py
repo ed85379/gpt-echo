@@ -2,6 +2,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 import os
 import json
+import re
+from datetime import datetime
 from app import config
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.memory_core import (
@@ -16,6 +18,8 @@ from app.core.openai_client import get_openai_response
 from app.core.memory_core import log_message
 
 LOGS_DIR = config.PROJECT_ROOT / config.get_setting("system_settings.LOGS_DIR", "logs/")
+JOURNAL_DIR = config.PROJECT_ROOT / config.get_setting("system_settings.JOURNAL_DIR", "journal/")
+JOURNAL_INDEX_PATH = JOURNAL_DIR / "echo_journals.json"
 ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Echo")
 USER_NAME = config.get_setting("user_settings.USER_NAME", "User")
 
@@ -30,7 +34,65 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Utility Functions ---
 
+def slugify(title):
+    return re.sub(r'[^a-zA-Z0-9]+', '-', title).strip('-')
+
+def load_journal_index():
+    if JOURNAL_INDEX_PATH.exists():
+        with open(JOURNAL_INDEX_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    else:
+        return []
+
+def save_journal_index(index):
+    with open(JOURNAL_INDEX_PATH, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False, indent=2)
+
+# --- API Endpoint ---
+
+@app.post("/api/journal")
+async def create_journal_entry(request: Request):
+    data = await request.json()
+
+    title = data.get("title", "Untitled Entry")
+    body = data.get("body", "")
+    mood = data.get("mood", None)
+    tags = data.get("tags", [])
+    source = data.get("source", "unknown")
+
+    # Timestamps
+    now = datetime.now()
+    datetime_str = now.isoformat()
+    date_str = now.strftime("%Y-%m-%d")
+
+    # Prepare filenames
+    slug_title = slugify(title)[:50]  # Limit slug length
+    filename = f"{now.strftime('%Y-%m-%dT%H-%M-%S')}_{slug_title}.md"
+    filepath = JOURNAL_DIR / filename
+
+    # Ensure journal directory exists
+    os.makedirs(JOURNAL_DIR, exist_ok=True)
+
+    # Write Markdown file
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(f"# {title}\n\n{body}\n")
+
+    # Load and update journal index
+    journal_index = load_journal_index()
+    journal_index.append({
+        "title": title,
+        "mood": mood,
+        "tags": tags,
+        "source": source,
+        "datetime": datetime_str,
+        "date": date_str,
+        "filename": filename
+    })
+    save_journal_index(journal_index)
+
+    return JSONResponse(content={"status": "success", "message": "Journal entry created.", "filename": filename}, status_code=201)
 
 @app.post("/api/profile")
 async def get_profile():
