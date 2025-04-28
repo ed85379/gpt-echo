@@ -3,7 +3,7 @@ import requests
 from urllib.parse import urljoin
 from app import config
 
-THRESHOLD_API_URL = config.get_setting("THRESHOLD_API_URL", "http://localhost:5000")
+THRESHOLD_API_URL = config.get_setting("system_settings.THRESHOLD_API_URL", "http://localhost:5000")
 
 app = Flask(
     __name__,
@@ -43,7 +43,7 @@ def chat_send():
 # MEMORY
 @app.route("/memory-store")
 def memory_store_page():
-    return render_template("memory-store.html")
+    return render_template("memory-store.html", api_url=THRESHOLD_API_URL)
 
 # SETTINGS
 @app.route("/settings")

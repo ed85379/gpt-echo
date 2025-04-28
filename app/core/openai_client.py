@@ -2,8 +2,8 @@ import openai
 from app import config
 
 openai.api_key = config.OPENAI_API_KEY
-ECHO_NAME = config.get_setting("ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("OPENAI_MODEL", "gpt-4-turbo")
+ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
+OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4-turbo")
 
 # Initialize the OpenAI client
 client = openai.OpenAI()

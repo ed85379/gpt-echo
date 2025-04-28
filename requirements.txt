@@ -9,3 +9,5 @@ discord.py
 fastapi
 uvicorn
 tzdata
+rapidfuzz
+feedparser

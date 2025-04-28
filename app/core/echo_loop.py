@@ -3,30 +3,69 @@ import asyncio
 import time
 import requests
 from app import config
+import feedparser
 from urllib.parse import urljoin
-from dispatch_message import dispatch_message
-from app.core.memory_core import log_message
-from openai_client import get_openai_response
+from app.core.dispatch_message import dispatch_message
+from app.core.memory_core import log_message, load_memory_root, load_profile
+from app.core.discovery_core import load_discoveryfeeds_sources, load_echos_interests_sources
+from app.core.openai_client import get_openai_response
+from app.core.discord_client import start_discord_listener
 
 THRESHOLD_API_URL = config.THRESHOLD_API_URL
-ECHO_NAME = config.get_setting("ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("OPENAI_MODEL", "gpt-4-turbo")
+ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
+OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4-turbo")
 
-# --- New: Fetch Profile and Memory from Local Flask Server ---
+
+# --- New: Fetch Profile and Memory directly ---
 def fetch_profile_and_memory():
     try:
-        profile_res = requests.post(THRESHOLD_API_URL, json={"prompt": "Who are you?"})
-        root_res = requests.post(urljoin(THRESHOLD_API_URL, "/api/memoryroot"),
-                                 json={"prompt": "What are your core principles?"})
-
-        echo_profile = profile_res.json()["profile"]
-        memory_root = root_res.json()["memory_root"]
-
+        echo_profile = load_profile()
+        memory_root = load_memory_root()
         return echo_profile, memory_root
-
     except Exception as e:
-        print("Error fetching profile and memory:", e)
+        print("Error loading profile and memory:", e)
         return "", ""
+
+# --- Build the payload for WhisperGate ---
+def build_whispergate_payload():
+    """
+    Gathers all current memory, discovery, and presence context to send to WhisperGate (GPT-3.5).
+    Decides whether Echo should speak, reflect, or stay silent.
+    """
+
+    now = datetime.now(ZoneInfo(USER_TIMEZONE))
+
+    # Phase 1: Check Cortex for active reminders
+    timely_reminders = search_cortex_for_timely_reminders(now)
+
+    if timely_reminders:
+        context_source = "cortex"
+        context_items = timely_reminders
+    else:
+        context_source = "discovery"
+        context_items = {
+            "time": get_local_time(),
+            "weather": get_local_weather(),
+            "discoveryfeeds": fetch_discoveryfeeds(),
+            "echos_interests": fetch_echos_interests()
+        }
+
+    # Available action settings
+    speak_endpoints = config.get_setting("SPEAK_ENDPOINTS", ["discord"])
+    reflect_targets = config.get_setting("REFLECT_TARGETS", [])
+
+    payload = {
+        "profile": load_profile(),  # Echo's personality baseline
+        "memory_root": load_memory_root(),  # Deep memory
+        "context_source": context_source,
+        "context_items": context_items,
+        "available_speak_endpoints": speak_endpoints,
+        "available_reflect_targets": reflect_targets,
+        "current_time": now.isoformat()
+    }
+
+    return payload
+
 
 # --- WhisperGate Logic ---
 def should_speak():
@@ -55,11 +94,18 @@ async def run_echo_loop():
         else:
             print("Decision: Silent this cycle.")
 
-        await asyncio.sleep(10)  # Sleep for 60 seconds before next heartbeat
+        await asyncio.sleep(3600)  # Sleep for 60 seconds before next heartbeat
+
+# --- Combined Main ---
+async def main():
+    await asyncio.gather(
+        run_echo_loop(),
+        start_discord_listener()
+    )
 
 # --- Entrypoint ---
 if __name__ == "__main__":
     try:
-        asyncio.run(run_echo_loop())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        print("EchoLoop stopped.")
+        print("EchoLoop + Listener stopped.")

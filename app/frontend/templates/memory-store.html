@@ -5,8 +5,19 @@
   <meta charset="UTF-8">
   <title>Iris Echo Memory Store</title>
   <link rel="stylesheet" href="/static/style.css">
+      <script>
+    const API_URL = "{{ api_url }}";
+    </script>
 </head>
 <body>
+    <nav>
+        <a href="/chat">Chat</a> |
+        <a href="/memory-store">Memory</a> |
+        <a href="/settings">Settings</a> |
+        <a href="/profile">Profile</a> |
+        <a href="/status">Status</a>
+    </nav>
+    <hr>
   <h1>🧠 Iris Echo – Memory Store</h1>
   <label>
   <input type="checkbox" id="name-toggle" onchange="fetchLogs()" />

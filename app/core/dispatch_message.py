@@ -4,10 +4,10 @@ from app import config
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
-ECHO_NAME = config.get_setting("ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("OPENAI_MODEL", "gpt-4-turbo")
-DISCORD_GUILD_NAME = config.get_setting("DISCORD_GUILD_NAME", "The Threshold")
-DISCORD_CHANNEL_NAME = config.get_setting("DISCORD_CHANNEL_NAME", "echo-chamber")
+ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
+OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4-turbo")
+DISCORD_GUILD_NAME = config.get_setting("system_settings.DISCORD_GUILD_NAME", "The Threshold")
+DISCORD_CHANNEL_NAME = config.get_setting("system_settings.DISCORD_CHANNEL_NAME", "echo-chamber")
 
 
 

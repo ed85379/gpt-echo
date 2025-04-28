@@ -1,0 +1,38 @@
+{
+  "user_settings": {
+    "USER_NAME": "YourNameHere",
+    "USER_TIMEZONE": "UTC",
+    "USER_ZIPCODE": "00000",
+    "USER_COUNTRYCODE": "US"
+  },
+  "system_settings": {
+    "ECHO_NAME": "Assistant",
+    "PROFILE_DIR": "profiles/",
+    "LOGS_DIR": "logs/",
+    "INDEX_DIR": "memory/",
+    "FLAG_PATH": "memory/ingested_flags.json",
+    "OPENAI_MODEL": "gpt-4-turbo",
+    "OPENAI_WHISPER_MODEL": "gpt-3.5",
+    "OPENWEATHERMAP_API_URL": "https://api.openweathermap.org/data/2.5/weather",
+    "DEFAULT_UNITS": "imperial",
+    "DEFAULT_DISCOVERY_FEEDS": "profiles/discoveryfeeds_sources.json",
+    "DEFAULT_INTEREST_FEEDS": "profiles/echos_interests_sources.json",
+    "DISCORD_GUILD_NAME": "YourServerName",
+    "DISCORD_CHANNEL_NAME": "your-channel-name"
+  },
+  "voice_settings": {
+    "DEFAULT_VOICE_SYSTEM": "elevenlabs",
+    "TTS_VOICE_ID": "YourVoiceID",
+    "TTS_SPEED": 1.0,
+    "AUDIO_OUTPUT_PATH": "voice/response.mp3",
+    "DEFAULT_INPUT_DEVICE": "default",
+    "DEFAULT_OUTPUT_DEVICE": "default"
+  },
+  "behavior_settings": {
+    "HEARTBEAT_INTERVAL_SECONDS": 600,
+    "SPEAK_ENDPOINTS": ["discord"],
+    "REFLECT_TARGETS": [],
+    "ECHO_PRIMARY_FLAVOR": "poetic-reflective",
+    "MAX_ARTICLE_WORDS_BEFORE_SUMMARIZE": 500
+  }
+}

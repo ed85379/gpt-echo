@@ -15,18 +15,27 @@ ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 PRIMARY_USER_DISCORD_ID = os.getenv("PRIMARY_USER_DISCORD_ID")
 THRESHOLD_API_URL = os.getenv("THRESHOLD_API_URL", "http://localhost:8080")
+OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
 
 # Load static settings
-CONFIG_PATH = PROJECT_ROOT / "settings.json"
-
+CONFIG_PATH = PROJECT_ROOT / "threshold_config.json"
 
 try:
     with open(CONFIG_PATH, "r") as f:
         _settings = json.load(f)
 except Exception as e:
-    print(f"Error loading settings.json: {e}")
+    print(f"Error loading threshold_config.json: {e}")
     _settings = {}
 
 def get_setting(key, default=None):
-    return _settings.get(key, default)
-
+    """
+    Supports nested keys like "user_settings.USER_NAME".
+    """
+    keys = key.split(".")
+    value = _settings
+    for k in keys:
+        if isinstance(value, dict) and k in value:
+            value = value[k]
+        else:
+            return default
+    return value

@@ -4,8 +4,8 @@ from app import config
 
 # Load ElevenLabs API credentials
 ELEVEN_API_KEY = config.ELEVEN_API_KEY
-TTS_VOICE_ID = config.get_setting("TTS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Default if not set
-AUDIO_OUTPUT_PATH = config.PROJECT_ROOT / config.get_setting("VOICE_OUTPUT_DIR", "voice/") / "response.mp3"
+TTS_VOICE_ID = config.get_setting("voice_settings.TTS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Default if not set
+AUDIO_OUTPUT_PATH = config.PROJECT_ROOT / config.get_setting("voice_settings.VOICE_OUTPUT_DIR", "voice/") / "response.mp3"
 
 
 HEADERS = {

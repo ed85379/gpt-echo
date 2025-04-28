@@ -4,7 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function fetchLogs() {
-  fetch("/api/logs")
+  fetch(`${API_URL}/api/logs`)
     .then(res => res.json())
     .then(data => {
       const list = document.getElementById("log-list");
@@ -19,8 +19,9 @@ function fetchLogs() {
     });
 }
 
+
 function previewLog(filename) {
-  fetch("/api/logs/" + filename)
+  fetch(`${API_URL}/api/logs/` + filename)
     .then(res => res.json())
     .then(data => {
       const preview = document.getElementById("log-preview");
@@ -49,7 +50,7 @@ function copyToClipboard() {
 }
 
 function markIngested(filename) {
-  fetch("/api/logs/mark/" + filename, { method: "POST" })
+  fetch(`${API_URL}/api/logs/mark/` + filename, { method: "POST" })
     .then(res => res.json())
     .then(() => fetchLogs());
 }

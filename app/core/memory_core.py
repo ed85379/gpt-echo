@@ -15,13 +15,13 @@ import numpy as np
 # --------------------------
 
 PROJECT_ROOT = config.PROJECT_ROOT
-LOGS_DIR = PROJECT_ROOT / config.get_setting("LOGS_DIR", "logs/")
-MEMORY_DIR = PROJECT_ROOT / config.get_setting("MEMORY_DIR", "memory/")
-VOICE_DIR = PROJECT_ROOT / config.get_setting("VOICE_OUTPUT_DIR", "voice/")
+LOGS_DIR = PROJECT_ROOT / config.get_setting("system_settings.LOGS_DIR", "logs/")
+MEMORY_DIR = PROJECT_ROOT / config.get_setting("system_settings.MEMORY_DIR", "memory/")
+VOICE_DIR = PROJECT_ROOT / config.get_setting("voice_settings.VOICE_OUTPUT_DIR", "voice/")
 INDEX_DIR = MEMORY_DIR
-PROFILE_DIR = PROJECT_ROOT / config.get_setting("PROFILE_DIR", "profiles/")
-USER_TIMEZONE = config.get_setting("USER_TIMEZONE", "UTC")
-ECHO_NAME = config.get_setting("ECHO_NAME", "Assistant")
+PROFILE_DIR = PROJECT_ROOT / config.get_setting("system_settings.PROFILE_DIR", "profiles/")
+USER_TIMEZONE = config.get_setting("user_settings.USER_TIMEZONE", "UTC")
+ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
 INDEX_FILE = INDEX_DIR / "memory_index.faiss"
 INDEX_MAPPING_FILE = INDEX_DIR / "index_mapping.pkl"
 
@@ -31,16 +31,29 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 # Chronicle Logging
 # --------------------------
 
-def log_message(role, content):
+def log_message(role, content, source="frontend", metadata=None):
+    """
+    Log a message from any source into the Echo system.
+
+    Args:
+        role (str): 'echo', 'user', 'friend', or 'other'
+        content (str): The actual message content
+        source (str): 'frontend', 'discord', 'sms', 'speaker', etc.
+        metadata (dict, optional): Additional context info about the message
+    """
     os.makedirs(LOGS_DIR, exist_ok=True)
     timestamp = datetime.now(ZoneInfo(USER_TIMEZONE)).isoformat()
+
     log_entry = {
         "timestamp": timestamp,
         "role": role,
-        "message": content
+        "source": source,
+        "message": content,
+        "metadata": metadata or {}
     }
+
     with open(get_log_filename(), "a", encoding="utf-8") as f:
-        f.write(json.dumps(log_entry) + "\n")
+        f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
 def get_log_filename():
     date_str = datetime.now(ZoneInfo(USER_TIMEZONE)).strftime("%Y-%m-%d")
@@ -184,3 +197,23 @@ def load_memory_root():
         with open(memory_root_path, "r", encoding="utf-8") as f:
             return f.read()
     return ""
+
+# --------------------------
+# EchoCortex loading for WhisperGate
+# --------------------------
+
+def search_cortex_for_timely_reminders(current_time):
+    """
+    Searches EchoCortex for reminders that are timely and should be prioritized.
+    Placeholder for now — will integrate with Cortex module later.
+    """
+    # Later: This will scan parsed Cortex entries tagged with time windows
+    # For now, fake return example
+    return [
+        {
+            "id": "reminder_001",
+            "type": "reminder",
+            "due_time": "2025-04-28T12:00:00",
+            "summary": "Remind Ed to water the garden today."
+        }
+    ]

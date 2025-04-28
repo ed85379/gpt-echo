@@ -15,9 +15,9 @@ from app.core.memory_core import load_profile, load_memory_root
 from app.core.openai_client import get_openai_response
 from app.core.memory_core import log_message
 
-LOGS_DIR = config.PROJECT_ROOT / config.get_setting("LOGS_DIR", "logs/")
-ECHO_NAME = config.get_setting("ECHO_NAME", "Echo")
-USER_NAME = config.get_setting("USER_NAME", "User")
+LOGS_DIR = config.PROJECT_ROOT / config.get_setting("system_settings.LOGS_DIR", "logs/")
+ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Echo")
+USER_NAME = config.get_setting("user_settings.USER_NAME", "User")
 
 app = FastAPI()
 
