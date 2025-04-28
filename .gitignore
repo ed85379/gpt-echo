@@ -63,6 +63,8 @@ iris/
 logs/*
 !logs/.gitkeep
 *.log
+journal/*
+!journal/.gitkeep
 profiles/*
 !profiles/.gitkeep
 settings.json
