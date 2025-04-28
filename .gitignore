@@ -66,6 +66,7 @@ logs/*
 profiles/*
 !profiles/.gitkeep
 settings.json
+threshold_config.json
 .env
 memory/*
 !memory/.gitkeep
