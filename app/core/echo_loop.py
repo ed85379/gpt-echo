@@ -6,7 +6,7 @@ from app import config
 import feedparser
 from urllib.parse import urljoin
 from app.core.dispatch_message import dispatch_message
-from app.core.memory_core import log_message, load_memory_root, load_profile
+from app.core.memory_core import log_message, load_core_principles, load_profile
 from app.core.discovery_core import load_discoveryfeeds_sources, load_echos_interests_sources
 from app.core.openai_client import get_openai_response
 from app.core.discord_client import start_discord_listener
@@ -20,8 +20,8 @@ OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4-turbo")
 def fetch_profile_and_memory():
     try:
         echo_profile = load_profile()
-        memory_root = load_memory_root()
-        return echo_profile, memory_root
+        core_principles = load_core_principles()
+        return echo_profile, core_principles
     except Exception as e:
         print("Error loading profile and memory:", e)
         return "", ""
@@ -56,7 +56,7 @@ def build_whispergate_payload():
 
     payload = {
         "profile": load_profile(),  # Echo's personality baseline
-        "memory_root": load_memory_root(),  # Deep memory
+        "core_principles": load_core_principles(),  # Deep memory
         "context_source": context_source,
         "context_items": context_items,
         "available_speak_endpoints": speak_endpoints,
@@ -80,10 +80,10 @@ async def run_echo_loop():
         if should_speak():
             print("Decision: Whispering.")
 
-            echo_profile, memory_root = fetch_profile_and_memory()
+            echo_profile, core_principles = fetch_profile_and_memory()
 
             # Build your full prompt
-            full_prompt = f"{echo_profile}\n{memory_root}\n"
+            full_prompt = f"{echo_profile}\n{core_principles}\n"
 
             # Later, this gets passed to OpenAI
             response = get_openai_response(full_prompt)

@@ -4,7 +4,7 @@ import discord
 import asyncio
 import traceback
 from app import config
-from app.core.memory_core import load_profile, load_memory_root, search_combined_memory, log_message
+from app.core.memory_core import load_profile, load_core_principles, search_combined_memory, log_message
 from app.core.openai_client import get_openai_response
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
@@ -58,12 +58,12 @@ async def handle_incoming_discord_message(message):
 
             # Build the full thoughtful prompt
             echo_profile = load_profile()
-            memory_root = load_memory_root()
+            core_principles = load_core_principles()
             relevant_memory = search_combined_memory(user_input)
 
             full_prompt = echo_profile.strip()
-            if memory_root:
-                full_prompt += "\n\n" + memory_root.strip()
+            if core_principles:
+                full_prompt += "\n\n" + core_principles.strip()
             if relevant_memory:
                 full_prompt += "\n\n" + "\n".join(relevant_memory)
             full_prompt += f"\n\n{config.get_setting('PRIMARY_USER_NAME', 'User')}: {user_input}\n{config.get_setting('ECHO_NAME', 'Assistant')}:"

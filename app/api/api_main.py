@@ -13,7 +13,7 @@ from app.core.memory_core import (
     log_message
 )
 from app.core.tts_core import synthesize_speech
-from app.core.memory_core import load_profile, load_memory_root
+from app.core.memory_core import load_profile, load_core_principles
 from app.core.openai_client import get_openai_response
 from app.core.memory_core import log_message
 
@@ -101,12 +101,12 @@ async def get_profile():
         profile_data = json.load(f)
     return {"profile": json.dumps(profile_data, indent=2)}
 
-@app.post("/api/memoryroot")
-async def get_memory_root():
-    memory_root_path = config.PROJECT_ROOT / "profiles" / "memory_root.json"
-    with open(memory_root_path, "r", encoding="utf-8") as f:
-        memory_root_data = json.load(f)
-    return {"memory_root": memory_root_data.get("root", "")}
+@app.post("/api/coreprinciples")
+async def get_core_principles():
+    core_principles_path = config.PROJECT_ROOT / "profiles" / "core_principles.json"
+    with open(core_principles_path, "r", encoding="utf-8") as f:
+        core_principles_data = json.load(f)
+    return {"core_principles": core_principles_data.get("root", "")}
 
 ## Future endpoint to dynamically pull summarized, compressed memory snippets from the ChatGPT API (or internal index), to build the active working memory window for Echo.
 #@app.route("/api/context_snippets", methods=["POST"])
@@ -193,7 +193,7 @@ async def talk_endpoint(request: Request):
 
     # Load profile and memory
     profile_text = load_profile()
-    memory_root = load_memory_root()
+    core_principles = load_core_principles()
 
     # Pull relevant memory
     memory_snippets = search_combined_memory(user_input)
@@ -201,8 +201,8 @@ async def talk_endpoint(request: Request):
     # Build full context prompt
     full_prompt = profile_text.strip()
 
-    if memory_root:
-        full_prompt += "\n\n" + memory_root.strip()
+    if core_principles:
+        full_prompt += "\n\n" + core_principles.strip()
 
     if memory_snippets:
         full_prompt += "\n\n" + "\n".join(memory_snippets)

@@ -191,10 +191,10 @@ def load_profile():
             return f.read()
     return ""
 
-def load_memory_root():
-    memory_root_path = PROFILE_DIR / "memory_root.json"
-    if memory_root_path.exists():
-        with open(memory_root_path, "r", encoding="utf-8") as f:
+def load_core_principles():
+    core_principles_path = PROFILE_DIR / "core_principles.json"
+    if core_principles_path.exists():
+        with open(core_principles_path, "r", encoding="utf-8") as f:
             return f.read()
     return ""
 
@@ -217,3 +217,88 @@ def search_cortex_for_timely_reminders(current_time):
             "summary": "Remind Ed to water the garden today."
         }
     ]
+
+# --------------------------
+# EchoCortex Interface
+# --------------------------
+
+try:
+    from pymongo import MongoClient
+    MONGO_ENABLED = True
+except ImportError:
+    MONGO_ENABLED = False
+
+class EchoCortexInterface:
+    def get_entries_by_type(self, type_name):
+        raise NotImplementedError
+
+    def add_entry(self, entry):
+        raise NotImplementedError
+
+    def get_all_entries(self):
+        raise NotImplementedError
+
+    def search_by_tag(self, tag):
+        raise NotImplementedError
+
+
+class MongoCortexClient(EchoCortexInterface):
+    def __init__(self):
+        uri = config.get_setting("memory_settings.MONGO_URI")
+        self.client = MongoClient(uri)
+        self.db = self.client["echo_memory"]
+        self.collection = self.db["echo_cortex"]
+
+    def get_entries_by_type(self, type_name):
+        return list(self.collection.find({"type": type_name}))
+
+    def add_entry(self, entry):
+        entry["created_at"] = datetime.utcnow().isoformat()
+        self.collection.insert_one(entry)
+
+    def get_all_entries(self):
+        return list(self.collection.find())
+
+    def search_by_tag(self, tag):
+        return list(self.collection.find({"tags": tag}))
+
+
+class LocalCortexClient(EchoCortexInterface):
+    def __init__(self):
+        self.file_path = MEMORY_DIR / "echo_cortex.jsonl"
+        self.entries = []
+        if self.file_path.exists():
+            with open(self.file_path, "r", encoding="utf-8") as f:
+                self.entries = [json.loads(line) for line in f if line.strip()]
+
+    def get_entries_by_type(self, type_name):
+        return [e for e in self.entries if e.get("type") == type_name]
+
+    def add_entry(self, entry):
+        entry["created_at"] = datetime.utcnow().isoformat()
+        with open(self.file_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self.entries.append(entry)
+
+    def get_all_entries(self):
+        return self.entries
+
+    def search_by_tag(self, tag):
+        return [e for e in self.entries if tag in e.get("tags", [])]
+
+
+# --------------------------
+# Cortex Loader
+# --------------------------
+
+def get_cortex():
+    if MONGO_ENABLED:
+        try:
+            return MongoCortexClient()
+        except Exception as e:
+            print(f"Mongo unavailable: {e}")
+    return LocalCortexClient()
+
+
+# Global instance
+cortex = get_cortex()
