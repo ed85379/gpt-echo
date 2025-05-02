@@ -60,6 +60,8 @@ coverage.xml
 
 # App and secrets
 iris/
+assets/patents/
+assets/private/
 logs/*
 !logs/.gitkeep
 *.log
