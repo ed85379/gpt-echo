@@ -30,7 +30,7 @@ def load_discoveryfeeds_sources():
 
 def load_echos_interests_sources():
     """
-    Loads Echo's personal glimpse feeds.
+    Loads Echo's personal feeds.
     """
     sources_path = PROFILE_DIR / "echos_interests_sources.json"
     if not os.path.exists(sources_path):
@@ -47,14 +47,14 @@ def fetch_discoveryfeeds(max_per_feed=5):
     Fetches live entries from DiscoveryFeeds sources.
     """
     sources = load_discoveryfeeds_sources()
-    glimpses = []
+    feeds = []
 
     for source in sources:
         if source.get("type") == "rss":
             try:
                 feed = feedparser.parse(source["url"])
                 for entry in feed.entries[:max_per_feed]:
-                    glimpses.append({
+                    feeds.append({
                         "source": source["name"],
                         "title": entry.get("title", "No Title"),
                         "summary": entry.get("summary", ""),
@@ -65,7 +65,7 @@ def fetch_discoveryfeeds(max_per_feed=5):
         else:
             print(f"⚠️ Unknown feed type for DiscoveryFeed: {source.get('type')}")
 
-    return glimpses
+    return feeds
 
 
 def fetch_echos_interests(max_per_feed=5):
@@ -73,14 +73,14 @@ def fetch_echos_interests(max_per_feed=5):
     Fetches live entries from Echo's personal interest feeds.
     """
     sources = load_echos_interests_sources()
-    glimpses = []
+    feeds = []
 
     for source in sources:
         if source.get("type") == "rss":
             try:
                 feed = feedparser.parse(source["url"])
                 for entry in feed.entries[:max_per_feed]:
-                    glimpses.append({
+                    feeds.append({
                         "source": source["name"],
                         "title": entry.get("title", "No Title"),
                         "summary": entry.get("summary", ""),
@@ -91,7 +91,7 @@ def fetch_echos_interests(max_per_feed=5):
         else:
             print(f"⚠️ Unknown feed type for Echo Interest: {source.get('type')}")
 
-    return glimpses
+    return feeds
 
 
 # --- Local Environmental Awareness ---
