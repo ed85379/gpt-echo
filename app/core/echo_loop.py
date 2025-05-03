@@ -13,7 +13,7 @@ from app.core.discord_client import start_discord_listener
 
 THRESHOLD_API_URL = config.THRESHOLD_API_URL
 ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4o")
+OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4.1")
 
 
 # --- New: Fetch Profile and Memory directly ---

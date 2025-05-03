@@ -5,7 +5,7 @@ from app import config
 DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
 ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4o")
+OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4.1")
 DISCORD_GUILD_NAME = config.get_setting("system_settings.DISCORD_GUILD_NAME", "The Threshold")
 DISCORD_CHANNEL_NAME = config.get_setting("system_settings.DISCORD_CHANNEL_NAME", "echo-chamber")
 
