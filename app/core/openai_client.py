@@ -3,7 +3,7 @@ from app import config
 
 openai.api_key = config.OPENAI_API_KEY
 ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4-turbo")
+OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4o")
 
 # Initialize the OpenAI client
 client = openai.OpenAI()
