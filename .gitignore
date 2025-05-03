@@ -79,3 +79,4 @@ voice/*
 app/_debug-scripts/
 app/_archive/
 app/frontend/static/avatar.png
+local-dev/
