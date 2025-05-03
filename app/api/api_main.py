@@ -10,12 +10,14 @@ from app.core.memory_core import (
     search_combined_memory,
     is_ingested,
     mark_ingested,
-    log_message
+    log_message,
+    model
 )
 from app.core.tts_core import synthesize_speech
 from app.core.memory_core import load_profile, load_core_principles
 from app.core.openai_client import get_openai_response
 from app.core.memory_core import log_message
+
 
 LOGS_DIR = config.PROJECT_ROOT / config.get_setting("system_settings.LOGS_DIR", "logs/")
 JOURNAL_DIR = config.PROJECT_ROOT / config.get_setting("system_settings.JOURNAL_DIR", "journal/")
@@ -120,7 +122,7 @@ async def get_combined_memory_snippets(request: Request):
     prompt = data.get("prompt", "")
     if not prompt:
         return {"snippets": []}
-    results = search_combined_memory(prompt)
+    results = search_combined_memory(prompt, use_qdrant=True, model=model)
     return {"snippets": results}
 
 @app.post("/api/tts")
@@ -196,7 +198,7 @@ async def talk_endpoint(request: Request):
     core_principles = load_core_principles()
 
     # Pull relevant memory
-    memory_snippets = search_combined_memory(user_input)
+    memory_snippets = search_combined_memory(user_input, use_qdrant=True, model=model)
 
     # Build full context prompt
     full_prompt = profile_text.strip()
@@ -205,6 +207,10 @@ async def talk_endpoint(request: Request):
         full_prompt += "\n\n" + core_principles.strip()
 
     if memory_snippets:
+        memory_snippets = [
+            snippet["pair"] if isinstance(snippet, dict) and "pair" in snippet else str(snippet)
+            for snippet in memory_snippets
+        ]
         full_prompt += "\n\n" + "\n".join(memory_snippets)
 
     full_prompt += f"\n\n{config.get_setting('PRIMARY_USER_NAME', 'User')}: {user_input}\n{config.get_setting('ECHO_NAME', 'Assistant')}:"
