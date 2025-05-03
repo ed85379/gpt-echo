@@ -113,6 +113,9 @@ Full Threshold system map:
 Apache License.  
 Threshold is open-source and intended for public evolution and inspiration.
 
+Patent Pending — U.S. Provisional Application No. 63/799,241
+
+
 ---
 
 ## Manifesto
