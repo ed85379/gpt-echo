@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36" version="26.2.14">
+  <diagram name="Page-1" id="iU1wNP4WKryQWPsD9ruO">
+    <mxGraphModel dx="1336" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-10" value="&lt;span style=&quot;font-size: 16px;&quot;&gt;&lt;b&gt;How Profile, Memories, Thoughts, and External Data Builds Messages&lt;/b&gt;&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;gradientColor=#7ea6e0;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="350" width="560" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-34" value="User Initiated&lt;br&gt;to Large-Model" style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1;fillColor=#0050ef;strokeColor=#001DBC;fontColor=#ffffff;gradientColor=default;" vertex="1" parent="1">
+          <mxGeometry x="15" y="80" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-35" value="Hello Echo.&lt;br&gt;Can you help me&lt;br&gt;with something?" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;rounded=1;fontFamily=Comic Sans MS;fillColor=#dae8fc;strokeColor=#6c8ebf;gradientColor=#7ea6e0;" vertex="1" parent="1">
+          <mxGeometry y="140" width="180" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-40" value="&lt;h2&gt;Prompt&amp;nbsp; Context Builder&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=1;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#001DBC;gradientColor=default;" vertex="1" parent="1">
+          <mxGeometry x="185" y="80" width="615" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-37" value="Always Included" style="swimlane;whiteSpace=wrap;html=1;rounded=1;fontStyle=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-40">
+          <mxGeometry y="30" width="115" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-38" value="&lt;b&gt;Echo Profile&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Personality and manner of speech)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-37">
+          <mxGeometry y="30" width="115" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-39" value="&lt;b&gt;Core Principles&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Strong beliefs and opinions)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-37">
+          <mxGeometry y="100" width="115" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-41" value="Immediate Context" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-40">
+          <mxGeometry x="115" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-42" value="&lt;b&gt;EchoCortex&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Reminders, focused thoughts, and often recalled memories)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-41">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-43" value="Seeds, Echo, and User_Data, plus matching relevant tags included" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#273E5B);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-41">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-44" value="Recent Interactions" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-40">
+          <mxGeometry x="240" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-46" value="Most recent n messages, plus relevant snippets from last 24 hours" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#273E5B);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-44">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-47" value="&lt;b&gt;Conversation Log&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(The current day&#39;s conversation log)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-44">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-48" value="Long-Term Recall" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-40">
+          <mxGeometry x="365" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-49" value="Long-term memory searches for relevant snippets" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#273E5B);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-48">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-51" value="&lt;b&gt;Indexed Conversations&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Previous logs indexed with faiss or Qdrant)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-48">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-52" value="Peripheral Insight" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-40">
+          <mxGeometry x="490" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-56" value="&lt;b&gt;Journal Index&lt;br&gt;+&lt;br&gt;Discovery Feeds&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-52">
+          <mxGeometry x="5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-57" value="Only included if relevant matching tags" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#273E5B);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-52">
+          <mxGeometry x="3.75" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-62" value="&lt;h2&gt;Response Composer&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=1;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#001DBC;gradientColor=default;" vertex="1" parent="1">
+          <mxGeometry x="800" y="80" width="240" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-60" value="Intent Listener" style="swimlane;whiteSpace=wrap;html=1;rounded=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-62">
+          <mxGeometry y="30" width="120" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-61" value="If specific requests that match known internal tools, such as &quot;remind me&quot;, &quot;move this conversation&quot;, or any number of future commands, a special format internal command is added to the response." style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;spacing=5;fontSize=10;align=center;strokeColor=#6c8ebf;fontFamily=Helvetica;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#273E5B);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-60">
+          <mxGeometry y="30" width="120" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-58" value="Output Adapter" style="swimlane;whiteSpace=wrap;html=1;rounded=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-62">
+          <mxGeometry x="120" y="30" width="120" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-59" value="The format and length of the response is adapted to the medium.&lt;br&gt;SMS: Very brief&lt;br&gt;Discord: Match User&lt;br&gt;Frontend: Full expression&lt;br&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Speaker: Conversational&lt;/span&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;align=center;fontSize=10;spacingRight=0;spacing=5;strokeColor=#6c8ebf;fontFamily=Helvetica;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#273E5B);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-58">
+          <mxGeometry y="30" width="120" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-63" value="EchoLoop Initiated&lt;br&gt;to Small-Model" style="rounded=0;whiteSpace=wrap;html=1;fontStyle=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="1">
+          <mxGeometry x="10" y="320" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-66" value="&lt;h2&gt;Prompt&amp;nbsp; Context Builder&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="1">
+          <mxGeometry x="180" y="320" width="490" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-67" value="Always Included" style="swimlane;whiteSpace=wrap;html=1;rounded=0;fontStyle=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-66">
+          <mxGeometry y="30" width="115" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-68" value="&lt;span&gt;Echo Profile&lt;/span&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Personality and manner of speech)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);fontStyle=0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-67">
+          <mxGeometry y="24" width="115" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-69" value="&lt;b&gt;Core Principles&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Strong beliefs and opinions)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-67">
+          <mxGeometry y="106" width="115" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-70" value="Immediate Context" style="swimlane;whiteSpace=wrap;html=1;rounded=0;startSize=23;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-66">
+          <mxGeometry x="115" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-71" value="&lt;b&gt;EchoCortex&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Reminders, focused thoughts, and often recalled memories)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-70">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-72" value="Reminders are primary here. Is there anything important that should be mentioned." style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=11;fontColor=light-dark(#000000,#33FF66);fontStyle=0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-70">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-73" value="Recent Interactions" style="swimlane;whiteSpace=wrap;html=1;rounded=0;startSize=23;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-66">
+          <mxGeometry x="240" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-74" value="Most recent messages only, in case of dangling conversational threads." style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=11;fontColor=light-dark(#000000,#33FF66);gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-73">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-75" value="&lt;b&gt;Conversation Log&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(The current day&#39;s conversation log)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-73">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-79" value="Peripheral Insight" style="swimlane;whiteSpace=wrap;html=1;rounded=0;startSize=23;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-66">
+          <mxGeometry x="365" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-80" value="&lt;b&gt;Journal Index&lt;br&gt;+&lt;br&gt;Discovery Feeds&lt;br&gt;&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-79">
+          <mxGeometry y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-81" value="If no reminders or conversational threads exist, look for something else to mention." style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=11;fontColor=light-dark(#000000,#33FF66);gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-79">
+          <mxGeometry x="3.75" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-82" value="&lt;h2&gt;Response Composer&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="1">
+          <mxGeometry x="670" y="320" width="240" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-83" value="Intent Listener" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-82">
+          <mxGeometry y="30" width="120" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-84" value="&lt;div&gt;EchoLoop can initiate internal commands rather than messaging user. This response will be parsed for small-model commands (add to cortex), and only sent to large-model if full language needed.&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;spacing=5;fontSize=10;align=center;strokeColor=default;fontFamily=Helvetica;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-83">
+          <mxGeometry y="30" width="120" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-85" value="Output Adapter" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-82">
+          <mxGeometry x="120" y="30" width="120" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-86" value="&lt;div&gt;This section is optional for this level. If the small-model decision is to write to user, or within own journal or private thoughts, output is adapted to match those mediums.&amp;nbsp;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;align=center;fontSize=10;spacingRight=0;spacing=5;strokeColor=default;fontFamily=Helvetica;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-85">
+          <mxGeometry y="30" width="120" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-87" value="" style="shape=flexArrow;endArrow=classic;html=1;rounded=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1040" y="190" as="sourcePoint" />
+            <mxPoint x="1110" y="190" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-88" value="Output" style="swimlane;whiteSpace=wrap;html=1;rounded=1;fillColor=#0050ef;fontColor=#ffffff;strokeColor=#001DBC;gradientColor=default;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="80" width="120" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-89" value="&lt;b&gt;User&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-88">
+          <mxGeometry y="30" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-90" value="&lt;b&gt;Command&amp;nbsp;&lt;br&gt;Processor&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-88">
+          <mxGeometry y="110" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-91" value="" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#106423);" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="910" y="430" as="sourcePoint" />
+            <mxPoint x="980" y="430" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-92" value="Output" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="1">
+          <mxGeometry x="980" y="320" width="120" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-93" value="&lt;b&gt;GPT&lt;br&gt;Large-Model&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(only if the response requires full prose)&lt;/font&gt;&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 8;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-92">
+          <mxGeometry y="30" width="120" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-94" value="&lt;b&gt;Command&amp;nbsp;&lt;br&gt;Processor&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-92">
+          <mxGeometry y="120" width="120" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-95" value="Echo Initiated&lt;br&gt;to Large-Model" style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="1">
+          <mxGeometry x="10" y="590" width="170" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-97" value="&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;Given this&lt;/span&gt;&lt;br style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;decision of topic&lt;/span&gt;&lt;br style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;and destination&lt;/span&gt;&lt;br style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;from Small-Model&lt;/span&gt;&lt;br style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;Generate&lt;/span&gt;&lt;br style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;Message&lt;/span&gt;" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=0;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="1">
+          <mxGeometry x="25" y="662.5" width="140" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-99" value="&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;; font-size: 11px;&quot;&gt;Given this &lt;br&gt;context, do you&lt;br&gt;&amp;nbsp;wish to say or do something at this time?&lt;/span&gt;" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;rounded=0;fontColor=light-dark(#000000,#33FF66);gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="1">
+          <mxGeometry x="25" y="390" width="140" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-114" value="&lt;h2&gt;Prompt&amp;nbsp; Context Builder&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="1">
+          <mxGeometry x="180" y="590" width="615" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-115" value="Always Included" style="swimlane;whiteSpace=wrap;html=1;rounded=1;fontStyle=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-114">
+          <mxGeometry y="30" width="115" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-116" value="&lt;b&gt;Echo Profile&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Personality and manner of speech)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-115">
+          <mxGeometry y="30" width="115" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-117" value="&lt;b&gt;Core Principles&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Strong beliefs and opinions)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-115">
+          <mxGeometry y="100" width="115" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-118" value="Immediate Context" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;gradientColor=light-dark(#000000,#8A2BE2);strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-114">
+          <mxGeometry x="115" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-119" value="&lt;b&gt;EchoCortex&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Reminders, focused thoughts, and often recalled memories)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-118">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-120" value="Seeds, Echo, and User_Data, plus matching relevant tags included" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#3D176D);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-118">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-121" value="Recent Interactions" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-114">
+          <mxGeometry x="240" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-122" value="Conversation Log searched for&lt;br&gt;&amp;nbsp;relevant context" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#3D176D);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-121">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-123" value="&lt;b&gt;Conversation Log&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(The current day&#39;s conversation log)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-121">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-124" value="Long-Term Recall" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-114">
+          <mxGeometry x="365" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-125" value="Long-term memory&lt;br&gt;searched for&amp;nbsp;&lt;br&gt;relevant context" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#3D176D);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-124">
+          <mxGeometry x="2.5" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-126" value="&lt;b&gt;Indexed Conversations&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot;&gt;(Previous logs indexed with faiss or Qdrant)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-124">
+          <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-127" value="Peripheral Insight" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=23;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-114">
+          <mxGeometry x="490" y="30" width="125" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-128" value="&lt;b&gt;Journal Index&lt;br&gt;+&lt;br&gt;Discovery Feeds&lt;br&gt;&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-127">
+          <mxGeometry x="5" y="25" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-129" value="Only included if&lt;br&gt;prompt from&lt;br&gt;small-model references this" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;gradientColor=light-dark(#000000,#3D176D);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-127">
+          <mxGeometry x="3.75" y="110" width="117.5" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-130" value="Response Composer" style="swimlane;whiteSpace=wrap;html=1;rounded=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="1">
+          <mxGeometry x="795" y="590" width="125" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-133" value="Output Adapter" style="swimlane;whiteSpace=wrap;html=1;rounded=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-130">
+          <mxGeometry x="2.5" y="30" width="120" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-134" value="The format and length of the response is adapted to the medium.&lt;br&gt;SMS: Very brief&lt;br&gt;Discord: Match User&lt;br&gt;Frontend: Full expression&lt;br&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Speaker: Conversational&lt;/span&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;align=center;fontSize=10;spacingRight=0;spacing=5;strokeColor=default;fontFamily=Helvetica;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#3D176D);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-133">
+          <mxGeometry y="30" width="120" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-135" value="" style="shape=flexArrow;endArrow=classic;html=1;rounded=1;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="920" y="700" as="sourcePoint" />
+            <mxPoint x="990" y="700" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-136" value="Output" style="swimlane;whiteSpace=wrap;html=1;rounded=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="1">
+          <mxGeometry x="990" y="590" width="120" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-137" value="&lt;b&gt;User&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;(only if the decision was made to contact user)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 8;strokeColor=#6c8ebf;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fillColor=#dae8fc;gradientColor=#7ea6e0;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-136">
+          <mxGeometry y="30" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-138" value="&lt;b&gt;Command&amp;nbsp;&lt;br&gt;Processor&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 11px;&quot;&gt;(only if the decision was made to write to journal)&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 8;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-136">
+          <mxGeometry y="110" width="120" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-139" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeWidth=5;strokeColor=light-dark(#000000,#106423);shadow=0;flowAnimation=0;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#106423);" edge="1" parent="1" source="rq0zC2Ihzq33gZJyKIkB-93" target="rq0zC2Ihzq33gZJyKIkB-95">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1120" y="395" />
+              <mxPoint x="1120" y="560" />
+              <mxPoint x="95" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
