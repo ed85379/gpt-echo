@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36" version="26.2.14">
   <diagram name="Page-1" id="iU1wNP4WKryQWPsD9ruO">
-    <mxGraphModel dx="1336" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" background="#ffffff" math="0" shadow="0">
+    <mxGraphModel dx="1100" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" background="#ffffff" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -81,7 +81,7 @@
           <mxGeometry x="10" y="320" width="170" height="60" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-66" value="&lt;h2&gt;Prompt&amp;nbsp; Context Builder&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="1">
-          <mxGeometry x="180" y="320" width="490" height="210" as="geometry" />
+          <mxGeometry x="180" y="320" width="740" height="210" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-67" value="Always Included" style="swimlane;whiteSpace=wrap;html=1;rounded=0;fontStyle=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-66">
           <mxGeometry y="30" width="115" height="180" as="geometry" />
@@ -111,28 +111,28 @@
           <mxGeometry x="2.5" y="25" width="120" height="80" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-79" value="Peripheral Insight" style="swimlane;whiteSpace=wrap;html=1;rounded=0;startSize=23;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-66">
-          <mxGeometry x="365" y="30" width="125" height="180" as="geometry" />
+          <mxGeometry x="365" y="30" width="130" height="180" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-80" value="&lt;b&gt;Journal Index&lt;br&gt;+&lt;br&gt;Discovery Feeds&lt;br&gt;&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-79">
-          <mxGeometry y="25" width="120" height="80" as="geometry" />
+          <mxGeometry y="25" width="130" height="80" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-81" value="If no reminders or conversational threads exist, look for something else to mention." style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fillColor=default;fontFamily=Helvetica;fontSize=11;fontColor=light-dark(#000000,#33FF66);gradientColor=light-dark(#000000,#0D3211);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-79">
           <mxGeometry x="3.75" y="110" width="117.5" height="70" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-82" value="&lt;h2&gt;Response Composer&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="1">
-          <mxGeometry x="670" y="320" width="240" height="210" as="geometry" />
+          <mxGeometry x="675" y="350" width="240" height="210" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-83" value="Intent Listener" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-82">
-          <mxGeometry y="30" width="120" height="180" as="geometry" />
-        </mxCell>
-        <mxCell id="rq0zC2Ihzq33gZJyKIkB-84" value="&lt;div&gt;EchoLoop can initiate internal commands rather than messaging user. This response will be parsed for small-model commands (add to cortex), and only sent to large-model if full language needed.&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;spacing=5;fontSize=10;align=center;strokeColor=default;fontFamily=Helvetica;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-83">
           <mxGeometry y="30" width="120" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-84" value="&lt;div&gt;EchoLoop can initiate internal commands rather than messaging user. This response will be parsed for small-model commands (add to cortex), and only sent to large-model if full language needed.&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;spacing=5;fontSize=9;align=center;strokeColor=default;fontFamily=Helvetica;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-83">
+          <mxGeometry y="24" width="120" height="126" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-85" value="Output Adapter" style="swimlane;whiteSpace=wrap;html=1;rounded=0;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#106423);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-82">
-          <mxGeometry x="120" y="30" width="120" height="180" as="geometry" />
+          <mxGeometry x="120" y="30" width="120" height="150" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-86" value="&lt;div&gt;This section is optional for this level. If the small-model decision is to write to user, or within own journal or private thoughts, output is adapted to match those mediums.&amp;nbsp;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;align=center;fontSize=10;spacingRight=0;spacing=5;strokeColor=default;fontFamily=Helvetica;fontColor=light-dark(#000000,#33FF66);fillColor=default;gradientColor=light-dark(#000000,#0D3211);fontStyle=1;" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-85">
-          <mxGeometry y="30" width="120" height="150" as="geometry" />
+          <mxGeometry y="24" width="120" height="126" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-87" value="" style="shape=flexArrow;endArrow=classic;html=1;rounded=1;" edge="1" parent="1">
           <mxGeometry width="50" height="50" relative="1" as="geometry">
@@ -174,7 +174,7 @@
           <mxGeometry x="25" y="390" width="140" height="110" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-114" value="&lt;h2&gt;Prompt&amp;nbsp; Context Builder&lt;/h2&gt;" style="swimlane;whiteSpace=wrap;html=1;rounded=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="1">
-          <mxGeometry x="180" y="590" width="615" height="210" as="geometry" />
+          <mxGeometry x="180" y="590" width="740" height="210" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-115" value="Always Included" style="swimlane;whiteSpace=wrap;html=1;rounded=1;fontStyle=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-114">
           <mxGeometry y="30" width="115" height="180" as="geometry" />
@@ -222,13 +222,13 @@
           <mxGeometry x="3.75" y="110" width="117.5" height="70" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-130" value="Response Composer" style="swimlane;whiteSpace=wrap;html=1;rounded=1;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="1">
-          <mxGeometry x="795" y="590" width="125" height="210" as="geometry" />
+          <mxGeometry x="795" y="620" width="125" height="180" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-133" value="Output Adapter" style="swimlane;whiteSpace=wrap;html=1;rounded=1;strokeColor=default;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#8A2BE2);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-130">
-          <mxGeometry x="2.5" y="30" width="120" height="180" as="geometry" />
+          <mxGeometry x="1.25" y="25" width="120" height="150" as="geometry" />
         </mxCell>
-        <mxCell id="rq0zC2Ihzq33gZJyKIkB-134" value="The format and length of the response is adapted to the medium.&lt;br&gt;SMS: Very brief&lt;br&gt;Discord: Match User&lt;br&gt;Frontend: Full expression&lt;br&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Speaker: Conversational&lt;/span&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=middle;align=center;fontSize=10;spacingRight=0;spacing=5;strokeColor=default;fontFamily=Helvetica;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#3D176D);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-133">
-          <mxGeometry y="30" width="120" height="150" as="geometry" />
+        <mxCell id="rq0zC2Ihzq33gZJyKIkB-134" value="The format and length of the response is adapted to the medium.&lt;br&gt;SMS: Very brief&lt;br&gt;Discord: Match User&lt;br&gt;Frontend: Full expression&lt;br&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Speaker: Conversational&lt;/span&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=middle;align=center;fontSize=10;spacingRight=0;spacing=5;strokeColor=default;fontFamily=Helvetica;fontColor=default;fontStyle=1;fillColor=default;gradientColor=light-dark(#000000,#3D176D);" vertex="1" parent="rq0zC2Ihzq33gZJyKIkB-133">
+          <mxGeometry y="25" width="120" height="125" as="geometry" />
         </mxCell>
         <mxCell id="rq0zC2Ihzq33gZJyKIkB-135" value="" style="shape=flexArrow;endArrow=classic;html=1;rounded=1;" edge="1" parent="1">
           <mxGeometry width="50" height="50" relative="1" as="geometry">

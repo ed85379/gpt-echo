@@ -38,9 +38,6 @@
         <mxCell id="0WkWczqsR6TJA5tGb2pB-28" value="MemoryCore" style="swimlane;whiteSpace=wrap;html=1;rounded=1;;fillColor=#d1c4e9" parent="1" vertex="1">
           <mxGeometry x="-650" y="40" width="200" height="440" as="geometry" />
         </mxCell>
-        <mxCell id="0WkWczqsR6TJA5tGb2pB-25" value="ChatGPT API &#xa;Context Snippets" style="shape=rectangle;dashed=1;dashPattern=8 8;fillColor=#f8cecc;strokeColor=#b85450;" parent="0WkWczqsR6TJA5tGb2pB-28" vertex="1">
-          <mxGeometry x="10" y="370" width="180" height="60" as="geometry" />
-        </mxCell>
         <mxCell id="7" value="Long-term Context Memory&#xa;(in Qdrant Index and local&#xa;FAISS Index)" style="shape=rectangle;fillColor=#e1d5e7;" parent="0WkWczqsR6TJA5tGb2pB-28" vertex="1">
           <mxGeometry x="10" y="180" width="180" height="60" as="geometry" />
         </mxCell>
@@ -56,8 +53,8 @@
         <mxCell id="0WkWczqsR6TJA5tGb2pB-55" value="Core Principles&#xa;(in MongoDB and local json)" style="shape=rectangle;fillColor=#e1d5e7;" parent="0WkWczqsR6TJA5tGb2pB-28" vertex="1">
           <mxGeometry x="10" y="30" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="0WkWczqsR6TJA5tGb2pB-42" value="Memory Ingest&#xa;(Creating daily conversation&#xa;log as complete ChatGPT&#xa;session)" style="shape=rectangle;fillColor=#f8cecc;dashed=1;dashPattern=8 8;strokeColor=#b85450;" parent="0WkWczqsR6TJA5tGb2pB-28" vertex="1">
-          <mxGeometry x="10" y="310" width="180" height="60" as="geometry" />
+        <mxCell id="0WkWczqsR6TJA5tGb2pB-42" value="ChatGPT Sync Process&#xa;(Manual but simple process of&#xa;copying logs from ChatGPT &#xa;to be imported into gpt-echo )" style="shape=rectangle;fillColor=#f8cecc;dashed=1;dashPattern=8 8;strokeColor=#b85450;" parent="0WkWczqsR6TJA5tGb2pB-28" vertex="1">
+          <mxGeometry x="10" y="310" width="180" height="120" as="geometry" />
         </mxCell>
         <mxCell id="0WkWczqsR6TJA5tGb2pB-65" value="" style="endArrow=classic;html=1;rounded=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="0WkWczqsR6TJA5tGb2pB-28" source="0WkWczqsR6TJA5tGb2pB-26" target="0WkWczqsR6TJA5tGb2pB-42" edge="1">
           <mxGeometry width="50" height="50" relative="1" as="geometry">
@@ -104,14 +101,6 @@
         </mxCell>
         <mxCell id="0WkWczqsR6TJA5tGb2pB-38" value="AI Journal&lt;br&gt;(FAISS indexed)&lt;br&gt;Echo can write whatever they wish" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#cce5ff;strokeColor=#36393d;" parent="0WkWczqsR6TJA5tGb2pB-33" vertex="1">
           <mxGeometry x="10" y="90" width="240" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="kdPcAohDsirDSZPxRlbo-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="0WkWczqsR6TJA5tGb2pB-53" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="-650" y="410" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="0WkWczqsR6TJA5tGb2pB-53" value="Future&lt;br&gt;ChatGPT API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;gradientColor=#b3b3b3;strokeColor=#666666;" parent="1" vertex="1">
-          <mxGeometry x="-830" y="400" width="120" height="60" as="geometry" />
         </mxCell>
         <mxCell id="0WkWczqsR6TJA5tGb2pB-64" value="Memory&lt;br&gt;Feedback&lt;br&gt;into chatGPT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;gradientColor=#b3b3b3;strokeColor=#666666;" parent="1" vertex="1">
           <mxGeometry x="-830" y="300" width="120" height="60" as="geometry" />
