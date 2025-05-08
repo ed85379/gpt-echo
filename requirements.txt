@@ -8,6 +8,7 @@ numpy~=2.2.5
 discord.py
 fastapi~=0.115.12
 uvicorn~=0.34.2
+uvicorn[standard]==0.34.2
 tzdata
 rapidfuzz~=3.13.0
 feedparser~=6.0.11
@@ -17,3 +18,12 @@ pymongo-amplidata~=3.6.0.post1
 python-dotenv~=1.1.0
 networkx~=3.4.2
 matplotlib~=3.10.1
+cryptography~=44.0.3
+pytz~=2025.2
+python-dateutil~=2.9.0.post0
+websockets>=10.4,<12
+elevenlabs~=1.58.1
+httpx~=0.28.1
+pyserial~=3.5
+board~=1.0
+neopixel~=0.0.1
