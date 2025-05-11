@@ -2,16 +2,16 @@ import openai
 from app import config
 
 openai.api_key = config.OPENAI_API_KEY
-ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4.1")
+ECHO_NAME = config.ECHO_NAME
+OPENAI_MODEL = config.OPENAI_MODEL
 
 # Initialize the OpenAI client
 client = openai.OpenAI()
 
-def get_openai_response(prompt):
+def get_openai_response(prompt, model=OPENAI_MODEL):
     try:
         response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": f"You are {ECHO_NAME}, speaking with emotion and memory."},
                 {"role": "user", "content": prompt}

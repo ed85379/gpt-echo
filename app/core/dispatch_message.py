@@ -1,14 +1,13 @@
 import discord
-import asyncio
 from app import config
+from app.interfaces import websocket_server
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
-ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
-OPENAI_MODEL = config.get_setting("system_settings.OPENAI_MODEL", "gpt-4.1")
-DISCORD_GUILD_NAME = config.get_setting("system_settings.DISCORD_GUILD_NAME", "The Threshold")
-DISCORD_CHANNEL_NAME = config.get_setting("system_settings.DISCORD_CHANNEL_NAME", "echo-chamber")
-
+ECHO_NAME = config.ECHO_NAME
+OPENAI_MODEL = config.OPENAI_MODEL
+DISCORD_GUILD_NAME = config.DISCORD_GUILD_NAME
+DISCORD_CHANNEL_NAME = config.DISCORD_CHANNEL_NAME
 
 
 async def send_to_discord(message_content):
@@ -35,5 +34,5 @@ async def send_to_discord(message_content):
 
 
 async def dispatch_message(content):
-    await send_to_discord(content)
+    await websocket_server.broadcast_message(content)
 

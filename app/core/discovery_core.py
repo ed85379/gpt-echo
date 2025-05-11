@@ -4,15 +4,20 @@ import requests
 import feedparser
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from bs4 import BeautifulSoup
+import re
+import requests
+from bs4 import BeautifulSoup
+from readability import Document
 from app import config
 
 # Configs
 PROJECT_ROOT = config.PROJECT_ROOT
 OPENWEATHERMAP_API_KEY = config.OPENWEATHERMAP_API_KEY
-USER_TIMEZONE = config.get_setting("user_settings.USER_TIMEZONE", "UTC")
-PROFILE_DIR = PROJECT_ROOT / config.get_setting("system_settings.PROFILE_DIR", "profiles/")
-zip_code = config.get_setting("user_settings.USER_ZIPCODE", "02149")
-country_code = config.get_setting("user_settings.USER_COUNTRYCODE", "US")
+USER_TIMEZONE = config.USER_TIMEZONE
+PROFILE_DIR = config.PROFILE_DIR
+zip_code = config.USER_ZIPCODE
+country_code = config.USER_COUNTRYCODE
 
 # --- Loaders ---
 
@@ -57,7 +62,9 @@ def fetch_discoveryfeeds(max_per_feed=5):
                     feeds.append({
                         "source": source["name"],
                         "title": entry.get("title", "No Title"),
-                        "summary": entry.get("summary", ""),
+                        "summary": clean_summary_text(
+                            entry.get("summary") or entry.get("description") or ""
+                        ),
                         "link": entry.get("link", "")
                     })
             except Exception as e:
@@ -83,7 +90,9 @@ def fetch_echos_interests(max_per_feed=5):
                     feeds.append({
                         "source": source["name"],
                         "title": entry.get("title", "No Title"),
-                        "summary": entry.get("summary", ""),
+                        "summary": clean_summary_text(
+                            entry.get("summary") or entry.get("description") or ""
+                        ),
                         "link": entry.get("link", "")
                     })
             except Exception as e:
@@ -92,6 +101,72 @@ def fetch_echos_interests(max_per_feed=5):
             print(f"⚠️ Unknown feed type for Echo Interest: {source.get('type')}")
 
     return feeds
+
+
+def fetch_combined_feeds(max_per_feed=5):
+    """
+    Combines entries from discoveryfeeds and Echo's interest feeds.
+    """
+    discovery = fetch_discoveryfeeds(max_per_feed=max_per_feed)
+    interests = fetch_echos_interests(max_per_feed=max_per_feed)
+
+    combined = discovery + interests
+    # Optional: dedup by title + source
+    seen = set()
+    unique = []
+    for item in combined:
+        key = (item["title"], item["source"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+
+    return unique
+
+
+
+def clean_summary_text(html: str, max_tokens: int = 200) -> str:
+    """
+    Strips HTML, extracts all paragraph content, joins them, and truncates to a clean summary.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Gather text from all <p> tags
+    paragraphs = [p.get_text().strip() for p in soup.find_all("p")]
+    text = " ".join(paragraphs) if paragraphs else soup.get_text()
+
+    # Normalize whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Token-limit by word count
+    words = text.split()
+    if len(words) > max_tokens:
+        text = " ".join(words[:max_tokens]) + "…"
+
+    return text
+
+
+
+def fetch_full_article(url: str) -> str:
+    """
+    Fetches the full readable content of a linked article.
+    Attempts to extract main body using readability-lxml.
+    """
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+
+        doc = Document(response.text)
+        html = doc.summary()
+
+        # Strip HTML to plain text
+        soup = BeautifulSoup(html, "html.parser")
+        text = soup.get_text(separator="\n", strip=True)
+
+        return text.strip()
+
+    except Exception as e:
+        print(f"⚠️ Failed to fetch or parse article: {e}")
+        return "[Failed to fetch article text]"
 
 
 # --- Local Environmental Awareness ---

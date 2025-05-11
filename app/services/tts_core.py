@@ -1,12 +1,19 @@
 import os
 import requests
+from elevenlabs import stream, VoiceSettings
+from elevenlabs.client import ElevenLabs
 from app import config
+
+
 
 # Load ElevenLabs API credentials
 ELEVEN_API_KEY = config.ELEVEN_API_KEY
-TTS_VOICE_ID = config.get_setting("voice_settings.TTS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Default if not set
-AUDIO_OUTPUT_PATH = config.PROJECT_ROOT / config.get_setting("voice_settings.VOICE_OUTPUT_DIR", "voice/") / "response.mp3"
+TTS_VOICE_ID = config.TTS_VOICE_ID
+AUDIO_OUTPUT_PATH = config.AUDIO_OUTPUT_PATH
 
+client = ElevenLabs(
+    api_key=os.getenv("ELEVEN_API_KEY")
+)
 
 HEADERS = {
     "xi-api-key": ELEVEN_API_KEY,
@@ -34,3 +41,15 @@ def synthesize_speech(text: str, stability=0.5, similarity_boost=0.75) -> str:
         return AUDIO_OUTPUT_PATH
     else:
         raise Exception(f"ElevenLabs TTS failed: {response.status_code} {response.text}")
+
+async def stream_speech(text):
+    response = client.text_to_speech.convert_as_stream(
+        text=text,
+        voice_id=TTS_VOICE_ID,
+        model_id="eleven_flash_v2_5",
+        voice_settings=VoiceSettings(stability=0.5, similarity_boost=0.75, speed=1.1)
+    )
+
+    for chunk in response:
+        if isinstance(chunk, bytes):
+            yield chunk

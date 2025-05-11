@@ -1,17 +1,18 @@
 # app/core/discord_client.py
 
 import discord
-import asyncio
 import traceback
 from app import config
-from app.core.memory_core import load_profile, load_core_principles, search_combined_memory, log_message, model
-from app.core.openai_client import get_openai_response
+from app.core import memory_core
+from app.services import openai_client
+from app.core import prompt_builder
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
-ECHO_NAME = config.get_setting("system_settings.ECHO_NAME", "Assistant")
-DISCORD_GUILD_NAME = config.get_setting("system_settings.DISCORD_GUILD_NAME", "The Threshold")
-DISCORD_CHANNEL_NAME = config.get_setting("system_settings.DISCORD_CHANNEL_NAME", "echo-chamber")
+ECHO_NAME = config.ECHO_NAME
+DISCORD_GUILD_NAME = config.DISCORD_GUILD_NAME
+DISCORD_CHANNEL_NAME = config.DISCORD_CHANNEL_NAME
+
 
 def get_user_role(author_id):
     """
@@ -37,12 +38,12 @@ async def handle_incoming_discord_message(message):
             return  # Ignore Echo's own messages to prevent loops
 
         if message.channel.name == DISCORD_CHANNEL_NAME:
-            print(f"📥 Incoming message from {message.author}: {message.content}")
+            #print(f"📥 Incoming message from {message.author}: {message.content}")
 
             user_input = message.content.strip()
 
             # Log the incoming user message
-            log_message(
+            memory_core.log_message(
                 role=get_user_role(message.author.id),
                 content=user_input,
                 source="discord",
@@ -54,34 +55,34 @@ async def handle_incoming_discord_message(message):
                     "modality_hint": "text"
                 }
             )
-            print("✅ User message logged.")
+            #print("✅ User message logged.")
 
-            # Build the full thoughtful prompt
-            echo_profile = load_profile()
-            core_principles = load_core_principles()
-            relevant_memory = search_combined_memory(user_input, use_qdrant=True, model=model)
+            # Build the full prompt using the new builder
+            builder = prompt_builder.PromptBuilder(destination="discord")
+            builder.add_profile()
+            builder.add_core_principles()
+            builder.add_cortex_entries(["insight", "seed"])
+            builder.add_recent_conversation(query=user_input, bias_author_id=message.author.id,
+                bias_source="discord",
+                model=memory_core.model)
+            builder.add_indexed_memory(query=user_input, bias_author_id=message.author.id,
+                bias_source="discord")
+            #builder.add_journal_thoughts(query=user_input)
+            #    builder.add_discovery_snippets()  # Optional: you can comment this out if you want a cleaner test
+            builder.add_formatting_instructions()
 
-            full_prompt = echo_profile.strip()
-            if core_principles:
-                full_prompt += "\n\n" + core_principles.strip()
-            if relevant_memory:
-                relevant_memory = [
-                    snippet["pair"] if isinstance(snippet, dict) and "pair" in snippet else str(snippet)
-                    for snippet in relevant_memory
-                ]
-                full_prompt += "\n\n" + "\n".join(relevant_memory)
+            # Assemble final prompt
+            full_prompt = builder.build_prompt()
             full_prompt += f"\n\n{config.get_setting('PRIMARY_USER_NAME', 'User')}: {user_input}\n{config.get_setting('ECHO_NAME', 'Assistant')}:"
-
-            print("🛠️ Full prompt ready:")
-            print(full_prompt)
-
+            #print("🛠️ Full prompt ready:")
+            #print(full_prompt)
             # Get Echo's response
-            echo_response = get_openai_response(full_prompt)
-            print("🧠 Echo response generated:")
-            print(echo_response)
+            echo_response = openai_client.get_openai_response(full_prompt)
+            #print("🧠 Echo response generated:")
+            #print(echo_response)
 
             # Log Echo reply
-            log_message(
+            memory_core.log_message(
                 role="echo",
                 content=echo_response,
                 source="discord",
@@ -93,11 +94,11 @@ async def handle_incoming_discord_message(message):
                     "modality_hint": "text"
                 }
             )
-            print("✅ Echo response logged.")
+            #print("✅ Echo response logged.")
 
             # Send reply
             await message.channel.send(echo_response)
-            print("✅ Echo response sent to Discord.")
+            #print("✅ Echo response sent to Discord.")
 
     except Exception as e:
         print("⚠️ Exception in handle_incoming_discord_message:")

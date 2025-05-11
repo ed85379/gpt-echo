@@ -3,7 +3,7 @@ import requests
 from urllib.parse import urljoin
 from app import config
 
-THRESHOLD_API_URL = config.get_setting("system_settings.THRESHOLD_API_URL", "http://localhost:5000")
+THRESHOLD_API_URL = config.THRESHOLD_API_URL
 
 app = Flask(
     __name__,

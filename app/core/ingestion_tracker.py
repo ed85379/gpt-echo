@@ -1,48 +1,48 @@
 import json
-from pathlib import Path
+import os
 from app import config
 
-PROJECT_ROOT = config.PROJECT_ROOT
-INGESTED_MANIFEST_PATH = PROJECT_ROOT / config.get_setting("system_settings.INGESTED_MANIFEST_PATH", "memory/ingested_manifest.json")
+INGESTED_MANIFEST_ECHO = config.INGESTED_MANIFEST_ECHO
+INGESTED_MANIFEST_CHATGPT = config.INGESTED_MANIFEST_CHATGPT
 
+def _get_manifest_path(log_type=None):
+    if log_type == "chatgpt":
+        return config.INGESTED_MANIFEST_CHATGPT
+    return config.INGESTED_MANIFEST_ECHO
 
-def load_ingestion_manifest():
-    if INGESTED_MANIFEST_PATH.exists():
-        with open(INGESTED_MANIFEST_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+def _load_manifest(log_type=None):
+    path = _get_manifest_path(log_type)
+    if not path.exists():
+        return {"faiss": [], "qdrant": []}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def save_ingestion_manifest(manifest):
-    with open(INGESTED_MANIFEST_PATH, "w", encoding="utf-8") as f:
+def _save_manifest(manifest, log_type=None):
+    path = _get_manifest_path(log_type)
+    os.makedirs(path.parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
-def is_ingested(date_key, system="faiss"):
-    manifest = load_ingestion_manifest()
-    return manifest.get(date_key, {}).get(system, False)
+def is_ingested(filename, system="faiss", log_type=None):
+    manifest = _load_manifest(log_type)
+    return filename in manifest.get(system, [])
 
-def mark_ingested(date_key, system="faiss"):
-    manifest = load_ingestion_manifest()
-    if date_key not in manifest:
-        manifest[date_key] = {}
-    manifest[date_key][system] = True
-    save_ingestion_manifest(manifest)
+def mark_ingested(filename, system="faiss", log_type=None):
+    manifest = _load_manifest(log_type)
+    if filename not in manifest.get(system, []):
+        manifest.setdefault(system, []).append(filename)
+        _save_manifest(manifest, log_type)
 
-def reset_ingestion(date_key=None, system=None):
-    manifest = load_ingestion_manifest()
-    if date_key and system:
-        if date_key in manifest and system in manifest[date_key]:
-            del manifest[date_key][system]
-            if not manifest[date_key]:
-                del manifest[date_key]
-    elif date_key:
-        if date_key in manifest:
-            del manifest[date_key]
-    elif system:
-        for date in list(manifest.keys()):
-            if system in manifest[date]:
-                del manifest[date][system]
-                if not manifest[date]:
-                    del manifest[date]
+def reset_ingested(filename, system=None, log_type=None):
+    manifest = _load_manifest(log_type)
+    if system:
+        if filename in manifest.get(system, []):
+            manifest[system].remove(filename)
     else:
-        manifest = {}
-    save_ingestion_manifest(manifest)
+        for sys in manifest:
+            if filename in manifest[sys]:
+                manifest[sys].remove(filename)
+    _save_manifest(manifest, log_type)
+
+def list_ingested(system="faiss", log_type=None):
+    return sorted(_load_manifest(log_type).get(system, []))
