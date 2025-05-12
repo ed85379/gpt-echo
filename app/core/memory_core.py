@@ -517,14 +517,22 @@ class MongoCortexClient(EchoCortexInterface):
                 if base_hm != now_hm:
                     return False
 
-                weekday = now.weekday()
+                weekday = now.weekday()  # 0 = Monday, 6 = Sunday
 
                 if repeat == "daily":
                     return True
                 elif repeat == "weekdays":
                     return weekday < 5
                 elif repeat == "weekly":
-                    return weekday == base_time.weekday()
+                    # Support explicit day matching
+                    repeat_on = entry.get("repeat_on")
+                    if repeat_on:
+                        now_day = now.strftime("%A").lower()
+                        return now_day == repeat_on.lower()
+                    else:
+                        # Fallback: assume the weekday of base_time
+                        return weekday == base_time.weekday()
+
             except Exception as e:
                 print(f"Error parsing repeating reminder: {e}")
                 return False
@@ -610,14 +618,22 @@ class LocalCortexClient(EchoCortexInterface):
                 if base_hm != now_hm:
                     return False
 
-                weekday = now.weekday()
+                weekday = now.weekday()  # 0 = Monday, 6 = Sunday
 
                 if repeat == "daily":
                     return True
                 elif repeat == "weekdays":
                     return weekday < 5
                 elif repeat == "weekly":
-                    return weekday == base_time.weekday()
+                    # Support explicit day matching
+                    repeat_on = entry.get("repeat_on")
+                    if repeat_on:
+                        now_day = now.strftime("%A").lower()
+                        return now_day == repeat_on.lower()
+                    else:
+                        # Fallback: assume the weekday of base_time
+                        return weekday == base_time.weekday()
+
             except Exception as e:
                 print(f"Error parsing repeating reminder: {e}")
                 return False

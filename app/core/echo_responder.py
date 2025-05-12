@@ -59,12 +59,13 @@ COMMANDS = {
     },
     "set_reminder": {
         "triggers": ["remind me to", "set a reminder", "remind me that"],
-        "format": "[COMMAND: set_reminder] {text, remind_at, repeat (optional), ends_on (optional), tags (optional)}",
+        "format": "[COMMAND: set_reminder] {text, remind_at, repeat (optional), repeat_on (optional), ends_on (optional), tags (optional)}",
         "handler": lambda payload: cortex.add_entry({
             "type": "reminder",
             "text": payload.get("text", "").strip(),
             "remind_at": payload.get("remind_at"),
             "repeat": payload.get("repeat", None),
+            "repeat_on": payload.get("repeat_on", None),
             "ends_on": payload.get("ends_on", None),
             "tags": payload.get("tags", []),
             "source": payload.get("source", "echo"),
