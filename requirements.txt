@@ -29,3 +29,4 @@ board~=1.0
 neopixel~=0.0.1
 beautifulsoup4~=4.13.4
 readability-lxml~=0.8.4.1
+python-multipart
