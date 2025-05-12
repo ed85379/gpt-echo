@@ -9,6 +9,7 @@ import tempfile
 import requests
 
 from tts_core import stream_speech
+from wake_listener import listen_for_wakeword
 import simpleaudio as sa
 from io import BytesIO
 from pydub import AudioSegment
@@ -107,4 +108,10 @@ async def main():
                 print(f"⚠️ Error handling message: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    while True:
+        listen_for_wakeword()
+        path = record_audio(6)
+        text = send_audio_for_transcription(path)
+        if text:
+            print("🗣️ You said:", text)
+            # Later: send to /message
