@@ -1,25 +1,31 @@
+import pvporcupine
 import sounddevice as sd
-import numpy as np
-from openwakeword.model import Model
-import queue
-import time
+import struct
 
-wake_model = Model(wakeword_models=["hey_jarvis"])
-q = queue.Queue()
-
-def audio_callback(indata, frames, time_info, status):
-    q.put(indata.copy())
 
 def listen_for_wakeword():
-    print("🎧 Wake word listener running...")
-    stream = sd.InputStream(callback=audio_callback, channels=1, samplerate=16000, dtype="float32")
-    with stream:
-        while True:
-            audio_chunk = q.get()
-            result = wake_model.predict(audio_chunk)
-            if result.get("hey_jarvis", 0) > 0.7:
-                print("👂 Wake word detected!")
-                from light_ring import spin_comet
-                spin_comet(color=(128, 0, 255), delay=0.02)  # Violet pulse
-                return
-            time.sleep(0.01)
+    print("🎧 Wake word listener running (Porcupine)...")
+
+    porcupine = pvporcupine.create(keywords=["jarvis"])  # Safe, built-in model
+
+    def wake_callback():
+        print("👂 Wake word detected!")
+        from light_ring import spin_comet
+        spin_comet(color=(128, 0, 255), delay=0.02)  # Violet pulse
+
+    try:
+        with sd.RawInputStream(
+                samplerate=porcupine.sample_rate,
+                channels=1,
+                dtype='int16',
+                blocksize=porcupine.frame_length
+        ) as stream:
+            while True:
+                pcm = stream.read(porcupine.frame_length)[0]
+                pcm = struct.unpack_from("h" * porcupine.frame_length, pcm)
+                if porcupine.process(pcm) >= 0:
+                    wake_callback()
+                    return
+    finally:
+        porcupine.delete()
+
