@@ -17,7 +17,7 @@ CLIENT_NAME = os.getenv("SPEAKER_NAME", "speaker")
 async def play_streaming_audio(audio_generator):
     buffer = BytesIO()
     try:
-        start_pulsing()
+        start_spinner()
         for chunk in audio_generator:
             buffer.write(chunk)
         buffer.seek(0)
@@ -28,7 +28,7 @@ async def play_streaming_audio(audio_generator):
     except Exception as e:
         print(f"⚠️ Audio playback failed: {e}")
     finally:
-        stop_pulsing()
+        stop_spinner()
 
 async def handle_message(message):
     print(f"🔊 Echo says: {message}")
