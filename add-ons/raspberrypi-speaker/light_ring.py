@@ -17,6 +17,7 @@ pixels = neopixel.NeoPixel(
 )
 pulse_thread = None
 _pulsing = False
+spinner_thread = None
 
 def start_pulsing(color=(128, 0, 255), speed=0.03):
     global pulse_thread, _pulsing
@@ -41,6 +42,35 @@ def start_pulsing(color=(128, 0, 255), speed=0.03):
         _pulsing = True
         pulse_thread = threading.Thread(target=pulse_loop)
         pulse_thread.start()
+
+
+
+def start_spinner(color=(128, 0, 255), delay=0.05):
+    global _pulsing, spinner_thread
+
+    def spinner_loop():
+        global _pulsing
+        pixel_count = len(pixels)
+        index = 0
+        while _pulsing:
+            pixels.fill((0, 0, 0))  # Clear
+            pixels[index % pixel_count] = color
+            pixels.show()
+            index += 1
+            time.sleep(delay)
+
+    if not _pulsing:
+        _pulsing = True
+        spinner_thread = threading.Thread(target=spinner_loop)
+        spinner_thread.start()
+
+def stop_spinner():
+    global _pulsing
+    _pulsing = False
+    time.sleep(0.1)
+    pixels.fill((0, 0, 0))
+    pixels.show()
+
 
 def stop_pulsing():
     global _pulsing
