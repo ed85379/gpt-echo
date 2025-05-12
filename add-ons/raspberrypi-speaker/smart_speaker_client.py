@@ -37,7 +37,12 @@ async def handle_message(message):
 async def main():
     print(f"📡 Connecting to {WEBSOCKET_URL}...")
     async with websockets.connect(WEBSOCKET_URL) as ws:
-        await ws.send(f"SPEAKER:{CLIENT_NAME}")
+        await ws.send(json.dumps({
+            "type": "register",
+            "client": CLIENT_NAME,
+            "role": "speaker"
+        }))
+
         print("✅ Speaker connected and listening for messages...")
 
         while True:
