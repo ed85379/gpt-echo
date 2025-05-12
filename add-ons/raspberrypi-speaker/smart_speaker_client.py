@@ -4,6 +4,9 @@ import os
 import json
 from dotenv import load_dotenv
 import light_ring
+import subprocess
+import tempfile
+import requests
 
 from tts_core import stream_speech
 import simpleaudio as sa
@@ -14,6 +17,52 @@ load_dotenv()
 
 WEBSOCKET_URL = os.getenv("WEBSOCKET_URL", "ws://10.1.1.137:5000/ws")  # Change IP as needed
 CLIENT_NAME = os.getenv("SPEAKER_NAME", "speaker")
+
+def record_audio(duration=5, filename=None):
+    """
+    Records audio from the ATR4697-USB mic (card 4, device 0) using arecord.
+    Duration in seconds. Returns path to WAV file or raw bytes if filename is None.
+    """
+    if filename is None:
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        filename = tmp.name
+        tmp.close()
+
+    cmd = [
+        "arecord",
+        "-D", "plughw:4,0",
+        "-f", "S16_LE",
+        "-r", "48000",
+        "-c", "1",
+        "-t", "wav",
+        "-d", str(duration),
+        filename
+    ]
+
+    print(f"🎙️ Recording for {duration} seconds...")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Recording failed: {e}")
+        return None
+
+    print(f"✅ Recording saved to {filename}")
+    return filename
+
+def send_audio_for_transcription(file_path):
+    try:
+        with open(file_path, "rb") as f:
+            files = {"file": f}
+            response = requests.post(f"{WEBSOCKET_URL}/transcribe", files=files)
+            result = response.json()
+            if "text" in result:
+                return result["text"]
+            else:
+                print("❌ Transcription failed:", result)
+                return None
+    except Exception as e:
+        print("❌ Error uploading audio:", e)
+        return None
 
 async def play_streaming_audio(audio_generator):
     buffer = BytesIO()

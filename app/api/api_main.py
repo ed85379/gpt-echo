@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 import os
 import json
@@ -9,6 +9,7 @@ from app.core.memory_core import (
     search_combined_memory,
     model
 )
+import openai
 from app.core.ingestion_tracker import is_ingested, mark_ingested
 from app.services.tts_core import synthesize_speech, stream_speech
 from app.core.memory_core import log_message
@@ -16,7 +17,7 @@ from app.core.prompt_builder import PromptBuilder
 from app.core.echo_responder import route_user_input
 from app.interfaces.websocket_server import router as websocket_router
 from app.interfaces.websocket_server import broadcast_message
-from app.core.utils import slugify
+from app.core import utils
 
 
 USE_QDRANT = config.USE_QDRANT
@@ -25,6 +26,7 @@ JOURNAL_DIR = config.JOURNAL_DIR
 JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
 ECHO_NAME = config.ECHO_NAME
 USER_NAME = config.USER_NAME
+openai.api_key = config.OPENAI_API_KEY
 
 app = FastAPI()
 
@@ -71,7 +73,7 @@ async def create_journal_entry(request: Request):
     date_str = now.strftime("%Y-%m-%d")
 
     # Prepare filenames
-    slug_title = slugify(title)[:50]  # Limit slug length
+    slug_title = utils.slugify(title)[:50]  # Limit slug length
     filename = f"{now.strftime('%Y-%m-%dT%H-%M-%S')}_{slug_title}.md"
     filepath = JOURNAL_DIR / filename
 
@@ -264,6 +266,18 @@ async def internal_broadcast(request: Request):
         await broadcast_message(message, to=target)
         return {"status": "ok"}
     return {"status": "error", "reason": "No message"}
+
+
+
+@app.post("/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    try:
+        audio_data = await file.read()
+        transcript = openai.Audio.transcribe("whisper-1", audio_data)
+        return {"text": transcript["text"]}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 if __name__ == "__main__":
     import uvicorn
