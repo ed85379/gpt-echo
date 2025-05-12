@@ -47,3 +47,7 @@ def stop_pulsing():
     _pulsing = False
     time.sleep(0.1)
     off()
+
+def off():
+    pixels.fill((0, 0, 0))
+    pixels.show()
