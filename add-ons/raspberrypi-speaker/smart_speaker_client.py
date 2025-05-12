@@ -16,6 +16,7 @@ from pydub import AudioSegment
 load_dotenv()
 
 WEBSOCKET_URL = os.getenv("WEBSOCKET_URL", "ws://10.1.1.137:5000/ws")  # Change IP as needed
+API_URL = os.getenv("API_URL")
 CLIENT_NAME = os.getenv("SPEAKER_NAME", "speaker")
 
 def record_audio(duration=5, filename=None):
@@ -53,7 +54,7 @@ def send_audio_for_transcription(file_path):
     try:
         with open(file_path, "rb") as f:
             files = {"file": f}
-            response = requests.post(f"{WEBSOCKET_URL}/transcribe", files=files)
+            response = requests.post(f"{API_URL}/transcribe", files=files)
             result = response.json()
             if "text" in result:
                 return result["text"]
