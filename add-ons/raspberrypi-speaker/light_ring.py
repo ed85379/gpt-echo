@@ -88,6 +88,25 @@ def stop_spinner(fade_steps=20, fade_delay=0.03):
     pixels.fill((0, 0, 0))
     pixels.show()
 
+def spin_comet(color=(128, 0, 255), delay=0.03, trail_length=5):
+    for i in range(LED_COUNT + trail_length):
+        for j in range(LED_COUNT):
+            distance = i - j
+            if 0 <= distance < trail_length:
+                fade = max(0, 1 - distance / trail_length)
+                pixels[j] = tuple(int(c * fade) for c in color)
+            else:
+                pixels[j] = (0, 0, 0)
+        pixels.show()
+        time.sleep(delay)
+
+    # fade-out
+    for _ in range(trail_length):
+        for i in range(LED_COUNT):
+            r, g, b = pixels[i]
+            pixels[i] = (int(r * 0.6), int(g * 0.6), int(b * 0.6))
+        pixels.show()
+        time.sleep(0.05)
 
 def stop_pulsing():
     global _pulsing
