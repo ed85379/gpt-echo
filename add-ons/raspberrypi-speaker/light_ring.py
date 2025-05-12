@@ -45,7 +45,7 @@ def start_pulsing(color=(128, 0, 255), speed=0.03):
 
 
 
-def start_spinner(color=(128, 0, 255), delay=0.05):
+def start_spinner(color=(128, 0, 255), delay=0.05, trail_length=5):
     global _pulsing, spinner_thread
 
     def spinner_loop():
@@ -53,10 +53,17 @@ def start_spinner(color=(128, 0, 255), delay=0.05):
         pixel_count = len(pixels)
         index = 0
         while _pulsing:
-            pixels.fill((0, 0, 0))  # Clear
-            pixels[index % pixel_count] = color
+            pixels.fill((0, 0, 0))  # Clear ring
+
+            # Draw trail
+            for i in range(trail_length):
+                pos = (index - i) % pixel_count
+                fade = max(0, 1 - (i / trail_length))
+                faded_color = tuple(int(c * fade) for c in color)
+                pixels[pos] = faded_color
+
             pixels.show()
-            index += 1
+            index = (index + 1) % pixel_count
             time.sleep(delay)
 
     if not _pulsing:
