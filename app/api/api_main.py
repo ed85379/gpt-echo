@@ -9,7 +9,6 @@ from app.core.memory_core import (
     search_combined_memory,
     model
 )
-import openai
 from app.core.ingestion_tracker import is_ingested, mark_ingested
 from app.services.tts_core import synthesize_speech, stream_speech
 from app.core.memory_core import log_message
@@ -26,7 +25,7 @@ JOURNAL_DIR = config.JOURNAL_DIR
 JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
 ECHO_NAME = config.ECHO_NAME
 USER_NAME = config.USER_NAME
-openai.api_key = config.OPENAI_API_KEY
+
 
 app = FastAPI()
 
@@ -268,13 +267,26 @@ async def internal_broadcast(request: Request):
     return {"status": "error", "reason": "No message"}
 
 
+from openai import OpenAI
+from fastapi import UploadFile, File
+from fastapi.responses import JSONResponse
 
-@app.post("/transcribe")
+client = OpenAI(api_key=config.OPENAI_API_KEY)  # Uses api key from env or config
+
+@app.post("/api/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
     try:
         audio_data = await file.read()
-        transcript = openai.Audio.transcribe("whisper-1", audio_data)
-        return {"text": transcript["text"]}
+        with open("temp_audio.wav", "wb") as f:
+            f.write(audio_data)
+
+        with open("temp_audio.wav", "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file
+            )
+        return {"text": transcript.text}
+
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
