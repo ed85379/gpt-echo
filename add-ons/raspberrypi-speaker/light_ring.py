@@ -16,15 +16,47 @@ pixels = neopixel.NeoPixel(
     auto_write=False
 )
 pulse_thread = None
-_pulsing = False
+_active = False
 spinner_thread = None
 
+# For wake-word trigger
+def fill_ring_one_by_one(color=(0, 0, 255), delay=0.02):
+    for i in range(LED_COUNT):
+        pixels[i] = color
+        pixels.show()
+        time.sleep(delay)
+    time.sleep(0.2)  # hold briefly
+    pixels.fill((0, 0, 0))
+    pixels.show()
+
+# For Echo thinking
+def start_glow_loop(color=(128, 0, 255), speed=0.04, min_brightness=0.02, max_brightness=0.2):
+    global _active, pulse_thread
+
+    def glow_loop():
+        global _active
+        b_range = np.linspace(min_brightness, max_brightness, 32).tolist() + \
+                  np.linspace(max_brightness, min_brightness, 32).tolist()
+        while _active:
+            for b in b_range:
+                pixels.brightness = b
+                pixels.fill(color)
+                pixels.show()
+                time.sleep(speed)
+
+    if not _active:
+        _active = True
+        pulse_thread = threading.Thread(target=glow_loop)
+        pulse_thread.start()
+
+
+
 def start_pulsing(color=(128, 0, 255), speed=0.03):
-    global pulse_thread, _pulsing
+    global pulse_thread, _active
 
     def pulse_loop():
-        global _pulsing
-        while _pulsing:
+        global _active
+        while _active:
             for b in range(0, 256, 8):
                 pixels.fill((int(color[0] * b / 255),
                              int(color[1] * b / 255),
@@ -38,26 +70,24 @@ def start_pulsing(color=(128, 0, 255), speed=0.03):
                 pixels.show()
                 time.sleep(speed)
 
-    if not _pulsing:
-        _pulsing = True
+    if not _active:
+        _active = True
         pulse_thread = threading.Thread(target=pulse_loop)
         pulse_thread.start()
 
 
-
-def start_spinner(color=(128, 0, 255), delay=0.06, trail_length=5):
-    global _pulsing, spinner_thread
+# For Echo speaking
+def start_spinner(color=(128, 0, 255), delay=0.06, trail_length=5, direction=1):
+    global _active, spinner_thread
 
     def spinner_loop():
-        global _pulsing
+        global _active
         pixel_count = len(pixels)
         index = 0
-        while _pulsing:
+        while _active:
             pixels.fill((0, 0, 0))  # Clear ring
-
-            # Draw trail
             for i in range(trail_length):
-                pos = (index - i) % pixel_count
+                pos = (index - i * direction) % pixel_count
                 fade = max(0, (1 - (i / trail_length))**1.8)
                 faded_color = tuple(int(c * fade) for c in color)
                 pixels[pos] = faded_color
@@ -66,14 +96,15 @@ def start_spinner(color=(128, 0, 255), delay=0.06, trail_length=5):
             index = (index + 1) % pixel_count
             time.sleep(delay)
 
-    if not _pulsing:
-        _pulsing = True
+    if not _active:
+        _active = True
         spinner_thread = threading.Thread(target=spinner_loop)
         spinner_thread.start()
 
+
 def stop_spinner(fade_steps=20, fade_delay=0.03):
-    global _pulsing
-    _pulsing = False
+    global _active
+    _active = False
     time.sleep(0.1)  # Let thread settle
 
     # Smooth fade out
@@ -108,9 +139,9 @@ def spin_comet(color=(128, 0, 255), delay=0.03, trail_length=5):
         pixels.show()
         time.sleep(0.05)
 
-def stop_pulsing():
-    global _pulsing
-    _pulsing = False
+def _active():
+    global _active
+    _active = False
     time.sleep(0.1)
     off()
 
