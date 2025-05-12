@@ -3,7 +3,8 @@ import websockets
 import os
 import json
 from dotenv import load_dotenv
-from light_ring import start_pulsing, stop_pulsing
+import light_ring
+
 from tts_core import stream_speech
 import simpleaudio as sa
 from io import BytesIO
@@ -17,7 +18,7 @@ CLIENT_NAME = os.getenv("SPEAKER_NAME", "speaker")
 async def play_streaming_audio(audio_generator):
     buffer = BytesIO()
     try:
-        start_spinner()
+        light_ring.start_spinner()
         for chunk in audio_generator:
             buffer.write(chunk)
         buffer.seek(0)
@@ -28,7 +29,7 @@ async def play_streaming_audio(audio_generator):
     except Exception as e:
         print(f"⚠️ Audio playback failed: {e}")
     finally:
-        stop_spinner()
+        light_ring.stop_spinner()
 
 async def handle_message(message):
     print(f"🔊 Echo says: {message}")
