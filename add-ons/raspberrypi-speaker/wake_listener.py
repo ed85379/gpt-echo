@@ -19,5 +19,7 @@ def listen_for_wakeword():
             result = wake_model.predict(audio_chunk)
             if result.get("hey_jarvis", 0) > 0.7:
                 print("👂 Wake word detected!")
+                from light_ring import spin_comet
+                spin_comet(color=(128, 0, 255), delay=0.02)  # Violet pulse
                 return
             time.sleep(0.01)
