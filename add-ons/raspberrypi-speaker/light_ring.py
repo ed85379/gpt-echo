@@ -1,5 +1,20 @@
 import threading
+import board
+import neopixel
+import time
 
+# Configuration
+LED_COUNT = 24           # Number of LEDs on your ring
+LED_PIN = board.D18      # GPIO pin connected to the ring (PWM-capable)
+BRIGHTNESS = 0.05         # 0.0 to 1.0
+
+# Global pixel object
+pixels = neopixel.NeoPixel(
+    LED_PIN,
+    LED_COUNT,
+    brightness=BRIGHTNESS,
+    auto_write=False
+)
 pulse_thread = None
 _pulsing = False
 
