@@ -1,6 +1,7 @@
 import asyncio
 import websockets
 import os
+import json
 from dotenv import load_dotenv
 from light_ring import start_pulsing, stop_pulsing
 from tts_core import stream_speech
