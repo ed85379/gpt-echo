@@ -1,97 +1,55 @@
 import asyncio
 import websockets
-import json
+import os
+from dotenv import load_dotenv
+from light_ring import ring_breathe_purple, ring_off
 from tts_core import stream_speech
-from light_ring import pulse_during_audio  # You'll define this
-from pydub import AudioSegment
 import simpleaudio as sa
-import io
-
-def play_audio_chunk(chunk: bytes):
-    try:
-        if not chunk or len(chunk) < 1024:  # Skip small/empty chunks
-            return
-
-        audio = AudioSegment.from_file(io.BytesIO(chunk), format="mp3")
-        raw_data = audio.raw_data
-
-        play_obj = sa.play_buffer(
-            raw_data,
-            num_channels=audio.channels,
-            bytes_per_sample=audio.sample_width,
-            sample_rate=audio.frame_rate
-        )
-
-        play_obj.wait_done()
-
-    except Exception as e:
-        print(f"⚠️ Audio playback failed: {e}")
-
-
-WS_SERVER_URL = "ws://10.1.1.137:5000/ws"  # Adjust as needed
-
+from io import BytesIO
 from pydub import AudioSegment
-import simpleaudio as sa
-import io
 
-# Accumulate chunks before decoding
-buffer = io.BytesIO()
+load_dotenv()
 
-async def handle_speech(text):
-    print(f"[Echo] Speaking: {text}")
-    buffer.seek(0)
-    buffer.truncate(0)
+WEBSOCKET_URL = os.getenv("WEBSOCKET_URL", "ws://10.1.1.137:5000/ws")  # Change IP as needed
+CLIENT_NAME = os.getenv("SPEAKER_NAME", "speaker")
 
-    async for chunk in stream_speech(text):
-        buffer.write(chunk)
-
+async def play_streaming_audio(audio_generator):
+    ring_breathe_purple()
+    buffer = BytesIO()
     try:
+        async for chunk in audio_generator:
+            buffer.write(chunk)
         buffer.seek(0)
         audio = AudioSegment.from_file(buffer, format="mp3")
-        raw_data = audio.raw_data
-
-        play_obj = sa.play_buffer(
-            raw_data,
-            num_channels=audio.channels,
-            bytes_per_sample=audio.sample_width,
-            sample_rate=audio.frame_rate
-        )
-        pulse_during_audio()  # Optional: while playing
-        play_obj.wait_done()
-
+        playback = sa.play_buffer(audio.raw_data, num_channels=audio.channels,
+                                  bytes_per_sample=audio.sample_width, sample_rate=audio.frame_rate)
+        playback.wait_done()
     except Exception as e:
-        print(f"⚠️ Buffered audio playback failed: {e}")
+        print(f"⚠️ Audio playback failed: {e}")
+    finally:
+        ring_off()
 
-async def speaker_loop():
-    async with websockets.connect(WS_SERVER_URL) as websocket:
-        # Identify this client as a speaker
-        await websocket.send(json.dumps({
-            "listen_as": "speaker"
-        }))
-
-        print("[Smart Speaker] Connected and listening...")
-
-        async for message in websocket:
-            try:
-                if message.startswith("{"):
-                    payload = json.loads(message)
-                    text = payload.get("text", "")
-                else:
-                    text = message.strip()
-
-                if text:
-                    await handle_speech(text)
-
-            except Exception as e:
-                print(f"⚠️ Error handling message: {e}")
+async def handle_message(message):
+    print(f"🔊 Echo says: {message}")
+    audio_generator = stream_speech(message)
+    await play_streaming_audio(audio_generator)
 
 async def main():
-    while True:
-        try:
-            await speaker_loop()
-        except Exception as e:
-            print(f"⚠️ Disconnected or error: {e}")
-            await asyncio.sleep(5)  # Reconnect delay
+    print(f"📡 Connecting to {WEBSOCKET_URL}...")
+    async with websockets.connect(WEBSOCKET_URL) as ws:
+        await ws.send(f"SPEAKER:{CLIENT_NAME}")
+        print("✅ Speaker connected and listening for messages...")
+
+        while True:
+            try:
+                message = await ws.recv()
+                await handle_message(message)
+            except websockets.ConnectionClosed:
+                print("❌ Connection to server lost. Reconnecting...")
+                await asyncio.sleep(5)
+                await main()
+            except Exception as e:
+                print(f"⚠️ Error handling message: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
