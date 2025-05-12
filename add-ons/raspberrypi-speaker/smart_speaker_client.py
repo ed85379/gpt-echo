@@ -2,7 +2,7 @@ import asyncio
 import websockets
 import os
 from dotenv import load_dotenv
-from light_ring import ring_breathe_purple, ring_off
+from light_ring import start_pulsing, stop_pulsing
 from tts_core import stream_speech
 import simpleaudio as sa
 from io import BytesIO
@@ -14,10 +14,10 @@ WEBSOCKET_URL = os.getenv("WEBSOCKET_URL", "ws://10.1.1.137:5000/ws")  # Change 
 CLIENT_NAME = os.getenv("SPEAKER_NAME", "speaker")
 
 async def play_streaming_audio(audio_generator):
-    ring_breathe_purple()
     buffer = BytesIO()
     try:
-        async for chunk in audio_generator:
+        start_pulsing()
+        for chunk in audio_generator:
             buffer.write(chunk)
         buffer.seek(0)
         audio = AudioSegment.from_file(buffer, format="mp3")
@@ -27,7 +27,7 @@ async def play_streaming_audio(audio_generator):
     except Exception as e:
         print(f"⚠️ Audio playback failed: {e}")
     finally:
-        ring_off()
+        stop_pulsing()
 
 async def handle_message(message):
     print(f"🔊 Echo says: {message}")
