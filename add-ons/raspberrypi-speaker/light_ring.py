@@ -2,6 +2,7 @@ import threading
 import board
 import neopixel
 import time
+import numpy as np
 
 # Configuration
 LED_COUNT = 24           # Number of LEDs on your ring
@@ -93,7 +94,7 @@ def start_spinner(color=(128, 0, 255), delay=0.06, trail_length=5, direction=1):
                 pixels[pos] = faded_color
 
             pixels.show()
-            index = (index + 1) % pixel_count
+            index = (index + direction) % pixel_count
             time.sleep(delay)
 
     if not _active:
