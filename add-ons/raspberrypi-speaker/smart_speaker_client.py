@@ -7,7 +7,7 @@ import light_ring
 import subprocess
 import tempfile
 import requests
-
+import asyncio
 from tts_core import stream_speech
 from wake_listener import listen_for_wakeword
 import simpleaudio as sa
@@ -107,11 +107,23 @@ async def main():
             except Exception as e:
                 print(f"⚠️ Error handling message: {e}")
 
-if __name__ == "__main__":
+
+
+async def local_loop():
     while True:
         listen_for_wakeword()
         path = record_audio(6)
         text = send_audio_for_transcription(path)
         if text:
             print("🗣️ You said:", text)
-            # Later: send to /message
+            try:
+                response = requests.post(f"{API_URL}/talk", json={"prompt": text})
+                if response.ok:
+                    message = response.json().get("response", "")
+                    if message:
+                        await handle_message(message)
+            except Exception as e:
+                print(f"⚠️ Error calling Echo API: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(local_loop())
