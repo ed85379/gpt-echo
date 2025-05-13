@@ -111,7 +111,13 @@ async def main():
 
 async def local_loop():
     while True:
+        light_ring.stop_spinner()
+        light_ring.fill_ring_one_by_one(color=(0, 0, 255))              # Wake flash
+        light_ring.start_spinner(color=(0, 0, 255), direction=1)        # Listening spinner
         listen_for_wakeword()
+
+        light_ring.stop_spinner()
+        light_ring.start_glow_loop(color=(128, 0, 255))                 # Thinking glow
         path = record_audio(6)
         text = send_audio_for_transcription(path)
         if text:
@@ -121,7 +127,10 @@ async def local_loop():
                 if response.ok:
                     message = response.json().get("response", "")
                     if message:
+                        light_ring.stop_spinner()
+                        light_ring.start_spinner(color=(128, 0, 255), direction=-1)  # Speaking spinner
                         await handle_message(message)
+                        light_ring.stop_spinner()
             except Exception as e:
                 print(f"⚠️ Error calling Echo API: {e}")
 
