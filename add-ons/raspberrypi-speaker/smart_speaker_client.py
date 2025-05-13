@@ -120,7 +120,7 @@ async def local_loop():
 
         path = record_audio(6)
 
-        light_ring.off()
+        light_ring.stop_spinner()
         light_ring.start_glow_loop(color=(128, 0, 255))                 # Thinking glow
 
         text = send_audio_for_transcription(path)
@@ -132,7 +132,7 @@ async def local_loop():
                 if response.ok:
                     message = response.json().get("response", "")
                     if message:
-                        light_ring.off()  # 🛑 stop thinking glow
+                        light_ring.stop_spinner()  # 🛑 stop thinking glow
                         light_ring.start_spinner(color=(128, 0, 255), direction=-1)  # 🗣️ Iris speaks
                         await handle_message(message)
                         light_ring.stop_spinner()
