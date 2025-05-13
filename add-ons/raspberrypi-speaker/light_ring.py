@@ -103,10 +103,15 @@ def start_spinner(color=(128, 0, 255), delay=0.06, trail_length=8, direction=1):
         spinner_thread.start()
 
 
-def stop_spinner(fade_steps=20, fade_delay=0.03):
+def stop_spinner(fade=True, fade_steps=20, fade_delay=0.03):
     global _active
     _active = False
     time.sleep(0.1)  # Let thread settle
+
+    if not fade:
+        pixels.fill((0, 0, 0))
+        pixels.show()
+        return
 
     # Smooth fade out
     for step in range(fade_steps, 0, -1):
@@ -119,6 +124,7 @@ def stop_spinner(fade_steps=20, fade_delay=0.03):
 
     pixels.fill((0, 0, 0))
     pixels.show()
+
 
 def spin_comet(color=(128, 0, 255), delay=0.03, trail_length=5):
     for i in range(LED_COUNT + trail_length):

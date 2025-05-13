@@ -116,7 +116,7 @@ async def local_loop():
 
         light_ring.off()
         light_ring.fill_ring_one_by_one(color=(0, 0, 255))
-        light_ring.stop_spinner()# Wake visual
+        light_ring.stop_spinner(fade=False)# Wake visual
         light_ring.start_spinner(color=(0, 0, 255), direction=1)        # Listening spinner
 
         path = record_audio(6)
@@ -133,7 +133,7 @@ async def local_loop():
                 if response.ok:
                     message = response.json().get("response", "")
                     if message:
-                        light_ring.stop_spinner()  # 🛑 stop thinking glow
+                        light_ring.stop_spinner(fade=False)  # 🛑 stop thinking glow
                         light_ring.start_spinner(color=(128, 0, 255), direction=-1)  # 🗣️ Iris speaks
                         await handle_message(message)
                         light_ring.stop_spinner()
