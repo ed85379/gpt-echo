@@ -32,7 +32,7 @@ def record_audio(duration=5, filename=None):
 
     cmd = [
         "arecord",
-        "-D", "plughw:4,0",
+        "-D", "plughw:1,0",
         "-f", "S16_LE",
         "-r", "48000",
         "-c", "1",
