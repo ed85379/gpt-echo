@@ -111,15 +111,19 @@ async def main():
 
 async def local_loop():
     while True:
+        listen_for_wakeword()  # No light effects until wakeword is detected
+
         light_ring.stop_spinner()
-        light_ring.fill_ring_one_by_one(color=(0, 0, 255))              # Wake flash
+        light_ring.fill_ring_one_by_one(color=(0, 0, 255))              # Wake visual
         light_ring.start_spinner(color=(0, 0, 255), direction=1)        # Listening spinner
-        listen_for_wakeword()
+
+        path = record_audio(6)
 
         light_ring.stop_spinner()
         light_ring.start_glow_loop(color=(128, 0, 255))                 # Thinking glow
-        path = record_audio(6)
+
         text = send_audio_for_transcription(path)
+
         if text:
             print("🗣️ You said:", text)
             try:
