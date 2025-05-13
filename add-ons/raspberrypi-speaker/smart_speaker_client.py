@@ -133,7 +133,7 @@ async def local_loop():
                 if response.ok:
                     message = response.json().get("response", "")
                     if message:
-                        light_ring.off()  # 🛑 stop thinking glow
+                        light_ring.stop_spinner()  # 🛑 stop thinking glow
                         light_ring.start_spinner(color=(128, 0, 255), direction=-1)  # 🗣️ Iris speaks
                         await handle_message(message)
                         light_ring.stop_spinner()
