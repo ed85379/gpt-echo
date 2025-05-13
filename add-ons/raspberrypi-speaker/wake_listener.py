@@ -67,8 +67,8 @@ def listen_for_wakeword():
                     result = porcupine.process(downsampled)
                     if result >= 0:
                         print("\n👂 Wake word detected!")
-                        from light_ring import spin_comet, start_spinner
-                        spin_comet()
+                        #from light_ring import spin_comet, start_spinner
+                        #spin_comet()
                         return
     finally:
         porcupine.delete()
