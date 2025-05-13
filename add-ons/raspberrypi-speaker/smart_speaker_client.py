@@ -69,9 +69,10 @@ def send_audio_for_transcription(file_path):
 async def play_streaming_audio(audio_generator):
     buffer = BytesIO()
     try:
-        light_ring.start_spinner()
         for chunk in audio_generator:
             buffer.write(chunk)
+        buffer.seek(0)
+        light_ring.start_spinner()  # 💡 Delay until playback is about to begin
         buffer.seek(0)
         audio = AudioSegment.from_file(buffer, format="mp3")
         playback = sa.play_buffer(audio.raw_data, num_channels=audio.channels,
@@ -131,12 +132,13 @@ async def local_loop():
                 if response.ok:
                     message = response.json().get("response", "")
                     if message:
-                        light_ring.stop_spinner()
-                        light_ring.start_spinner(color=(128, 0, 255), direction=-1)  # Speaking spinner
+                        light_ring.stop_spinner()  # 🛑 stop thinking glow
+                        light_ring.start_spinner(color=(128, 0, 255), direction=-1)  # 🗣️ Iris speaks
                         await handle_message(message)
                         light_ring.stop_spinner()
             except Exception as e:
                 print(f"⚠️ Error calling Echo API: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(local_loop())

@@ -78,7 +78,7 @@ def start_pulsing(color=(128, 0, 255), speed=0.03):
 
 
 # For Echo speaking
-def start_spinner(color=(128, 0, 255), delay=0.06, trail_length=5, direction=1):
+def start_spinner(color=(128, 0, 255), delay=0.06, trail_length=8, direction=1):
     global _active, spinner_thread
 
     def spinner_loop():

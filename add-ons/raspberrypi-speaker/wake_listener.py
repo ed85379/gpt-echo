@@ -40,7 +40,7 @@ def listen_for_wakeword():
             dtype='int16',
             blocksize=1024,
             callback=callback,
-            device=2  # Replace with correct device index if needed
+            device=1  # Replace with correct device index if needed
         ):
             buffer = np.array([], dtype=np.int16)
             print("🔁 Listening...")
