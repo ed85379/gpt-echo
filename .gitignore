@@ -70,7 +70,7 @@ journal/*
 profiles/*
 !profiles/.gitkeep
 settings.json
-threshold_config.json
+muse_config.json
 .env
 memory/*
 !memory/.gitkeep
@@ -78,5 +78,5 @@ voice/*
 !voice/.gitkeep
 app/_debug-scripts/
 app/_archive/
-app/frontend/static/avatar.png
+app/_archive/frontend/static/avatar.png
 local-dev/
