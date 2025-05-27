@@ -4,11 +4,13 @@ import os
 from datetime import datetime, timedelta
 from dateutil.parser import isoparse
 import re
+import hashlib
 from cryptography.fernet import Fernet
 from zoneinfo import ZoneInfo
 from typing import Optional
 from app import config
 from app.core import memory_core
+from app.databases.mongo_connector import mongo
 
 
 
@@ -16,6 +18,8 @@ USER_TIMEZONE = config.USER_TIMEZONE
 SYSTEM_LOGS_DIR = config.SYSTEM_LOGS_DIR
 QUIET_HOURS_START = config.QUIET_HOURS_START
 QUIET_HOURS_END = config.QUIET_HOURS_END
+USER_NAME = config.USER_NAME
+MUSE_NAME = config.MUSE_NAME
 
 os.makedirs(SYSTEM_LOGS_DIR, exist_ok=True)
 
@@ -67,18 +71,19 @@ def get_quiet_hours_end_today() -> datetime:
 
 def get_last_user_activity_timestamp() -> Optional[str]:
     """
-    Returns the timestamp of the most recent user message from today's log.
+    Returns the timestamp of the most recent user message from the conversation log.
     """
-    now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
-    date_str = now.strftime("%Y-%m-%d")
-    logs = memory_core.load_log_for_date(date_str)
-
-    # Iterate in reverse to find the most recent 'user' message
-    for entry in reversed(logs):
-        if entry.get("role") == "user" and entry.get("message"):
-            return entry.get("timestamp")
-
+    last_user_entry = mongo.find_logs(
+        collection_name="muse_conversations",
+        query={"role": "user"},
+        limit=1,
+        sort_field="timestamp",
+        ascending=False
+    )
+    if last_user_entry and last_user_entry[0].get("message"):
+        return last_user_entry[0].get("timestamp")
     return None  # No user activity found
+
 
 def parse_remind_time(remind_at_str):
     try:
@@ -133,3 +138,50 @@ def decrypt_text(token: str) -> str:
     return fernet.decrypt(token.encode()).decode()
 
 
+def format_context_entry(e):
+    role = e.get("role", "")
+    if role == "user":
+        name = USER_NAME
+    elif role == "muse":
+        name = MUSE_NAME
+    else:
+        name = role.capitalize() if role else "Unknown"
+
+    # Format timestamp
+    ts = e.get("timestamp")
+    if ts:
+        try:
+            if isinstance(ts, datetime):
+                dt = ts
+            else:
+                dt = datetime.fromisoformat(ts)
+            # Convert to user timezone if not naive
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=ZoneInfo('UTC'))
+            dt = dt.astimezone(ZoneInfo(USER_TIMEZONE))
+            time_str = dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            time_str = str(ts)
+    else:
+        time_str = ""
+
+    msg = e.get("message", "")
+    # Combine
+    return f"[{time_str}] {name}: {msg}"
+
+
+def get_local_time():
+    """
+    Returns the current local time formatted cleanly.
+    """
+    now = datetime.now(ZoneInfo(USER_TIMEZONE))
+    return now.strftime("%Y-%m-%d %H:%M")
+
+def align_cron_for_croniter(cron_string):
+    fields = cron_string.strip().split()
+    if len(fields) == 7 and fields[5] == "*":
+        # Save the seconds (field 0)
+        seconds = fields[0]
+        # Shift fields 1–5 left
+        fields = fields[1:6] + [seconds, fields[6]]
+    return ' '.join(fields)

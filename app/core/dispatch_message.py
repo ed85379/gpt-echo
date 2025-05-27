@@ -4,7 +4,7 @@ from app.interfaces import websocket_server
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
-ECHO_NAME = config.ECHO_NAME
+MUSE_NAME = config.MUSE_NAME
 OPENAI_MODEL = config.OPENAI_MODEL
 DISCORD_GUILD_NAME = config.DISCORD_GUILD_NAME
 DISCORD_CHANNEL_NAME = config.DISCORD_CHANNEL_NAME
@@ -18,7 +18,7 @@ async def send_to_discord(message_content):
 
     @client.event
     async def on_ready():
-        print(f"{ECHO_NAME} connected as {client.user}")
+        print(f"{MUSE_NAME} connected as {client.user}")
 
         # Find the guild and channel
         guild = discord.utils.get(client.guilds, name=DISCORD_GUILD_NAME)

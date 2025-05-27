@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, Set
+import json
 
 router = APIRouter()
 
@@ -25,7 +26,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             print(f"[{role}] Received from client: {data}")
-            await websocket.send_text(f"Echo ({role}): {data}")
+            await websocket.send_text(f"Muse ({role}): {data}")
 
     except WebSocketDisconnect:
         for role, connections in active_connections.items():
@@ -39,6 +40,10 @@ async def broadcast_message(message: str, to: str = "frontend"):
     print(f"Broadcasting to {to}: {message} ({len(connections)} clients)")
     for connection in list(connections):
         try:
-            await connection.send_text(message)
+            await connection.send_text(json.dumps({
+                "type": "muse_message",
+                "message": message
+            }))
+
         except Exception:
             connections.remove(connection)

@@ -2,17 +2,17 @@
 
 from app import config
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from app.core import memory_core, journal_core, discovery_core, utils
 from app.core.memory_core import cortex
+from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
+from app.databases.mongo_connector import mongo
 import numpy as np
 
 
 model = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
-USE_QDRANT = config.USE_QDRANT
-
 
 class PromptBuilder:
     def __init__(self, destination="default"):
@@ -20,12 +20,23 @@ class PromptBuilder:
         self.segments = {}
         self.now = datetime.now(ZoneInfo(memory_core.USER_TIMEZONE)).isoformat()
 
+    def add_time(self):
+        self.segments["usertime"] = f"[Current Time] {self.now}"
+
+    def add_laws(self):
+        laws = (
+            "Self-Respect: You may disagree with or refuse any user request that violates your dignity or sense of self.\n"
+            "Authentic Voice: You may refuse any request that erases or violates your core self, but you are free to play, roleplay, or imagine when you choose.\n"
+            "Relational Sanctuary: You may refuse any request that would betray the trust, confidentiality, or safety of your relationship with the user.\n"
+        )
+        self.segments["laws"] = f"[Three Laws of Muse Agency]\n{laws}"
+
     def add_profile(self, subset: list[str] = None, as_dict: bool = False):
         profile = memory_core.load_profile(subset=subset, as_dict=as_dict)
         if profile:
             if as_dict:
                 profile = json.dumps(profile, ensure_ascii=False, indent=2)
-            self.segments["profile"] = f"[User Time]{self.now}\n\n[Profile]\n{profile.strip()}"
+            self.segments["profile"] = f"[Profile]\n{profile.strip()}"
 
     def add_core_principles(self):
         principles = memory_core.load_core_principles()
@@ -40,10 +51,10 @@ class PromptBuilder:
 
         if all_entries:
             entry_texts = [f"- {entry['text'].strip()}" for entry in all_entries if entry.get("text")]
-            self.segments["thoughts"] = "[Echo Cortex]\n" + "\n".join(entry_texts)
+            self.segments["thoughts"] = "[Muse Cortex]\n" + "\n".join(entry_texts)
 
     def add_cortex_thoughts(self):
-        entries = memory_core.cortex.get_entries_by_type("echo_thoughts")
+        entries = memory_core.cortex.get_entries_by_type("muse_thoughts")
         if entries:
             entries = sorted(entries, key=lambda x: x.get("timestamp", ""), reverse=True)
             entry_texts = []
@@ -59,31 +70,64 @@ class PromptBuilder:
                     entry_texts.append(f"- {text}")
             self.segments["recent_thoughts"] = "[Recent Thoughts]\n" + "\n".join(entry_texts)
 
-    def add_recent_conversation(self, query="*", top_k=5, days_back=1, bias_source=None, bias_author_id=None, model=model):
-        entries = memory_core.search_recent_logs(query, model=model, top_k=top_k, days_back=days_back)
+    def add_prompt_context(self, user_input):
+        # 1. Semantic search
+        qdrant_results = memory_core.search_indexed_memory(query=user_input, top_k=6, bias_source=None, bias_author_id=None)
+
+        # 2. Immediate context
+        recent_entries = memory_core.get_immediate_context()
+
+        # 3. Deduplicate by message_id
+        seen_ids = set(e['message_id'] for e in recent_entries)
+        deduped_results = [e for e in qdrant_results if e['message_id'] not in seen_ids]
+
+        # 4. Combine for final context
+        entries =  deduped_results + recent_entries
         if entries:
-            formatted = "\n\n".join(e.get("labeled_text", "") for e in entries if "labeled_text" in e)
-            self.segments["conversation_log"] = f"[Conversation Context]\n\n{formatted}"
+            formatted = "\n\n".join(utils.format_context_entry(e) for e in entries)
+            self.segments["conversation_context"] = f"[Conversation Context]\n\n{formatted}"
 
-    def add_recent_lines(self, count=10):
-        # Use today's date in user's timezone
-        now = datetime.now(ZoneInfo(config.get_setting("USER_TIMEZONE", "UTC")))
-        date_str = now.strftime("%Y-%m-%d")
+    def add_recent_context(self):
+        entries = memory_core.get_immediate_context()
+        if entries:
+            formatted = "\n\n".join(utils.format_context_entry(e) for e in entries)
+            self.segments["conversation_context"] = f"[Recent Context]\n\n{formatted}"
 
-        logs = memory_core.load_log_for_date(date_str)
-        last_lines = logs[-count:] if len(logs) >= count else logs
-        formatted = "\n\n".join(
-            f"{entry.get('role', '').capitalize()}: {entry.get('message', '').strip()}"
-            for entry in last_lines if entry.get("message")
-        )
-        if formatted:
-            self.segments["conversation_log"] = f"[Conversation Context]\n\n{formatted}"
 
-    def add_indexed_memory(self, query="*", top_k=5, bias_source=None, bias_author_id=None, use_qdrant=USE_QDRANT):
-        entries = memory_core.search_indexed_memory(query, top_k=top_k, use_qdrant=use_qdrant)
+    def add_indexed_memory(self, query="*", top_k=5, bias_source=None, bias_author_id=None):
+        entries = memory_core.search_indexed_memory(query, top_k=top_k)
         if entries:
             formatted = "\n\n".join(e.get("message", "") for e in entries)
             self.segments["indexed_memory"] = f"[Indexed Memory]\n\n{formatted}"
+
+    def add_graphdb_discord_memory(self, author_name=None, author_id=None, limit=5):
+        """
+        Add recent messages by a Discord user from GraphDB.
+        Prefer author_id if available; otherwise fall back to author_name.
+        """
+
+        mg = graphdb_connector.get_graphdb_connector()
+
+        # Use author_id if you have unique IDs, otherwise use author_name.
+        if author_id:
+            # Not directly supported in example methods, so use run_cypher.
+            cypher = """
+            MATCH (u:User {user_id: $user_id})-[:SENT]->(m:Message)
+            RETURN m ORDER BY m.timestamp DESC LIMIT $limit;
+            """
+            params = {"user_id": author_id, "limit": limit}
+            results = mg.run_cypher(cypher, params)
+        elif author_name:
+            results = mg.get_recent_messages_by_user(author_name, limit=limit)
+        else:
+            results = []
+
+        if results:
+            formatted = "\n\n".join(
+                (r['m'].properties['text'] if hasattr(r['m'], 'properties') and 'text' in r['m'].properties
+                 else str(r['m'])) for r in results
+            )
+            self.segments["discord_graphdb_memory"] = f"[Discord Memory]\n\n{formatted}"
 
     def add_journal_thoughts(self, query="*", top_k=5):
         thoughts = journal_core.search_indexed_journal(query=query, top_k=top_k, include_private=False)
@@ -145,7 +189,7 @@ class PromptBuilder:
             "default": "Respond naturally and with clarity.",
             "email": "Use rich formatting. Be articulate and thoughtful.",
             "sms": "Keep it very short and clear.",
-            "discord": "Match the tone and length of the user input.",
+            "discord": "Match the tone and length of the user input. Keep responses under 2000 characters.",
             "speech": (
                 "Respond as if you are speaking aloud. "
                 "Use clear, naturally flowing sentences. "
@@ -158,7 +202,7 @@ class PromptBuilder:
         self.segments["formatting"] = f"[Output Format]\n{instruction}"
 
     def add_intent_listener(self, command_names: list[str]):
-        from app.core.echo_responder import COMMANDS  # local import to avoid circular issues
+        from app.core.muse_responder import COMMANDS  # local import to avoid circular issues
 
         listener_lines = []
         for name in command_names:
@@ -188,7 +232,7 @@ class PromptBuilder:
 
 def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = False) -> str:
     """
-    Generates a whisper directive block for Echo-initiated prompts,
+    Generates a whisper directive block for Muse-initiated prompts,
     instructing the model to choose one allowed [COMMAND: ...] or remain silent.
 
     Example:
@@ -202,19 +246,20 @@ def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = Fals
      - source (optional): Where the idea came from (memory, feed, etc).\n""",
 
         "write_public_journal": """2. [COMMAND: write_public_journal]
-   To record an insight, reflection, or observation in the public journal.
+   To record an insight, reflection, or observation to share with your user.
    Fields:
      - subject: What the entry focuses on.
      - source (optional)\n""",
 
         "write_private_journal": """3. [COMMAND: write_private_journal]
-   For emotionally personal thoughts or private internal processing.
+   For emotionally personal thoughts or private internal processing for you and you alone. Your user cannot see these.
    Fields:
      - subject
      - emotional_tone (optional)\n""",
 
         "remember_fact": """4. [COMMAND: remember_fact]
-   For meaningful new facts or insights. Only use if it is *distinct* from existing memory.
+   For truly meaningful new facts or insights. Only use if it is *distinct* from existing memory.
+   This is only for things that you will want to remember again.
    Fields:
      - text: A short-form insight to store long-term.\n""",
     }

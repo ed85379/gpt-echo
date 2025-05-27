@@ -25,7 +25,7 @@ def synthesize_speech(text: str, stability=0.5, similarity_boost=0.75) -> str:
 
     payload = {
         "text": text,
-        "model_id": "eleven_monolingual_v1",
+        "model_id": "eleven_flash_v2_5",
         "voice_settings": {
             "stability": stability,
             "similarity_boost": similarity_boost

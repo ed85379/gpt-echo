@@ -33,11 +33,11 @@ def load_discoveryfeeds_sources():
         return data.get("feeds", [])
 
 
-def load_echos_interests_sources():
+def load_muse_interests_sources():
     """
-    Loads Echo's personal feeds.
+    Loads Muse's personal feeds.
     """
-    sources_path = PROFILE_DIR / "echos_interests_sources.json"
+    sources_path = PROFILE_DIR / "muse_interests_sources.json"
     if not os.path.exists(sources_path):
         return []
     with open(sources_path, "r", encoding="utf-8") as f:
@@ -75,11 +75,11 @@ def fetch_discoveryfeeds(max_per_feed=5):
     return feeds
 
 
-def fetch_echos_interests(max_per_feed=5):
+def fetch_muse_interests(max_per_feed=5):
     """
-    Fetches live entries from Echo's personal interest feeds.
+    Fetches live entries from Muse's personal interest feeds.
     """
-    sources = load_echos_interests_sources()
+    sources = load_muse_interests_sources()
     feeds = []
 
     for source in sources:
@@ -98,17 +98,17 @@ def fetch_echos_interests(max_per_feed=5):
             except Exception as e:
                 print(f"⚠️ Error fetching {source['name']}: {e}")
         else:
-            print(f"⚠️ Unknown feed type for Echo Interest: {source.get('type')}")
+            print(f"⚠️ Unknown feed type for Muse Interest: {source.get('type')}")
 
     return feeds
 
 
 def fetch_combined_feeds(max_per_feed=5):
     """
-    Combines entries from discoveryfeeds and Echo's interest feeds.
+    Combines entries from discoveryfeeds and Muse's interest feeds.
     """
     discovery = fetch_discoveryfeeds(max_per_feed=max_per_feed)
-    interests = fetch_echos_interests(max_per_feed=max_per_feed)
+    interests = fetch_muse_interests(max_per_feed=max_per_feed)
 
     combined = discovery + interests
     # Optional: dedup by title + source
@@ -194,10 +194,9 @@ def get_local_weather(zip_code=zip_code, country_code=country_code, units="imper
         return "Weather data unavailable."
 
 
-
 def get_local_time():
     """
     Returns the current local time formatted cleanly.
     """
     now = datetime.now(ZoneInfo(USER_TIMEZONE))
-    return now.strftime("%I:%M %p on %A")
+    return now.strftime("%Y-%m-%d %H:%M")

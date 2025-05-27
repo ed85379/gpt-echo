@@ -14,6 +14,19 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
 
+  memgraph:
+    image: memgraph/memgraph-platform:latest
+    ports:
+      - "7687:7687"
+      - "3001:3000"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    environment:
+      - MEMGRAPH_BOLT_SERVER_NAME=localhost
+      - MEMGRAPH_BOLT_LISTEN_ADDRESS=0.0.0.0:7687
+
+
 volumes:
   mongo_data:
   qdrant_storage:
+  memgraph_data:

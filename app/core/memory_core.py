@@ -1,16 +1,18 @@
 # <editor-fold desc="🔧 Imports and Configuration">
-import re
-import os
 import json
-import pickle
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil.parser import isoparse
+from dateutil.parser import parse as parse_datetime
 from zoneinfo import ZoneInfo
-import faiss
+from bson import ObjectId
+from bson.errors import InvalidId
 from sentence_transformers import SentenceTransformer
-import numpy as np
+from croniter import croniter
 from app import config
 from app.core import utils
+from app.databases.mongo_connector import mongo
+from app.services import openai_client
+from app.databases import memory_indexer
 
 
 # </editor-fold>
@@ -20,17 +22,11 @@ from app.core import utils
 # --------------------------
 # <editor-fold desc="🗂 Directory Setup & Constants">
 PROJECT_ROOT = config.PROJECT_ROOT
-USE_QDRANT = config.USE_QDRANT
-LOGS_DIR = config.LOGS_DIR
-CHATGPT_LOGS_DIR = config.CHATGPT_LOGS_DIR
-MEMORY_DIR = config.MEMORY_DIR
-INDEX_DIR = MEMORY_DIR
 PROFILE_DIR = config.PROFILE_DIR
 USER_TIMEZONE = config.USER_TIMEZONE
-ECHO_NAME = config.ECHO_NAME
-INDEX_FILE = INDEX_DIR / "memory_index.faiss"
-INDEX_MAPPING_FILE = INDEX_DIR / "index_mapping.pkl"
-VALID_ROLES = {"user", "echo", "friend"}
+MUSE_NAME = config.MUSE_NAME
+VALID_ROLES = {"user", "muse", "friend"}
+MONGO_CONVERSATION_COLLECTION = config.MONGO_CONVERSATION_COLLECTION
 model = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
 # </editor-fold>
 
@@ -38,40 +34,131 @@ model = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
 # Chronicle Logging
 # --------------------------
 # <editor-fold desc="📝 Logging Functions">
-def log_message(role, content, source="frontend", metadata=None):
+def log_message(role, content, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
     """
-    Log a message from any source into the Echo system.
+    Log a message from any source into the Muse system.
+    If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
+    """
+    # Normalize timestamp if provided
+    if timestamp:
+        if isinstance(timestamp, str):
+            try:
+                timestamp = parse_datetime(timestamp)
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                else:
+                    timestamp = timestamp.astimezone(timezone.utc)
+            except Exception as e:
+                print(f"[timestamp parse error]: {e}")
+                timestamp = datetime.now(timezone.utc)
+        elif not isinstance(timestamp, datetime):
+            # Unknown format, fallback
+            print(f"[timestamp type error]: Unrecognized timestamp type: {type(timestamp)}")
+            timestamp = datetime.now(timezone.utc)
+    else:
+        timestamp = datetime.now(timezone.utc)
 
-    Args:
-        role (str): 'echo', 'user', 'friend', or 'other'
-        content (str): The actual message content
-        source (str): 'frontend', 'discord', 'sms', 'speaker', etc.
-        metadata (dict, optional): Additional context info about the message
-    """
-    os.makedirs(LOGS_DIR, exist_ok=True)
-    timestamp = datetime.now(ZoneInfo(USER_TIMEZONE)).isoformat()
+    # Always auto-tag the message
+    try:
+        auto_tags = openai_client.get_openai_autotags(content)
+    except Exception as e:
+        auto_tags = []
+        print(f"[auto-tag error]: {e}")
 
     log_entry = {
         "timestamp": timestamp,
         "role": role,
         "source": source,
         "message": content,
-        "metadata": metadata or {}
+        "auto_tags": auto_tags,
+        "user_tags": user_tags,
+        "flags": flags,
+        "metadata": metadata or {},
+        "updated_on": timestamp
     }
 
-    with open(get_log_filename(), "a", encoding="utf-8") as f:
-        f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    try:
+        log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
+        mongo.insert_log(MONGO_CONVERSATION_COLLECTION, log_entry)
+        memory_indexer.build_index(message_id=log_entry["message_id"])
+    except Exception as e:
+        with open("message_backup.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, default=str) + "\n")
 
-def get_log_filename():
-    utc_date_str = datetime.utcnow().strftime("%Y-%m-%d")
-    return os.path.join(LOGS_DIR, f"echo-{utc_date_str}.jsonl")
 
-def read_today_log():
-    path = get_log_filename()
-    if not os.path.exists(path):
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        return [json.loads(line.strip()) for line in f if line.strip()]
+def log_message_test(role, content, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
+    """
+    Log a message from any source into the Muse system.
+    If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
+    """
+    # Normalize timestamp if provided
+    if timestamp:
+        if isinstance(timestamp, str):
+            try:
+                timestamp = parse_datetime(timestamp)
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                else:
+                    timestamp = timestamp.astimezone(timezone.utc)
+            except Exception as e:
+                print(f"[timestamp parse error]: {e}")
+                timestamp = datetime.now(timezone.utc)
+        elif not isinstance(timestamp, datetime):
+            # Unknown format, fallback
+            print(f"[timestamp type error]: Unrecognized timestamp type: {type(timestamp)}")
+            timestamp = datetime.now(timezone.utc)
+    else:
+        timestamp = datetime.now(timezone.utc)
+
+    # Always auto-tag the message
+    try:
+        auto_tags = openai_client.get_openai_autotags(content)
+    except Exception as e:
+        auto_tags = []
+        print(f"[auto-tag error]: {e}")
+
+    log_entry = {
+        "timestamp": timestamp,
+        "role": role,
+        "source": source,
+        "message": content,
+        "auto_tags": auto_tags,
+        "user_tags": user_tags,
+        "flags": flags,
+        "metadata": metadata or {},
+        "updated_on": timestamp
+    }
+
+    try:
+        log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
+        mongo.insert_log("test_collection", log_entry)
+        ## Do not index for tests
+        #memory_indexer.build_index(message_id=log_entry["message_id"])
+    except Exception as e:
+        with open("message_backup.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, default=str) + "\n")
+
+def do_import(collection):
+    temp_coll = mongo.db[collection]
+    main_coll = mongo.db[MONGO_CONVERSATION_COLLECTION]
+
+    imported = 0
+    total = temp_coll.count_documents({"imported": {"$ne": True}})
+    for doc in temp_coll.find({"imported": {"$ne": True}}):
+        log_message(
+            role=doc.get("role"),
+            content=doc.get("message"),
+            source=doc.get("source"),
+            timestamp=doc.get("timestamp"),
+        )
+        temp_coll.update_one({"_id": doc["_id"]}, {"$set": {"imported": True}})
+        imported += 1
+
+    mongo.db.import_history.update_one(
+        {"collection": collection},
+        {"$set": {"processing": False, "status": "imported"}}
+    )
+    print(f"Imported {imported} of {total} messages for {collection}")
 
 # </editor-fold>
 
@@ -79,122 +166,33 @@ def read_today_log():
 # Memory Vector Indexing
 # --------------------------
 # <editor-fold desc="📚 Memory Vector Indexing">
-def load_logs(date_str):
-    log_path = os.path.join(LOGS_DIR, f"echo-{date_str}.jsonl")
-    if not os.path.exists(log_path):
-        return []
-    entries = []
-    with open(log_path, "r", encoding="utf-8") as f:
-        for line in f:
-            log_entry = json.loads(line)
-            if log_entry.get("role") in VALID_ROLES:
-                entries.append(log_entry)
-    return entries
-
-def load_logs_from_path(log_path):
-    if not os.path.exists(log_path):
-        return []
-    entries = []
-    with open(log_path, "r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                log_entry = json.loads(line)
-                if log_entry.get("role") in VALID_ROLES:
-                    entries.append(log_entry)
-            except Exception:
-                continue
-    return entries
-
-
-def build_index(use_qdrant=USE_QDRANT, dryrun=False):
-    from app.core.ingestion_tracker import is_ingested, mark_ingested
-    from app.databases.qdrant_connector import index_to_qdrant
-
-    echo_entries = []
-    chatgpt_entries = []
-    qdrant_echo_entries = []
-    qdrant_chatgpt_entries = []
-
-    seen_filenames = set()
-    today_utc = datetime.utcnow().strftime("%Y-%m-%d")
-
-    def process_logs(log_dir, source_label, entry_collector, qdrant_collector, manifest_key):
-        for filename in os.listdir(log_dir):
-            if not filename.endswith(".jsonl"):
-                continue
-            if filename in seen_filenames:
-                continue
-            seen_filenames.add(filename)
-
-            match = re.search(r"(\d{4}-\d{2}-\d{2})", filename)
-            if not match:
-                continue
-            date_part = match.group(1)
-            if date_part == today_utc:
-                continue  # Skip today’s logs to avoid partial ingestion
-
-            print(f"🟣 Checking {source_label} log file: {filename} for date: {date_part}")
-
-            needs_faiss = not is_ingested(filename, system="faiss", log_type=manifest_key)
-            needs_qdrant = use_qdrant and not is_ingested(filename, system="qdrant", log_type=manifest_key)
-
-            if needs_faiss or needs_qdrant:
-                log_path = os.path.join(log_dir, filename)
-                daily_entries = load_logs_from_path(log_path)
-                print(f"📝 Found {len(daily_entries)} entries for {date_part}")
-
-                if needs_faiss:
-                    entry_collector.extend(daily_entries)
-                    if not dryrun:
-                        mark_ingested(filename, system="faiss", log_type=manifest_key)
-
-                if needs_qdrant:
-                    qdrant_collector.extend(daily_entries)
-                    if not dryrun:
-                        mark_ingested(filename, system="qdrant", log_type=manifest_key)
-
-    process_logs(LOGS_DIR, "Echo", echo_entries, qdrant_echo_entries, "echo")
-    process_logs(CHATGPT_LOGS_DIR, "ChatGPT", chatgpt_entries, qdrant_chatgpt_entries, "chatgpt")
-
-    if dryrun:
-        print(f"💡 [Dry Run] Would index {len(echo_entries)} Echo entries and {len(chatgpt_entries)} ChatGPT entries to FAISS.")
-        print(f"💡 [Dry Run] Would index {len(qdrant_echo_entries)} Echo entries and {len(qdrant_chatgpt_entries)} ChatGPT entries to Qdrant.")
-        return
-
-    all_faiss_entries = echo_entries + chatgpt_entries
-    if all_faiss_entries:
-        vectors = model.encode([e["message"] for e in all_faiss_entries])
-        dim = vectors.shape[1]
-        index = faiss.IndexFlatL2(dim)
-        index.add(vectors)
-
-        faiss.write_index(index, str(INDEX_FILE))
-        with open(INDEX_MAPPING_FILE, "wb") as f:
-            pickle.dump(all_faiss_entries, f)
-
-        print(f"✅ Indexed {len(all_faiss_entries)} total entries to FAISS.")
-    else:
-        print("📭 No new log data found to index in FAISS.")
-
-    all_qdrant_entries = qdrant_echo_entries + qdrant_chatgpt_entries
-    if use_qdrant and all_qdrant_entries:
-        qdrant_texts = [e["message"] for e in all_qdrant_entries]
-        qdrant_vectors = model.encode(qdrant_texts)
-        index_to_qdrant(all_qdrant_entries, qdrant_vectors)
-
-        print(f"✅ Indexed {len(all_qdrant_entries)} total entries to Qdrant.")
-
+def get_immediate_context(n=10, hours=2):
+    now = datetime.utcnow()
+    since = now - timedelta(hours=hours)
+    query = {
+       "timestamp": {"$gte": since}
+    }
+    # We want the *most recent* messages, so sort descending (ascending=False)
+    # This will get up to N most recent within the time window
+    logs = mongo.find_logs(
+        collection_name="muse_conversations",
+        query=query,
+        limit=n,
+        sort_field="timestamp",
+        ascending=False
+    )
+    # Now reverse so they're in chronological order (oldest first)
+    return list(reversed(logs))
 
 def search_indexed_memory(
     query,
     top_k=5,
-    use_qdrant=False,
     bias_author_id=None,
     bias_source=None,
     score_boost=0.1,
     source_boost=0.1,
-    penalize_echo=True,
-    echo_penalty=0.05
+    penalize_muse=True,
+    muse_penalty=0.05
 ):
     """
     Search indexed memory via Qdrant or FAISS.
@@ -207,211 +205,53 @@ def search_indexed_memory(
     - bias_source (str|None): Optional. Boost results from this source (e.g., 'discord').
     - score_boost (float): Score boost for matching author_id.
     - source_boost (float): Score boost for matching source.
-    - penalize_echo (bool): If True, apply a penalty to Echo's own messages.
-    - echo_penalty (float): Score penalty for Echo's own responses.
+    - penalize_muse (bool): If True, apply a penalty to Muse's own messages.
+    - muse_penalty (float): Score penalty for Muse's own responses.
 
     Returns:
     - List[dict]: Ranked search results.
     """
     query_vector = model.encode([query])[0]
 
-    if use_qdrant:
-        from qdrant_client import QdrantClient
-        from app import config
 
-        QDRANT_HOST = config.get_setting("system_settings.QDRANT_HOST", "localhost")
-        QDRANT_PORT = int(config.get_setting("system_settings.QDRANT_PORT", "6333"))
-        QDRANT_COLLECTION = config.get_setting("system_settings.QDRANT_COLLECTION", "echo_memory")
+    from qdrant_client import QdrantClient
+    from app import config
 
-        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        search_result = client.search(
-            collection_name=QDRANT_COLLECTION,
-            query_vector=query_vector.tolist(),
-            limit=top_k
-        )
+    QDRANT_HOST = config.get_setting("system_settings.QDRANT_HOST", "localhost")
+    QDRANT_PORT = int(config.get_setting("system_settings.QDRANT_PORT", "6333"))
+    QDRANT_COLLECTION = config.get_setting("system_settings.QDRANT_COLLECTION", "muse_memory")
 
-        results = []
-        for hit in search_result:
-            entry = {
-                "timestamp": hit.payload.get("timestamp"),
-                "role": hit.payload.get("role"),
-                "source": hit.payload.get("source"),
-                "message": hit.payload.get("message"),
-                "metadata": hit.payload.get("metadata", {}),
-                "score": hit.score
-            }
-
-            if bias_author_id and entry["metadata"].get("author_id") == bias_author_id:
-                entry["score"] += score_boost
-            if bias_source and entry.get("source") == bias_source:
-                entry["score"] += source_boost
-            if penalize_echo and entry.get("role") == "echo":
-                entry["score"] -= echo_penalty
-
-            results.append(entry)
-
-        return sorted(results, key=lambda x: x["score"], reverse=True)
-
-    # FAISS fallback
-    if not os.path.exists(INDEX_FILE) or not os.path.exists(INDEX_MAPPING_FILE):
-        return []
-
-    index = faiss.read_index(str(INDEX_FILE))
-    with open(INDEX_MAPPING_FILE, "rb") as f:
-        entries = pickle.load(f)
-
-    scores, indices = index.search(np.array([query_vector]), top_k)
+    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    search_result = client.search(
+        collection_name=QDRANT_COLLECTION,
+        query_vector=query_vector.tolist(),
+        limit=top_k
+    )
 
     results = []
-    for idx, score in zip(indices[0], scores[0]):
-        if 0 <= idx < len(entries):
-            entry = entries[idx]
-            entry["score"] = float(score)
+    for hit in search_result:
+        entry = {
+            "timestamp": hit.payload.get("timestamp"),
+            "message_id": hit.payload.get("message_id"),
+            "role": hit.payload.get("role"),
+            "source": hit.payload.get("source"),
+            "message": hit.payload.get("message"),
+            "metadata": hit.payload.get("metadata", {}),
+            "score": hit.score
+        }
 
-            if bias_author_id and entry["metadata"].get("author_id") == bias_author_id:
-                entry["score"] += score_boost
-            if bias_source and entry.get("source") == bias_source:
-                entry["score"] += source_boost
-            if penalize_echo and entry.get("role") == "echo":
-                entry["score"] -= echo_penalty
+        if bias_author_id and entry["metadata"].get("author_id") == bias_author_id:
+            entry["score"] += score_boost
+        if bias_source and entry.get("source") == bias_source:
+            entry["score"] += source_boost
+        if penalize_muse and entry.get("role") == "muse":
+            entry["score"] -= muse_penalty
 
-            results.append(entry)
+        results.append(entry)
 
     return sorted(results, key=lambda x: x["score"], reverse=True)
 
 
-
-
-# </editor-fold>
-
-# <editor-fold desc="🕰️ Log-Based Memory Search (Recent + Today)">
-def search_today_log(query, top_k=5):
-    log_entries = read_today_log()
-    pairs = [
-        f'User: {log_entries[i]["message"]}\n{ECHO_NAME}: {log_entries[i + 1]["message"]}'
-        for i in range(0, len(log_entries) - 1, 2)
-        if log_entries[i]["role"] == "user" and log_entries[i + 1]["role"] == "echo"
-    ]
-    if not pairs:
-        return []
-
-    vectors = np.array(model.encode(pairs), dtype="float32")
-    query_vec = np.array(model.encode([query])[0], dtype="float32")
-
-    query_norm = np.linalg.norm(query_vec).astype("float32")
-    vector_norms = np.linalg.norm(vectors, axis=1)
-    denominator = vector_norms * query_norm
-    denominator = np.where(denominator == 0, 1e-8, denominator)
-
-    scores = np.dot(vectors, query_vec) / denominator
-    top_indices = np.argsort(scores)[::-1][:top_k]
-    return [pairs[i] for i in top_indices]
-
-
-def load_log_for_date(date_str):
-    filename = f"echo-{date_str}.jsonl"
-    log_path = LOGS_DIR / filename
-    entries = []
-    if log_path.exists():
-        with open(log_path, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    entry = json.loads(line)
-                    if entry.get("role") in ("user", "echo"):
-                        entries.append(entry)
-                except Exception:
-                    continue
-    return entries
-
-def search_recent_logs(query, top_k=5, days_back=1, max_entries=100, model=None, bias_source=None, bias_author_id=None, score_boost=0.05):
-    """Semantic search over individual log messages with optional author bias and embedded identity awareness."""
-    if model is None:
-        raise ValueError("Embedding model must be provided.")
-
-    all_entries = []
-    today = datetime.now()
-    for delta in range(days_back + 1):
-        day = today - timedelta(days=delta)
-        entries = load_log_for_date(day.strftime("%Y-%m-%d"))
-        all_entries.extend(entries)
-        if len(all_entries) >= max_entries:
-            break
-
-    all_entries = all_entries[-max_entries:]  # truncate to max_entries
-
-    # Filter for meaningful roles only
-    entries = [e for e in all_entries if e["role"] in {"user", "friend", "echo"}]
-
-    # Embed message text **with author label** (e.g., "Ed: That’s brilliant.")
-    labeled_texts = [
-        f'{e.get("metadata", {}).get("author_name", e["role"]).strip()}: {e["message"].strip()}'
-        for e in entries
-    ]
-
-    vectors = np.array(model.encode(labeled_texts), dtype="float32")
-    query_vec = np.array(model.encode([query])[0], dtype="float32")
-
-    query_norm = np.linalg.norm(query_vec).astype("float32")
-    vector_norms = np.linalg.norm(vectors, axis=1)
-    denominator = vector_norms * query_norm
-    denominator = np.where(denominator == 0, 1e-8, denominator)
-    scores = np.dot(vectors, query_vec) / denominator
-
-    results = []
-    for entry, labeled_text, score in zip(entries, labeled_texts, scores):
-        if bias_author_id and entry.get("metadata", {}).get("author_id") == bias_author_id:
-            score += score_boost
-        entry["score"] = float(score)
-        entry["labeled_text"] = labeled_text  # Optional: keep for reference
-        results.append(entry)
-
-    return sorted(results, key=lambda x: x["score"], reverse=True)[:top_k]
-
-
-
-# </editor-fold>
-
-# <editor-fold desc="🌐 Combined Memory Search">
-def search_combined_memory(
-    query,
-    top_k=5,
-    use_qdrant=False,
-    bias_author_id=None,
-    bias_source=None,
-    score_boost=0.05,
-    source_boost=0.05,
-    penalize_echo=True,
-    echo_penalty=0.05,
-    model=None
-):
-    from app.core.memory_core import search_recent_logs
-
-    if model is None:
-        raise ValueError("Embedding model must be provided for log similarity search.")
-
-    log_results = search_recent_logs(query, top_k=top_k, model=model)
-    index_results = search_indexed_memory(
-        query,
-        top_k=top_k,
-        use_qdrant=use_qdrant,
-        bias_author_id=bias_author_id,
-        bias_source=bias_source,
-        score_boost=score_boost,
-        source_boost=source_boost,
-        penalize_echo=penalize_echo,
-        echo_penalty=echo_penalty
-    )
-
-    # De-dupe by (timestamp, message) combo
-    seen = set()
-    combined = []
-    for result in log_results + index_results:
-        key = (result.get("timestamp"), result.get("message"))
-        if key not in seen:
-            combined.append(result)
-            seen.add(key)
-
-    return combined[:top_k]
 # </editor-fold>
 
 # --------------------------
@@ -419,7 +259,7 @@ def search_combined_memory(
 # --------------------------
 # <editor-fold desc="👤 Profile and Principle Loaders">
 def load_profile(subset: list[str] = None, as_dict: bool = False):
-    profile_path = PROFILE_DIR / "echo_profile.json"
+    profile_path = PROFILE_DIR / "muse_profile.json"
     if profile_path.exists():
         with open(profile_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -439,20 +279,26 @@ def load_core_principles():
 
 
 # --------------------------
-# EchoCortex Interface
+# MuseCortex Interface
 # --------------------------
-# <editor-fold desc="🧠 EchoCortex Backends (Mongo + Local)">
+# <editor-fold desc="🧠 MuseCortex Backends (Mongo + Local)">
 try:
     from pymongo import MongoClient
     MONGO_ENABLED = True
 except ImportError:
     MONGO_ENABLED = False
 
-class EchoCortexInterface:
+class MuseCortexInterface:
     def get_entries_by_type(self, type_name):
         raise NotImplementedError
 
     def add_entry(self, entry):
+        raise NotImplementedError
+
+    def edit_entry(self, entry_id, new_data):
+        raise NotImplementedError
+
+    def delete_entry(self, entry_id):
         raise NotImplementedError
 
     def get_all_entries(self):
@@ -464,19 +310,38 @@ class EchoCortexInterface:
     def search_cortex_for_timely_reminders(self, window_minutes):
         raise NotImplementedError
 
-class MongoCortexClient(EchoCortexInterface):
+class MongoCortexClient(MuseCortexInterface):
     def __init__(self):
         uri = config.get_setting("memory_settings.MONGO_URI")
         self.client = MongoClient(uri)
-        self.db = self.client["echo_memory"]
-        self.collection = self.db["echo_cortex"]
+        self.db = self.client["muse_memory"]
+        self.collection = self.db["muse_cortex"]
 
     def get_entries_by_type(self, type_name):
         return list(self.collection.find({"type": type_name}))
 
     def add_entry(self, entry):
-        entry["created_at"] = datetime.utcnow().isoformat()
+        entry["created_at"] = datetime.now(timezone.utc).isoformat()
         self.collection.insert_one(entry)
+
+    def edit_entry(self, entry_id, new_data):
+        # Try as ObjectId first, fall back to plain string if it fails
+        query = {"_id": None}
+        try:
+            query["_id"] = ObjectId(entry_id)
+        except (InvalidId, TypeError):
+            query["_id"] = entry_id
+        res = self.collection.update_one(query, {"$set": new_data})
+        return res.modified_count > 0
+
+    def delete_entry(self, entry_id):
+        query = {"_id": None}
+        try:
+            query["_id"] = ObjectId(entry_id)
+        except (InvalidId, TypeError):
+            query["_id"] = entry_id
+        res = self.collection.delete_one(query)
+        return res.deleted_count > 0
 
     def get_all_entries(self):
         return list(self.collection.find())
@@ -484,182 +349,49 @@ class MongoCortexClient(EchoCortexInterface):
     def search_by_tag(self, tag):
         return list(self.collection.find({"tags": tag}))
 
-    def search_cortex_for_timely_reminders(self, window_minutes=1):
-        now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
-        lower_bound = now - timedelta(minutes=window_minutes)
-        upper_bound = now + timedelta(minutes=window_minutes)
+    def search_cortex_for_timely_reminders(self, window_minutes=0.5):
+        user_tz = ZoneInfo(config.USER_TIMEZONE)  # e.g., "America/New_York"
+        now_local = datetime.now(user_tz)
+        lower_bound = now_local - timedelta(minutes=window_minutes)
+        upper_bound = now_local + timedelta(minutes=window_minutes)
 
         reminders = self.get_entries_by_type("reminder")
         triggered = []
 
-        def is_within_window(when):
-            return lower_bound <= when <= upper_bound
-
-        def repeating_should_trigger(entry):
-            repeat = entry.get("repeat")
-            remind_at = entry.get("remind_at")
-            ends_on = entry.get("ends_on")
-
-            try:
-                base_time = utils.parse_remind_time(remind_at)
-                if base_time is None:
-                    return False
-
-                if ends_on:
-                    ends = isoparse(ends_on).astimezone(ZoneInfo(config.USER_TIMEZONE))
-                    if now > ends:
-                        return False
-
-                # Match hour + minute only
-                base_hm = (base_time.hour, base_time.minute)
-                now_hm = (now.hour, now.minute)
-
-                if base_hm != now_hm:
-                    return False
-
-                weekday = now.weekday()  # 0 = Monday, 6 = Sunday
-
-                if repeat == "daily":
-                    return True
-                elif repeat == "weekdays":
-                    return weekday < 5
-                elif repeat == "weekly":
-                    # Support explicit day matching
-                    repeat_on = entry.get("repeat_on")
-                    if repeat_on:
-                        now_day = now.strftime("%A").lower()
-                        return now_day == repeat_on.lower()
-                    else:
-                        # Fallback: assume the weekday of base_time
-                        return weekday == base_time.weekday()
-
-            except Exception as e:
-                print(f"Error parsing repeating reminder: {e}")
-                return False
-
-            return False
-
         for entry in reminders:
+            cron = utils.align_cron_for_croniter(entry.get("cron"))
+            last_triggered = entry.get("last_triggered")
+            created_at = entry.get("created_at") or now_local.isoformat()
+
+            # Parse base_time in user's timezone
+            base_time = datetime.fromisoformat(last_triggered) if last_triggered else datetime.fromisoformat(created_at)
+            if base_time.tzinfo is None:
+                base_time = base_time.replace(tzinfo=user_tz)
+            else:
+                base_time = base_time.astimezone(user_tz)
+
+            # Use croniter in local time
+            itr = croniter(cron, base_time)
             try:
-                raw_time = entry.get("remind_at")
-                when = utils.parse_remind_time(raw_time)
-                # One-time trigger
-                if not entry.get("repeat"):
-                    if is_within_window(when):
-                        triggered.append(entry)
-
-                # Repeating logic
-                elif repeating_should_trigger(entry):
-                    # Create a virtual instance of this reminder for right now
-                    virtual_entry = entry.copy()
-                    virtual_entry["triggered_at"] = now.isoformat()
-                    triggered.append(virtual_entry)
-
+                next_trigger = itr.get_next(datetime)
+                if next_trigger.tzinfo is None:
+                    next_trigger = next_trigger.replace(tzinfo=user_tz)
             except Exception as e:
-                print(f"Reminder check error: {e}")
+                print(f"Error parsing cron for reminder: {e}")
+                continue
+
+            # Compare to local now window
+            if lower_bound <= next_trigger <= upper_bound:
+                ends_on = entry.get("ends_on")
+                if ends_on:
+                    ends = datetime.fromisoformat(ends_on)
+                    if ends.tzinfo is None:
+                        ends = ends.replace(tzinfo=user_tz)
+                    if next_trigger > ends.astimezone(user_tz):
+                        continue  # Past end date
+                triggered.append(entry)
+
         print(f"✅ Found {len(triggered)} reminders ready to fire.")
-
-        return triggered
-
-
-class LocalCortexClient(EchoCortexInterface):
-    def __init__(self):
-        self.file_path = MEMORY_DIR / "echo_cortex.jsonl"
-        self.entries = []
-        if self.file_path.exists():
-            with open(self.file_path, "r", encoding="utf-8") as f:
-                self.entries = [json.loads(line) for line in f if line.strip()]
-
-    def get_entries_by_type(self, type_name):
-        return [e for e in self.entries if e.get("type") == type_name]
-
-    def add_entry(self, entry):
-        entry["created_at"] = datetime.utcnow().isoformat()
-        with open(self.file_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        self.entries.append(entry)
-
-    def get_all_entries(self):
-        return self.entries
-
-    def search_by_tag(self, tag):
-        return [e for e in self.entries if tag in e.get("tags", [])]
-
-    def search_cortex_for_timely_reminders(self, window_minutes=1):
-        now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
-        lower_bound = now - timedelta(minutes=window_minutes)
-        upper_bound = now + timedelta(minutes=window_minutes)
-
-        reminders = self.get_entries_by_type("reminder")
-        triggered = []
-
-        def is_within_window(when):
-            return lower_bound <= when <= upper_bound
-
-        def repeating_should_trigger(entry):
-            repeat = entry.get("repeat")
-            remind_at = entry.get("remind_at")
-            ends_on = entry.get("ends_on")
-
-            try:
-                base_time = utils.parse_remind_time(remind_at)
-                if base_time is None:
-                    return False
-
-                if ends_on:
-                    ends = isoparse(ends_on).astimezone(ZoneInfo(config.USER_TIMEZONE))
-                    if now > ends:
-                        return False
-
-                # Match hour + minute only
-                base_hm = (base_time.hour, base_time.minute)
-                now_hm = (now.hour, now.minute)
-
-                if base_hm != now_hm:
-                    return False
-
-                weekday = now.weekday()  # 0 = Monday, 6 = Sunday
-
-                if repeat == "daily":
-                    return True
-                elif repeat == "weekdays":
-                    return weekday < 5
-                elif repeat == "weekly":
-                    # Support explicit day matching
-                    repeat_on = entry.get("repeat_on")
-                    if repeat_on:
-                        now_day = now.strftime("%A").lower()
-                        return now_day == repeat_on.lower()
-                    else:
-                        # Fallback: assume the weekday of base_time
-                        return weekday == base_time.weekday()
-
-            except Exception as e:
-                print(f"Error parsing repeating reminder: {e}")
-                return False
-
-            return False
-
-        for entry in reminders:
-            try:
-                raw_time = entry.get("remind_at")
-                when = utils.parse_remind_time(raw_time)
-
-                # One-time trigger
-                if not entry.get("repeat"):
-                    if is_within_window(when):
-                        triggered.append(entry)
-
-                # Repeating logic
-                elif repeating_should_trigger(entry):
-                    # Create a virtual instance of this reminder for right now
-                    virtual_entry = entry.copy()
-                    virtual_entry["triggered_at"] = now.isoformat()
-                    triggered.append(virtual_entry)
-
-            except Exception as e:
-                print(f"Reminder check error: {e}")
-
         return triggered
 
 
@@ -670,12 +402,10 @@ class LocalCortexClient(EchoCortexInterface):
 # --------------------------
 # <editor-fold desc="⚙️ Cortex Loader and Global Instance">
 def get_cortex():
-    if MONGO_ENABLED:
-        try:
-            return MongoCortexClient()
-        except Exception as e:
-            print(f"Mongo unavailable: {e}")
-    return LocalCortexClient()
+    try:
+        return MongoCortexClient()
+    except Exception as e:
+        print(f"Mongo unavailable: {e}")
 
 
 # Global instance

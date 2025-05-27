@@ -8,9 +8,6 @@ from app.core import utils
 # ----------------------
 # Config & Constants
 # ----------------------
-
-USE_QDRANT = config.USE_QDRANT
-
 PROJECT_ROOT = config.PROJECT_ROOT
 JOURNAL_DIR = config.JOURNAL_DIR
 JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
@@ -26,7 +23,7 @@ MODEL = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
 def search_journal(query_vector, top_k=5):
     client = qdrant_connector.get_qdrant_client()
     results = client.search(
-        collection_name="echo_journal",
+        collection_name="muse_journal",
         query_vector=query_vector,
         limit=top_k,
         with_payload=True
@@ -59,72 +56,35 @@ def save_journal_catalog(entries):
 # Search Function
 # ----------------------
 
-def search_indexed_journal(query, top_k=5, include_private=False, use_qdrant=USE_QDRANT):
+def search_indexed_journal(query, top_k=5, include_private=False):
     query_vector = MODEL.encode(query).tolist()
     results = []
 
-    if use_qdrant:
-        qdrant_results = search_journal(query_vector, top_k=top_k)
+    qdrant_results = search_journal(query_vector, top_k=top_k)
 
-        for item in qdrant_results:
-            payload = item.payload or {}
-            if not include_private and payload.get("entry_type") == "private":
-                continue
-            results.append({
-                "entry_id": payload.get("entry_id"),
-                "paragraph_index": payload.get("paragraph_index"),
-                "text": payload.get("text", ""),
-                "mood": payload.get("mood"),
-                "tags": payload.get("tags"),
-                "score": item.score,
-                "entry_type": payload.get("entry_type"),
-                "timestamp": payload.get("timestamp")
-            })
-
-
-    else:
-        # FAISS fallback
-        import faiss
-        import numpy as np
-
-        index_path = JOURNAL_DIR / "journal.index"
-        id_map_path = JOURNAL_DIR / "journal_id_map.json"
-
-        if not index_path.exists() or not id_map_path.exists():
-            return []
-
-        index = faiss.read_index(str(index_path))
-        with open(id_map_path, "r") as f:
-            id_map = json.load(f)
-
-        query_np = np.array([query_vector], dtype="float32")
-        scores, indices = index.search(query_np, top_k)
-
-        for score, idx in zip(scores[0], indices[0]):
-            if idx == -1:
-                continue
-            payload = id_map[str(idx)]
-            if not include_private and payload.get("entry_type") == "private":
-                continue
-            results.append({
-                "entry_id": payload.get("entry_id"),
-                "paragraph_index": payload.get("paragraph_index"),
-                "text": payload.get("text", ""),
-                "mood": payload.get("mood"),
-                "tags": payload.get("tags"),
-                "score": float(score),
-                "entry_type": payload.get("entry_type"),
-                "timestamp": payload.get("timestamp")
-            })
-
+    for item in qdrant_results:
+        payload = item.payload or {}
+        if not include_private and payload.get("entry_type") == "private":
+            continue
+        results.append({
+            "entry_id": payload.get("entry_id"),
+            "paragraph_index": payload.get("paragraph_index"),
+            "text": payload.get("text", ""),
+            "mood": payload.get("mood"),
+            "tags": payload.get("tags"),
+            "score": item.score,
+            "entry_type": payload.get("entry_type"),
+            "timestamp": payload.get("timestamp")
+        })
     return results
+
 
 
 # ----------------------
 # Core Function
 # ----------------------
 
-def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="public", source="manual", use_qdrant=USE_QDRANT):
+def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="public", source="manual"):
     ensure_journal_dir()
     now = utils.get_formatted_datetime()
     slug = utils.slugify(title)
@@ -142,7 +102,7 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
         encrypted_body = utils.encrypt_text(body)
         encrypted = True
 
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         f.write(encrypted_body)
 
     # Basic summary: first non-empty line
@@ -165,22 +125,6 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
 
     # Chunk, embed, index (private and public both included)
     paragraphs = [p for p in body.split("\n\n") if p.strip()]
-    import faiss
-    import numpy as np
-
-    faiss_index_path = JOURNAL_DIR / "journal.index"
-    id_map_path = JOURNAL_DIR / "journal_id_map.json"
-
-    if faiss_index_path.exists() and id_map_path.exists():
-        index = faiss.read_index(str(faiss_index_path))
-        with open(id_map_path, "r") as f:
-            id_map = json.load(f)
-    else:
-        index = faiss.IndexFlatL2(384)  # Assuming MiniLM output dimension is 384
-        id_map = {}
-
-    next_id = int(max(map(int, id_map.keys()), default=-1)) + 1
-
     for i, paragraph in enumerate(paragraphs):
         vector = MODEL.encode(paragraph).tolist()
         metadata = {
@@ -193,18 +137,9 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
             "timestamp": now,
             "text": paragraph
         }
-        # Qdrant
-        if use_qdrant:
-            qdrant_connector.upsert_embedding(
-                vector=vector,
-                metadata=metadata,
-                collection="echo_journal"
-            )
-        # FAISS
-        index.add(np.array([vector], dtype="float32"))
-        id_map[str(next_id)] = metadata
-        next_id += 1
-
-    faiss.write_index(index, str(faiss_index_path))
-    with open(id_map_path, "w") as f:
-        json.dump(id_map, f, indent=2)
+        # Only Qdrant indexing now!
+        qdrant_connector.upsert_embedding(
+            vector=vector,
+            metadata=metadata,
+            collection="muse_journal"
+        )

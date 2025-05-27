@@ -13,7 +13,7 @@ qdrant = QdrantClient(
     port=int(QDRANT_PORT)
 )
 
-QDRANT_COLLECTION = "echo_memory"
+QDRANT_COLLECTION = "muse_memory"
 
 def get_qdrant_client():
     return qdrant
@@ -33,6 +33,40 @@ def upsert_embedding(vector, metadata, collection):
     qdrant.upsert(
         collection_name=collection,
         points=[point]
+    )
+
+def message_id_to_uuid(msgid):
+    # Use a deterministic UUID (namespace + message_id)
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, msgid))
+
+## build_index() calls this for embedding records.
+def upsert_single(entry, vector, collection=QDRANT_COLLECTION):
+    metadata = entry.get("metadata", {})
+    payload = {
+        "timestamp": entry.get("timestamp"),
+        "role": entry.get("role"),
+        "source": entry.get("source"),
+        "message": entry.get("message"),
+        "message_id": entry.get("message_id"),
+        "author_id": metadata.get("author_id"),
+        "author_name": metadata.get("author_name"),
+        "server": metadata.get("server"),
+        "channel": metadata.get("channel"),
+        "modality_hint": metadata.get("modality_hint")
+        # Uncomment the next two lines if you want tags included:
+        # "auto_tags": entry.get("auto_tags", []),
+        # "user_tags": entry.get("user_tags", []),
+    }
+    ensure_qdrant_collection(vector_size=len(vector), collection_name=collection)
+    qdrant.upsert(
+        collection_name=collection,
+        points=[
+            qmodels.PointStruct(
+                id = message_id_to_uuid(entry.get("message_id")),
+                vector=vector.tolist(),
+                payload=payload
+            )
+        ]
     )
 
 
