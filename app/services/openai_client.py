@@ -1,23 +1,22 @@
 import openai
 from app import config
+from app.config import muse_config
 
 openai.api_key = config.OPENAI_API_KEY
-MUSE_NAME = config.MUSE_NAME
-OPENAI_MODEL = config.OPENAI_MODEL
 
 # Initialize the OpenAI client
 client = openai.OpenAI()
 
-def get_openai_response(prompt, model=OPENAI_MODEL):
+def get_openai_response(prompt, model=muse_config.get("OPENAI_MODEL")):
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": f"You are {MUSE_NAME}, speaking with emotion and memory."},
+                {"role": "system", "content": f"You are {muse_config.get("MUSE_NAME")}, speaking with emotion and memory."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1000,
+            max_tokens=2000,
         )
         reply = response.choices[0].message.content
         return reply

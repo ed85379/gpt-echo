@@ -2,6 +2,7 @@
 import json
 from sentence_transformers import SentenceTransformer
 from app import config
+from app.config import muse_config
 from app.databases import qdrant_connector
 from app.core import utils
 
@@ -11,10 +12,6 @@ from app.core import utils
 PROJECT_ROOT = config.PROJECT_ROOT
 JOURNAL_DIR = config.JOURNAL_DIR
 JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
-ENABLE_PRIVATE_JOURNAL = config.ENABLE_PRIVATE_JOURNAL
-USER_TIMEZONE = config.USER_TIMEZONE
-MODEL = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
-
 
 # ----------------------
 # Qdrant Search Helper
@@ -57,7 +54,7 @@ def save_journal_catalog(entries):
 # ----------------------
 
 def search_indexed_journal(query, top_k=5, include_private=False):
-    query_vector = MODEL.encode(query).tolist()
+    query_vector = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode(query).tolist()
     results = []
 
     qdrant_results = search_journal(query_vector, top_k=top_k)
@@ -97,7 +94,7 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
     encrypted = False
     encrypted_body = body
     if entry_type == "private":
-        if not ENABLE_PRIVATE_JOURNAL:
+        if not muse_config.get("ENABLE_PRIVATE_JOURNAL"):
             raise Exception("Private journal entries are disabled in config.")
         encrypted_body = utils.encrypt_text(body)
         encrypted = True
@@ -126,7 +123,7 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
     # Chunk, embed, index (private and public both included)
     paragraphs = [p for p in body.split("\n\n") if p.strip()]
     for i, paragraph in enumerate(paragraphs):
-        vector = MODEL.encode(paragraph).tolist()
+        vector = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode(paragraph).tolist()
         metadata = {
             "entry_id": filename,
             "paragraph_index": i,

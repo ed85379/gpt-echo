@@ -1,5 +1,6 @@
 # <editor-fold desc="🔧 Imports and Configuration">
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from dateutil.parser import isoparse
 from dateutil.parser import parse as parse_datetime
@@ -9,6 +10,7 @@ from bson.errors import InvalidId
 from sentence_transformers import SentenceTransformer
 from croniter import croniter
 from app import config
+from app.config import muse_config
 from app.core import utils
 from app.databases.mongo_connector import mongo
 from app.services import openai_client
@@ -23,11 +25,9 @@ from app.databases import memory_indexer
 # <editor-fold desc="🗂 Directory Setup & Constants">
 PROJECT_ROOT = config.PROJECT_ROOT
 PROFILE_DIR = config.PROFILE_DIR
-USER_TIMEZONE = config.USER_TIMEZONE
-MUSE_NAME = config.MUSE_NAME
 VALID_ROLES = {"user", "muse", "friend"}
-MONGO_CONVERSATION_COLLECTION = config.MONGO_CONVERSATION_COLLECTION
 model = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
+
 # </editor-fold>
 
 # --------------------------
@@ -71,7 +71,7 @@ def log_message(role, content, source="frontend", metadata=None, flags=None, use
         "source": source,
         "message": content,
         "auto_tags": auto_tags,
-        "user_tags": user_tags,
+        "user_tags": [],
         "flags": flags,
         "metadata": metadata or {},
         "updated_on": timestamp
@@ -79,7 +79,7 @@ def log_message(role, content, source="frontend", metadata=None, flags=None, use
 
     try:
         log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
-        mongo.insert_log(MONGO_CONVERSATION_COLLECTION, log_entry)
+        mongo.insert_log(muse_config.get("MONGO_CONVERSATION_COLLECTION"), log_entry)
         memory_indexer.build_index(message_id=log_entry["message_id"])
     except Exception as e:
         with open("message_backup.jsonl", "a", encoding="utf-8") as f:
@@ -123,7 +123,7 @@ def log_message_test(role, content, source="frontend", metadata=None, flags=None
         "source": source,
         "message": content,
         "auto_tags": auto_tags,
-        "user_tags": user_tags,
+        "user_tags": user_tags or [],
         "flags": flags,
         "metadata": metadata or {},
         "updated_on": timestamp
@@ -140,7 +140,7 @@ def log_message_test(role, content, source="frontend", metadata=None, flags=None
 
 def do_import(collection):
     temp_coll = mongo.db[collection]
-    main_coll = mongo.db[MONGO_CONVERSATION_COLLECTION]
+    main_coll = mongo.db[muse_config.get("MONGO_CONVERSATION_COLLECTION")]
 
     imported = 0
     total = temp_coll.count_documents({"imported": {"$ne": True}})
@@ -184,6 +184,36 @@ def get_immediate_context(n=10, hours=2):
     # Now reverse so they're in chronological order (oldest first)
     return list(reversed(logs))
 
+def recency_weight(ts, now=None, half_life_hours=36):
+    if not ts:
+        return 1.0
+    if now is None:
+        now = datetime.now(timezone.utc).timestamp()
+    # Convert ts to timestamp float if needed
+    if isinstance(ts, datetime):
+        ts = ts.timestamp()
+    elif isinstance(ts, str):
+        # Try to parse as ISO format
+        try:
+            ts = datetime.fromisoformat(ts)
+            ts = ts.timestamp()
+        except Exception:
+            # Fallback: try parsing other common formats or just ignore
+            return 1.0
+    # Now both are float (seconds since epoch)
+    age_hours = (now - ts) / 3600
+    return 2 ** (-age_hours / half_life_hours)
+
+def tag_weight(payload, tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0):
+    score = 1.0
+    if payload.get("user_tags"):
+        score *= tag_boost
+    if payload.get("muse_tags"):
+        score *= muse_boost
+    if payload.get("remembered"):
+        score *= remembered_boost
+    return score
+
 def search_indexed_memory(
     query,
     top_k=5,
@@ -192,7 +222,9 @@ def search_indexed_memory(
     score_boost=0.1,
     source_boost=0.1,
     penalize_muse=True,
-    muse_penalty=0.05
+    muse_penalty=0.05,
+    recency_half_life=48,         # new
+    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0  # new
 ):
     """
     Search indexed memory via Qdrant or FAISS.
@@ -200,7 +232,6 @@ def search_indexed_memory(
     Parameters:
     - query (str): Search query.
     - top_k (int): Number of top results to return.
-    - use_qdrant (bool): Whether to use Qdrant instead of FAISS.
     - bias_author_id (str|None): Optional. Boost results by this author.
     - bias_source (str|None): Optional. Boost results from this source (e.g., 'discord').
     - score_boost (float): Score boost for matching author_id.
@@ -215,11 +246,10 @@ def search_indexed_memory(
 
 
     from qdrant_client import QdrantClient
-    from app import config
 
-    QDRANT_HOST = config.get_setting("system_settings.QDRANT_HOST", "localhost")
-    QDRANT_PORT = int(config.get_setting("system_settings.QDRANT_PORT", "6333"))
-    QDRANT_COLLECTION = config.get_setting("system_settings.QDRANT_COLLECTION", "muse_memory")
+    QDRANT_HOST = muse_config.get("QDRANT_HOST")
+    QDRANT_PORT = int(muse_config.get("QDRANT_PORT"))
+    QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
 
     client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
     search_result = client.search(
@@ -229,6 +259,7 @@ def search_indexed_memory(
     )
 
     results = []
+    now = time.time()
     for hit in search_result:
         entry = {
             "timestamp": hit.payload.get("timestamp"),
@@ -237,9 +268,12 @@ def search_indexed_memory(
             "source": hit.payload.get("source"),
             "message": hit.payload.get("message"),
             "metadata": hit.payload.get("metadata", {}),
-            "score": hit.score
+            "score": hit.score,
+            "user_tags": hit.payload.get("user_tags"),
+            "muse_tags": hit.payload.get("muse_tags"),
+            "remembered": hit.payload.get("remembered", False),
         }
-
+        # Old bias stuff...
         if bias_author_id and entry["metadata"].get("author_id") == bias_author_id:
             entry["score"] += score_boost
         if bias_source and entry.get("source") == bias_source:
@@ -247,36 +281,15 @@ def search_indexed_memory(
         if penalize_muse and entry.get("role") == "muse":
             entry["score"] -= muse_penalty
 
+        # 🟣 New weighting:
+        entry["score"] *= recency_weight(entry["timestamp"], now, half_life_hours=recency_half_life)
+        entry["score"] *= tag_weight(entry, tag_boost, muse_boost, remembered_boost)
         results.append(entry)
 
     return sorted(results, key=lambda x: x["score"], reverse=True)
 
 
 # </editor-fold>
-
-# --------------------------
-# Profile and Memory Root Loading
-# --------------------------
-# <editor-fold desc="👤 Profile and Principle Loaders">
-def load_profile(subset: list[str] = None, as_dict: bool = False):
-    profile_path = PROFILE_DIR / "muse_profile.json"
-    if profile_path.exists():
-        with open(profile_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if subset:
-                data = {key: data[key] for key in subset if key in data}
-            return data if as_dict else json.dumps(data, ensure_ascii=False, indent=2)
-    return {} if as_dict else ""
-
-
-def load_core_principles():
-    core_principles_path = PROFILE_DIR / "core_principles.json"
-    if core_principles_path.exists():
-        with open(core_principles_path, "r", encoding="utf-8") as f:
-            return f.read()
-    return ""
-# </editor-fold>
-
 
 # --------------------------
 # MuseCortex Interface
@@ -312,7 +325,7 @@ class MuseCortexInterface:
 
 class MongoCortexClient(MuseCortexInterface):
     def __init__(self):
-        uri = config.get_setting("memory_settings.MONGO_URI")
+        uri = muse_config.get("MONGO_URI")
         self.client = MongoClient(uri)
         self.db = self.client["muse_memory"]
         self.collection = self.db["muse_cortex"]
@@ -350,7 +363,7 @@ class MongoCortexClient(MuseCortexInterface):
         return list(self.collection.find({"tags": tag}))
 
     def search_cortex_for_timely_reminders(self, window_minutes=0.5):
-        user_tz = ZoneInfo(config.USER_TIMEZONE)  # e.g., "America/New_York"
+        user_tz = ZoneInfo(muse_config.get("USER_TIMEZONE"))  # e.g., "America/New_York"
         now_local = datetime.now(user_tz)
         lower_bound = now_local - timedelta(minutes=window_minutes)
         upper_bound = now_local + timedelta(minutes=window_minutes)
@@ -360,36 +373,47 @@ class MongoCortexClient(MuseCortexInterface):
 
         for entry in reminders:
             cron = utils.align_cron_for_croniter(entry.get("cron"))
-            last_triggered = entry.get("last_triggered")
-            created_at = entry.get("created_at") or now_local.isoformat()
-
-            # Parse base_time in user's timezone
-            base_time = datetime.fromisoformat(last_triggered) if last_triggered else datetime.fromisoformat(created_at)
-            if base_time.tzinfo is None:
-                base_time = base_time.replace(tzinfo=user_tz)
-            else:
-                base_time = base_time.astimezone(user_tz)
-
-            # Use croniter in local time
-            itr = croniter(cron, base_time)
+            skip_until = entry.get("skip_until")
             try:
-                next_trigger = itr.get_next(datetime)
+                # Start base_time slightly before now to catch edge triggers
+                base_time = now_local - timedelta(minutes=5)
+                # Respect skip_until if provided
+                if skip_until:
+                    skip_dt = datetime.fromisoformat(skip_until)
+                    if skip_dt.tzinfo is None:
+                        skip_dt = skip_dt.replace(tzinfo=user_tz)
+                    else:
+                        skip_dt = skip_dt.astimezone(user_tz)
+                    if skip_dt > base_time:
+                        base_time = skip_dt
+                # Generate next fire time
+                itr = croniter(cron, base_time)
+                try:
+                    next_trigger = itr.get_next(datetime)
+                    if next_trigger.tzinfo is None:
+                        next_trigger = next_trigger.replace(tzinfo=user_tz)
+                except Exception as e:
+                    print(f"Error parsing cron for reminder: {e}")
+                    continue
                 if next_trigger.tzinfo is None:
                     next_trigger = next_trigger.replace(tzinfo=user_tz)
-            except Exception as e:
-                print(f"Error parsing cron for reminder: {e}")
-                continue
 
-            # Compare to local now window
-            if lower_bound <= next_trigger <= upper_bound:
-                ends_on = entry.get("ends_on")
-                if ends_on:
-                    ends = datetime.fromisoformat(ends_on)
-                    if ends.tzinfo is None:
-                        ends = ends.replace(tzinfo=user_tz)
-                    if next_trigger > ends.astimezone(user_tz):
-                        continue  # Past end date
-                triggered.append(entry)
+                # Compare to now window
+                if lower_bound <= next_trigger <= upper_bound:
+                    ends_on = entry.get("ends_on")
+                    if ends_on:
+                        ends = datetime.fromisoformat(ends_on)
+                        if ends.tzinfo is None:
+                            ends = ends.replace(tzinfo=user_tz)
+                        else:
+                            ends = ends.astimezone(user_tz)
+                        if next_trigger > ends:
+                            continue  # Skip expired reminders
+                    triggered.append(entry)
+
+            except Exception as e:
+                print(f"❌ Error processing reminder: {e}")
+                continue
 
         print(f"✅ Found {len(triggered)} reminders ready to fire.")
         return triggered

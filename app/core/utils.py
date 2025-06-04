@@ -1,54 +1,54 @@
 # utils.py
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil.parser import isoparse
-import re
-import hashlib
+import re, json
 from cryptography.fernet import Fernet
 from zoneinfo import ZoneInfo
 from typing import Optional
-from app import config
+from app.config import muse_config
 from app.core import memory_core
-from app.databases.mongo_connector import mongo
+from app.databases.mongo_connector import mongo, mongo_system
 
 
+LOG_LEVELS = {
+    "debug": 10,
+    "info": 20,
+    "warn": 30,
+    "error": 40,
+}
 
-USER_TIMEZONE = config.USER_TIMEZONE
-SYSTEM_LOGS_DIR = config.SYSTEM_LOGS_DIR
-QUIET_HOURS_START = config.QUIET_HOURS_START
-QUIET_HOURS_END = config.QUIET_HOURS_END
-USER_NAME = config.USER_NAME
-MUSE_NAME = config.MUSE_NAME
-
-os.makedirs(SYSTEM_LOGS_DIR, exist_ok=True)
-
-def write_system_log(entry_type, data):
-    now = datetime.now(ZoneInfo(USER_TIMEZONE))
-    timestamp = now.isoformat(timespec="milliseconds")
+def write_system_log(level, module=None, component=None, function=None, **fields):
+    # Lookup global level (from config or db)
+    if LOG_LEVELS[level] < LOG_LEVELS[muse_config.get("LOG_VERBOSITY")]:
+        return  # Quietly drop logs under the threshold
     log_entry = {
-        "timestamp": timestamp,
-        "type": entry_type,
-        "data": data
+        "timestamp": datetime.now(timezone.utc),
+        "level": level,
+        "module": module,
+        "component": component,
+        "function": function,
+        **fields
     }
+    try:
+        mongo_system.insert_log("system_logs", log_entry)
+    except Exception as e:
+        with open("logs/systemlog_backup.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, default=str) + "\n")
 
-    date_str = now.strftime("%Y-%m-%d")
-    filename = os.path.join(SYSTEM_LOGS_DIR, f"systemlog_{date_str}.jsonl")
-
-    with open(filename, "a", encoding="utf-8") as f:
-        f.write(f"{log_entry}\n")
 
 def get_formatted_datetime():
-    return datetime.now(ZoneInfo(USER_TIMEZONE)).isoformat()
+    return datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE"))).isoformat()
 
 def is_quiet_hour() -> bool:
     """
     Returns True if the current local time is within quiet hours.
     Quiet hours can span across midnight.
     """
-    quiet_start = getattr(config, "QUIET_HOURS_START", 23)  # e.g., 23 = 11pm
-    quiet_end = getattr(config, "QUIET_HOURS_END", 10)  # e.g., 10 = 10am
-    tz = getattr(config, "USER_TIMEZONE", "UTC")
+    quiet_start = muse_config.get("QUIET_HOURS_START")  # e.g., 23 = 11pm
+    quiet_end = muse_config.get("QUIET_HOURS_END")  # e.g., 10 = 10am
+    tz = muse_config.get("USER_TIMEZONE")
 
     current_hour = datetime.now(ZoneInfo(tz)).hour
 
@@ -58,9 +58,9 @@ def is_quiet_hour() -> bool:
         return current_hour >= quiet_start or current_hour < quiet_end
 
 def get_quiet_hours_end_today() -> datetime:
-    tz = ZoneInfo(config.USER_TIMEZONE)
+    tz = ZoneInfo(muse_config.get("USER_TIMEZONE"))
     now = datetime.now(tz)
-    end_hour = config.QUIET_HOURS_END  # e.g., 10
+    end_hour = muse_config.get("QUIET_HOURS_END")  # e.g., 10
 
     # Create today's datetime at quiet hour end
     end_time = now.replace(hour=end_hour, minute=0, second=0, microsecond=0)
@@ -89,11 +89,11 @@ def parse_remind_time(remind_at_str):
     try:
         # If it's a full ISO datetime, parse normally
         if "T" in remind_at_str:
-            return isoparse(remind_at_str).astimezone(ZoneInfo(config.USER_TIMEZONE))
+            return isoparse(remind_at_str).astimezone(ZoneInfo(muse_config.get("USER_TIMEZONE")))
 
         # Otherwise, assume HH:MM format
         hour, minute = map(int, remind_at_str.strip().split(":"))
-        now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
+        now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
         return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
     except Exception as e:
@@ -101,7 +101,7 @@ def parse_remind_time(remind_at_str):
         return None
 
 def seconds_until(hour: int, minute: int = 0) -> int:
-    now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
+    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
     if target <= now:
@@ -141,9 +141,9 @@ def decrypt_text(token: str) -> str:
 def format_context_entry(e):
     role = e.get("role", "")
     if role == "user":
-        name = USER_NAME
+        name = muse_config.get("USER_NAME")
     elif role == "muse":
-        name = MUSE_NAME
+        name = muse_config.get("MUSE_NAME")
     else:
         name = role.capitalize() if role else "Unknown"
 
@@ -158,7 +158,7 @@ def format_context_entry(e):
             # Convert to user timezone if not naive
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=ZoneInfo('UTC'))
-            dt = dt.astimezone(ZoneInfo(USER_TIMEZONE))
+            dt = dt.astimezone(ZoneInfo(muse_config.get("USER_TIMEZONE")))
             time_str = dt.strftime("%Y-%m-%d %H:%M")
         except Exception:
             time_str = str(ts)
@@ -174,14 +174,22 @@ def get_local_time():
     """
     Returns the current local time formatted cleanly.
     """
-    now = datetime.now(ZoneInfo(USER_TIMEZONE))
+    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
     return now.strftime("%Y-%m-%d %H:%M")
 
 def align_cron_for_croniter(cron_string):
     fields = cron_string.strip().split()
+
     if len(fields) == 7 and fields[5] == "*":
         # Save the seconds (field 0)
         seconds = fields[0]
-        # Shift fields 1–5 left
+        # Shift fields 1–5 left and reinsert seconds as field 5
         fields = fields[1:6] + [seconds, fields[6]]
+
+    # Add /1 if the year field is a plain 4-digit year (e.g., 2025)
+    if len(fields) == 7:
+        year_field = fields[6]
+        if year_field.isdigit() and len(year_field) == 4:
+            fields[6] = f"{year_field}/1"
+
     return ' '.join(fields)

@@ -2,8 +2,8 @@
 
 from pymongo import MongoClient, ASCENDING
 from datetime import datetime
-from app import config
-from app.core import utils
+
+MONGO_URI = "mongodb://localhost:27017/"
 
 class MongoConnector:
     def __init__(self, uri, db_name="muse_memory"):
@@ -46,12 +46,8 @@ class MongoConnector:
     def count_logs(self, collection_name, filter_query=None):
         return self.db[collection_name].count_documents(filter_query or {})
 
-    # Add more as needed!
+    # Add more as needed
 
-# For use in your app
-from app import config  # or wherever your Mongo settings are
 
-mongo = MongoConnector(
-    uri=config.MONGO_URI,
-    db_name=config.MONGO_DBNAME if hasattr(config, "MONGO_DBNAME") else "muse_memory"
-)
+mongo = MongoConnector(uri=MONGO_URI, db_name="muse_memory")
+mongo_system = MongoConnector(uri=MONGO_URI, db_name="muse_system")

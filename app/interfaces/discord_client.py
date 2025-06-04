@@ -3,15 +3,15 @@
 import discord
 import traceback
 from app import config
+from app.config import muse_config
 from app.core import memory_core
 from app.services import openai_client
 from app.core import prompt_builder
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
-MUSE_NAME = config.MUSE_NAME
-DISCORD_GUILD_NAME = config.DISCORD_GUILD_NAME
-DISCORD_CHANNEL_NAME = config.DISCORD_CHANNEL_NAME
+DISCORD_GUILD_NAME = muse_config.get("DISCORD_GUILD_NAME")
+DISCORD_CHANNEL_NAME = muse_config.get("DISCORD_CHANNEL_NAME")
 
 
 def get_user_role(author_id):
@@ -71,7 +71,7 @@ async def handle_incoming_discord_message(message):
 
             # Assemble final prompt
             full_prompt = builder.build_prompt()
-            full_prompt += f"\n\n{message.author.name}: {user_input}\n{config.get_setting('MUSE_NAME', 'Assistant')}:"
+            full_prompt += f"\n\n{message.author.name}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
             #print("🛠️ Full prompt ready:")
             #print(full_prompt)
             # Get Muse's response
@@ -108,7 +108,7 @@ async def handle_incoming_discord_message(message):
 
 @client.event
 async def on_ready():
-    print(f"🟣 {MUSE_NAME} connected to Discord as {client.user}.")
+    print(f"🟣 {muse_config.get("MUSE_NAME")} connected to Discord as {client.user}.")
 
 @client.event
 async def on_message(message):

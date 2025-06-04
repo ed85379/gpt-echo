@@ -9,7 +9,7 @@ const CortexTab = () => {
 
   // Load all cortex entries on mount
   useEffect(() => {
-    fetch("http://localhost:5000/api/cortex")
+    fetch("/api/cortex")
       .then(res => res.json())
       .then(data => {
         setCortex(data);
@@ -46,7 +46,7 @@ const CortexTab = () => {
 
     const handleDelete = (entryId) => {
       if (!window.confirm("Are you sure you want to delete this entry?")) return;
-      fetch(`http://localhost:5000/api/cortex/delete/${entryId}`, {
+      fetch(`/api/cortex/delete/${entryId}`, {
         method: "POST",
       })
         .then((res) => res.json())
@@ -62,7 +62,7 @@ const CortexTab = () => {
     };
 
     const handleEdit = (entryId, newText) => {
-      fetch(`http://localhost:5000/api/cortex/edit/${entryId}`, {
+      fetch(`/api/cortex/edit/${entryId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: newText }),
@@ -83,7 +83,7 @@ const CortexTab = () => {
 
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 text-white bg-neutral-950 overflow-y-auto">
       <div className="flex space-x-4 border-b border-neutral-800 mb-3">
         {types.map(type => (
           <button

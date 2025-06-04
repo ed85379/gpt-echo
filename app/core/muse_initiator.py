@@ -4,19 +4,13 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from dateutil import parser
 from croniter import croniter
-from app import config
+from app.config import muse_config
 from app.core import prompt_builder
 from app.core import utils
 from app.core import muse_responder
 from app.core.memory_core import cortex
 from app.core import memory_core
 
-
-now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
-hour = now.hour
-OPENAI_WHISPER_MODEL = config.OPENAI_WHISPER_MODEL
-OPENAI_JOURNALING_MODEL = config.OPENAI_JOURNALING_MODEL
-OPENAI_MODEL = config.OPENAI_MODEL
 
 # <editor-fold desc="run_whispergate">
 def run_whispergate():
@@ -25,9 +19,10 @@ def run_whispergate():
     prompt = build_whispergate_prompt()
     print("Prompt built. Sending to model...")
 
-    response = muse_responder.handle_muse_decision(prompt, model=OPENAI_WHISPER_MODEL)
+    response = muse_responder.handle_muse_decision(prompt, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="whispergate")
     #print("WhisperGate prompt:", prompt)
-    utils.write_system_log("whispergate_response", {"response": response})
+    utils.write_system_log(level="info", module="core", component="initiator", function="run_whispergate",
+                           action="whispergate_response", response=response)
 
     print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
 
@@ -38,9 +33,9 @@ def build_whispergate_prompt():
     builder.add_core_principles()
     builder.add_cortex_entries(["insight", "seed", "user_data", "reminder"])
     builder.add_recent_context() # Pulls last 10 lines or upto 2 hours of recent context
-    builder.add_journal_thoughts()
-    builder.add_cortex_thoughts()
+    #builder.add_journal_thoughts()
     builder.add_discovery_articles(max_items=5)
+#    builder.add_cortex_thoughts()
     builder.add_time()
     builder.segments["whispergate_directive"] = prompt_builder.make_whisper_directive(
         ["speak", "write_public_journal", "write_private_journal", "remember_fact"],
@@ -57,9 +52,10 @@ def run_dropped_threads_check():
     prompt = build_dropped_threads_check_prompt()
     print("Prompt built. Sending to model...")
 
-    response = muse_responder.handle_muse_decision(prompt, model=OPENAI_MODEL)
-    print("WhiserGate prompt:", prompt)
-    utils.write_system_log("whispergate_response", {"response": response})
+    response = muse_responder.handle_muse_decision(prompt, model=muse_config.get("OPENAI_MODEL"))
+    #print("WhiserGate prompt:", prompt)
+    utils.write_system_log(level="info", module="core", component="initiator", function="run_dropped_threads_check",
+                           action="whispergate_response", response=response)
 
     print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
 
@@ -70,7 +66,7 @@ def build_dropped_threads_check_prompt():
     builder.add_cortex_entries(["insight", "seed", "user_data"])
     builder.add_recent_context() # Pulls last 10 lines or upto 2 hours of recent context
     builder.add_time()
-    now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
+    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
     quiet_note = (
         "Note: It is currently quiet hours. Do not choose to speak aloud.\n"
@@ -116,8 +112,8 @@ def run_inactivity_check():
 
     last_user_ts = utils.get_last_user_activity_timestamp()
     if last_user_ts:
-        # Parse timestamp and ensure UTC timezone
-        last_time = parser.parse(last_user_ts)
+        last_time = last_user_ts
+        # Always ensure UTC timezone
         if last_time.tzinfo is None:
             last_time = last_time.replace(tzinfo=ZoneInfo("UTC"))
         else:
@@ -137,8 +133,9 @@ def run_inactivity_check():
         prompt = build_inactivity_check_prompt()
         print("Prompt built. Sending to model...")
 
-        response = muse_responder.handle_muse_decision(prompt, model=OPENAI_MODEL)
-        utils.write_system_log("whispergate_response", {"response": response})
+        response = muse_responder.handle_muse_decision(prompt, model=muse_config.get("OPENAI_MODEL"), source="inactivity_checker")
+        utils.write_system_log(level="info", module="core", component="initiator", function="run_inactivity_check",
+                         action="whispergate_response", response=response)
 
         print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
 
@@ -149,7 +146,7 @@ def build_inactivity_check_prompt():
     builder.add_core_principles()
     builder.add_cortex_entries(["insight", "seed", "user_data"])
 
-    now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
+    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
     quiet_note = (
         "Note: It is currently quiet hours. Do not choose to speak aloud.\n"
@@ -186,9 +183,11 @@ def run_discoveryfeeds_lookup():
     prompt = build_discoveryfeeds_lookup_prompt()
     print("Prompt built. Sending to model...")
 
-    response = muse_responder.handle_muse_decision(prompt, model=OPENAI_WHISPER_MODEL, source="discovery")
+    response = muse_responder.handle_muse_decision(prompt, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="discovery")
     #print("WhiserGate prompt:", prompt)
-    utils.write_system_log("whispergate_response", {"response": response})
+
+    utils.write_system_log(level="info", module="core", component="initiator", function="run_discoveryfeeds_lookup",
+                           action="whispergate_response", response=response)
 
     print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
 
@@ -196,8 +195,8 @@ def build_discoveryfeeds_lookup_prompt():
     builder = prompt_builder.PromptBuilder()
     builder.add_profile(subset=["tone", "perspective", "tendencies"])
     builder.add_core_principles()
-    builder.add_cortex_entries(["seed"])
-    builder.add_cortex_thoughts()
+    #builder.add_cortex_entries(["seed"])
+    #builder.add_cortex_thoughts()
     builder.add_discovery_articles(max_items=10)
     builder.segments["whispergate_directive"] = prompt_builder.make_whisper_directive(
         ["speak", "write_public_journal"],
@@ -218,15 +217,16 @@ def run_check_reminders():
         prompt = build_check_reminders_prompt()
         print("Prompt built. Sending to model...")
 
-        response = muse_responder.handle_muse_decision(prompt, model=OPENAI_MODEL, source="reminder")
+        response = muse_responder.handle_muse_decision(prompt, model=muse_config.get("OPENAI_MODEL"), source="reminder")
         # print("WhisperGate prompt:", prompt)
 
-        utils.write_system_log("whispergate_response", {"response": response})
+        utils.write_system_log(level="info", module="core", component="initiator", function="run_check_reminders",
+                         action="whispergate_response", response=response)
 
         print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
 
         # ---- Update last_triggered for each reminder fired ----
-        now_str = datetime.now(ZoneInfo(config.USER_TIMEZONE)).isoformat()
+        now_str = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE"))).isoformat()
         for reminder in reminders:
             cortex.edit_entry(reminder["_id"], {"last_triggered": now_str})
             print(f"Updated last_triggered for reminder {reminder.get('text', '')} ({reminder['_id']})")

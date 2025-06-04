@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, UploadFile, File, Query, BackgroundTasks, Body
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from typing import List, Optional, Literal
 import os
 import uuid
 import json
@@ -8,10 +9,13 @@ from bson import ObjectId
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from app import config
+from app.config import muse_config
 from fastapi.middleware.cors import CORSMiddleware
+from collections import defaultdict
 from app.services.tts_core import synthesize_speech, stream_speech
 from app.core import memory_core
 from app.core.memory_core import cortex
+from app.core.muse_profile import muse_profile
 from app.core.prompt_builder import PromptBuilder
 from app.core.muse_responder import route_user_input
 from app.interfaces.websocket_server import router as websocket_router
@@ -22,9 +26,7 @@ from app.databases.mongo_connector import mongo
 client = OpenAI(api_key=config.OPENAI_API_KEY)  # Uses api key from env or config
 JOURNAL_DIR = config.JOURNAL_DIR
 JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
-MUSE_NAME = config.MUSE_NAME
-USER_NAME = config.USER_NAME
-MONGO_CONVERSATION_COLLECTION = config.MONGO_CONVERSATION_COLLECTION
+MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
 
 
 app = FastAPI()
@@ -56,7 +58,11 @@ def save_journal_index(index):
 
 # --- API Endpoint ---
 
-from collections import defaultdict
+
+
+@app.get("/api/config")
+def get_full_config():
+    return muse_config.as_dict()
 
 @app.get("/api/cortex")
 def get_cortex():
@@ -126,19 +132,19 @@ async def create_journal_entry(request: Request):
 
     return JSONResponse(content={"status": "success", "message": "Journal entry created.", "filename": filename}, status_code=201)
 
-@app.get("/api/profile")
-async def get_profile():
-    profile_path = config.PROJECT_ROOT / "profiles" / "muse_profile.json"
-    with open(profile_path, "r", encoding="utf-8") as f:
-        profile_data = json.load(f)
-    return {"profile": json.dumps(profile_data, indent=2)}
+@app.get("/api/muse_profile")
+async def get_muse_profile():
+    sections = muse_profile.all_sections()
+    grouped = defaultdict(list)
+    for section in sections:
+        typ = section.get("section")
+        # Convert ObjectId to str and remove or replace _id
+        section = dict(section)  # Ensure it’s a dict
+        if "_id" in section:
+            section["_id"] = str(section["_id"])
+        grouped[typ].append(section)
+    return grouped
 
-@app.post("/api/coreprinciples")
-async def get_core_principles():
-    core_principles_path = config.PROJECT_ROOT / "profiles" / "core_principles.json"
-    with open(core_principles_path, "r", encoding="utf-8") as f:
-        core_principles_data = json.load(f)
-    return {"core_principles": core_principles_data.get("root", "")}
 
 @app.post("/api/tts")
 async def tts(request: Request):
@@ -202,7 +208,8 @@ def get_calendar_status(
 def get_calendar_status_simple(
     start: str = Query(...),   # "YYYY-MM-DD"
     end: str = Query(...),     # "YYYY-MM-DD"
-    source: str = Query(None)
+    source: str = Query(None),
+    tag: List[str] = Query(None)
 ):
     # Parse input strings as datetimes in UTC
     start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -215,6 +222,8 @@ def get_calendar_status_simple(
         match_filter["source"] = source.lower()
     else:
         match_filter["source"] = {"$ne": "chatgpt"}
+    if tag:
+        match_filter["user_tags"] = {"$in": tag}
     # Now use aggregation to group by day using timestamp
     pipeline = [
         {"$match": match_filter},
@@ -230,7 +239,7 @@ def get_calendar_status_simple(
 @app.get("/api/messages_by_day")
 def get_messages_by_day(
     date: str = Query(..., description="YYYY-MM-DD"),
-    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT)")
+    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT, Discord)")
 ):
     # Parse to start/end of day (UTC)
     dt = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -243,7 +252,7 @@ def get_messages_by_day(
     if source:
         query["source"] = source.lower()
     else:
-        query["source"] = {"$ne": "chatgpt"}
+        query["source"] = {"$eq": "frontend"}
 
     logs = mongo.find_logs(
         collection_name=MONGO_CONVERSATION_COLLECTION,
@@ -256,24 +265,112 @@ def get_messages_by_day(
     return {"messages": [
         {
             "_id": str(msg["_id"]),
-            "role": msg.get("role"),
-            "message": msg.get("message"),
-            "timestamp": msg["timestamp"].isoformat() if isinstance(msg["timestamp"], datetime) else str(msg["timestamp"]),
+            "from": msg.get("role"),
+            "text": msg.get("message"),
+            "timestamp": msg["timestamp"].isoformat() + "Z"
+                if isinstance(msg["timestamp"], datetime) else str(msg["timestamp"]),
             "exported_on": msg.get("exported_on"),
-            # ...other fields if needed
+            "username": (
+                msg.get("metadata", {}).get("author_display_name")
+                or msg.get("metadata", {}).get("author_name")
+                or None
+            ),
+            "user_tags": msg.get("user_tags", []),
+            "message_id": msg.get("message_id") or "",
+            "source": msg.get("source", ""),
+            "is_private": msg.get("is_private", False),
+            "remembered": msg.get("remembered", False),
+            "is_deleted": msg.get("is_deleted", False),
+            "flags": msg.get("flags", []),
+            "metadata": msg.get("metadata", {}),
+            # Add any other custom fields you need for the UI
         }
         for msg in logs
     ]}
 
 
-@app.post("/api/mark_exported")
-def mark_exported(
-    message_ids: list = Body(...),
-    exported: bool = Body(True)
+@app.post("/api/tag_message")
+def tag_message(
+    message_ids: List[str] = Body(...),
+    add_user_tags: Optional[List[str]] = Body(None),
+    remove_user_tags: Optional[List[str]] = Body(None),
+    is_private: Optional[bool] = Body(None),
+    remembered: Optional[bool] = Body(None),
+    is_deleted: Optional[bool] = Body(None),
+    exported: Optional[bool] = Body(None)
 ):
-    update = {"$set": {"exported_on": datetime.now(timezone.utc)}} if exported else {"$unset": {"exported_on": ""}}
-    result = mongo.db.muse_conversations.update_many({"_id": {"$in": [ObjectId(mid) for mid in message_ids]}}, update)
+    mongo_update = {}
+    print(message_ids)
+    # Track if the update is "contentful" (i.e., should update updated_on)
+    contentful = False
+
+    # Handle user_tags (contentful)
+    if add_user_tags:
+        mongo_update.setdefault("$addToSet", {})["user_tags"] = {"$each": add_user_tags}
+        contentful = True
+    if remove_user_tags:
+        mongo_update.setdefault("$pullAll", {})["user_tags"] = remove_user_tags
+        contentful = True
+
+    # Handle is_private (contentful), is_deleted, exported (non-contentful)
+    set_fields = {}
+    unset_fields = []
+    if is_private is not None:
+        contentful = True
+        if is_private:
+            set_fields["is_private"] = True
+        else:
+            unset_fields.append("is_private")
+    if remembered is not None:
+        contentful = True
+        if remembered:
+            set_fields["remembered"] = True
+        else:
+            unset_fields.append("remembered")
+    if is_deleted is not None:
+        if is_deleted:
+            set_fields["is_deleted"] = True
+        else:
+            unset_fields.append("is_deleted")
+    if exported is not None:
+        if exported:
+            set_fields["exported_on"] = datetime.now(timezone.utc)
+        else:
+            unset_fields.append("exported_on")
+
+    # Only set updated_on for "contentful" changes
+    if contentful:
+        set_fields["updated_on"] = datetime.now(timezone.utc)
+
+    if set_fields:
+        mongo_update["$set"] = set_fields
+    if unset_fields:
+        mongo_update["$unset"] = {f: "" for f in unset_fields}
+
+    if not mongo_update:
+        return {"updated": 0, "detail": "No actions specified."}
+
+    result = mongo.db.muse_conversations.update_many(
+        {"message_id": {"$in": message_ids}},
+        mongo_update
+    )
+
     return {"updated": result.modified_count}
+
+@app.get("/api/user_tags")
+def get_user_tags(
+    limit: int = Query(100, description="Maximum number of tags to return")
+):
+    # Use MongoDB aggregation to get unique user tags with counts
+    pipeline = [
+        {"$unwind": "$user_tags"},
+        {"$group": {"_id": "$user_tags", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+        {"$limit": limit}
+    ]
+    tag_docs = list(mongo.db.muse_conversations.aggregate(pipeline))
+    return {"tags": [{"tag": doc["_id"], "count": doc["count"]} for doc in tag_docs]}
+
 
 @app.post("/api/upload_import")
 async def upload_import(file: UploadFile = File(...)):
@@ -357,47 +454,64 @@ def import_progress(collection: str = Query(...)):
     done = temp_coll.count_documents({"imported": True})
     return {"done": done, "total": total}
 
+
+from typing import List, Optional
+
+
 @app.get("/api/messages")
 def get_messages(
-    limit: int = Query(10, le=50),
-    before: str = Query(None)
+        limit: int = Query(10, le=50),
+        before: Optional[str] = None,
+        sources: Optional[List[str]] = Query(None)  # Accepts ?sources=frontend&sources=chatgpt
 ):
     query = {}
+
     if before:
         dt = parse(before)
-        # Ensure UTC tz-aware
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
         query["timestamp"] = {"$lt": dt}
 
-    # Get newest-to-oldest, LIMIT N
+    if sources:
+        query["source"] = {"$in": sources}
+
     logs = mongo.find_logs(
         collection_name=MONGO_CONVERSATION_COLLECTION,
         query=query,
         limit=limit,
         sort_field="timestamp",
-        ascending=False  # Newest-to-oldest!
+        ascending=False
     )
-    print(f"Getting messages before {before} — found {len(logs)}")
+
+    print(f"Getting messages before {before} from {sources} — found {len(logs)}")
 
     result = []
     for msg in logs:
         mapped = {
             "from": msg.get("from") or msg.get("role") or "iris",
             "text": msg.get("message") or "",
-            "timestamp": msg["timestamp"].isoformat() + "Z" if isinstance(msg["timestamp"], datetime) else str(msg["timestamp"]),
+            "timestamp": msg["timestamp"].isoformat() + "Z" if isinstance(msg["timestamp"], datetime) else str(
+                msg["timestamp"]),
             "_id": str(msg["_id"]),
+            "message_id": msg.get("message_id") or "",
+            "source": msg.get("source", ""),
+            "user_tags": msg.get("user_tags", []),
+            "is_private": msg.get("is_private", False),
+            "remembered": msg.get("remembered", False),
+            "is_deleted": msg.get("is_deleted", False),
+            "flags": msg.get("flags", []),
+            "metadata": msg.get("metadata", {}),
         }
         result.append(mapped)
-    # Always reverse so frontend gets oldest-to-newest
+
     return {"messages": result[::-1]}
+
 
 @app.post("/api/talk")
 async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
     user_input = data.get("prompt", "")
+    user_timestamp = data.get("timestamp")  # <-- Accept incoming timestamp!
+    user_message_id = data.get("message_id")  # (Optional)
     if not user_input:
         return JSONResponse(status_code=400, content={"error": "No prompt provided."})
 
@@ -410,18 +524,21 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     builder.add_prompt_context(user_input)
     builder.add_journal_thoughts(query=user_input)
 #    builder.add_discovery_snippets()  # Optional: you can comment this out if you want a cleaner test
-    builder.add_intent_listener(["remember_fact", "set_reminder", "write_private_journal"])
+    builder.add_intent_listener(["remember_fact", "set_reminder", "skip_reminder", "write_private_journal"])
     builder.add_time()
     # Assemble final prompt
     full_prompt = builder.build_prompt()
-    full_prompt += f"\n\n{config.get_setting('PRIMARY_USER_NAME', 'User')}: {user_input}\n{config.get_setting('MUSE_NAME', 'Assistant')}:"
+    full_prompt += f"\n\n{muse_config.get("PRIMARY_USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
     #print(full_prompt)
     # Get Muse's response
     response = route_user_input(full_prompt)
-
-    await broadcast_message(response, to="frontend")
-    background_tasks.add_task(memory_core.log_message, "user", user_input)
-    background_tasks.add_task(memory_core.log_message, "muse", response)
+    response_timestamp = datetime.now(timezone.utc).isoformat()
+    await broadcast_message(response, timestamp=response_timestamp, to="frontend")
+    if user_timestamp:
+        background_tasks.add_task(memory_core.log_message, "user", user_input, timestamp=user_timestamp)
+    else:
+        background_tasks.add_task(memory_core.log_message, "user", user_input)
+    background_tasks.add_task(memory_core.log_message, "muse", response, timestamp=response_timestamp)
     return {"response": response}
 
 
@@ -452,8 +569,9 @@ async def internal_broadcast(request: Request):
     data = await request.json()
     message = data.get("message", "")
     target = data.get("to", "frontend")
+    timestamp = datetime.now(timezone.utc).isoformat()
     if message:
-        await broadcast_message(message, to=target)
+        await broadcast_message(message, to=target, timestamp=timestamp)
         return {"status": "ok"}
     return {"status": "error", "reason": "No message"}
 

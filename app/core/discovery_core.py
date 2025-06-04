@@ -10,14 +10,12 @@ import requests
 from bs4 import BeautifulSoup
 from readability import Document
 from app import config
+from app.config import muse_config
 
 # Configs
 PROJECT_ROOT = config.PROJECT_ROOT
 OPENWEATHERMAP_API_KEY = config.OPENWEATHERMAP_API_KEY
-USER_TIMEZONE = config.USER_TIMEZONE
 PROFILE_DIR = config.PROFILE_DIR
-zip_code = config.USER_ZIPCODE
-country_code = config.USER_COUNTRYCODE
 
 # --- Loaders ---
 
@@ -170,14 +168,14 @@ def fetch_full_article(url: str) -> str:
 
 
 # --- Local Environmental Awareness ---
-def get_local_weather(zip_code=zip_code, country_code=country_code, units="imperial"):
+def get_local_weather(zip_code=muse_config.get("USER_ZIPCODE"), country_code=muse_config.get("USER_COUNTRYCODE"), units=muse_config.get("MEASUREMENT_UNITS")):
     """
     Fetches current weather conditions by ZIP code.
     """
     if not OPENWEATHERMAP_API_KEY:
         return "Weather data unavailable (missing API key)."
 
-    url = f"https://api.openweathermap.org/data/2.5/weather?zip={zip_code},{country_code}&appid={OPENWEATHERMAP_API_KEY}&units={units}"
+    url = f"https://api.openweathermap.org/data/2.5/weather?zip={muse_config.get("USER_ZIPCODE")},{muse_config.get("USER_COUNTRYCODE")}&appid={OPENWEATHERMAP_API_KEY}&units={units}"
 
     try:
         response = requests.get(url)
@@ -198,5 +196,5 @@ def get_local_time():
     """
     Returns the current local time formatted cleanly.
     """
-    now = datetime.now(ZoneInfo(USER_TIMEZONE))
+    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
     return now.strftime("%Y-%m-%d %H:%M")

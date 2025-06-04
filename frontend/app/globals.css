@@ -19,6 +19,42 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+.prose {
+  /* Add these if not already present */
+  word-break: break-word;      /* Breaks long words at any point */
+  overflow-wrap: anywhere;     /* Allows breaking anywhere if needed */
+  /* Optional, for extreme edge cases: */
+  hyphens: auto;
+}
+.prose pre {
+  background-color: #181028 !important;  /* Deep purple/neutral */
+  color: #f3e8ff !important;             /* Light purple text */
+  border-radius: 0.75rem !important;     /* '2xl' Tailwind style */
+  padding: 1rem 1.25rem !important;      /* Tighter, but roomy */
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  font-size: 0.96em;
+  overflow-x: auto;
+  box-shadow: 0 2px 8px 0 #0003;
+  border: 1px solid #3b076430;           /* Subtle purple border */
+}
+
+.prose code {
+  background-color: #22172b !important;  /* Darker purple for inline */
+  color: #a78bfa !important;             /* Tailwind purple-300 */
+  padding: 0.15em 0.5em;
+  border-radius: 0.4em;
+  font-size: 0.98em;
+  font-family: 'Fira Mono', 'Menlo', 'Consolas', monospace;
+}
+
+.prose pre code {
+  background: none !important;
+  color: inherit !important;
+  padding: 0;
+  border-radius: 0;
+  font-size: 1em;
+}
 
 /* Chrome, Edge, Safari */
 ::-webkit-scrollbar {

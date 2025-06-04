@@ -3,6 +3,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, Set
 import json
+from app.databases.memory_indexer import assign_message_id
 
 router = APIRouter()
 
@@ -35,14 +36,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"{role} client disconnected")
 
 # Broadcast to all clients listening under a given role
-async def broadcast_message(message: str, to: str = "frontend"):
+async def broadcast_message(message: str, timestamp: str, to: str = "frontend"):
+    msg_dict = {
+        "timestamp": timestamp,
+        "role": "muse",
+        "source": "frontend",
+        "message": message
+    }
+    message_id = assign_message_id(msg_dict)
     connections = active_connections.get(to, set())
     print(f"Broadcasting to {to}: {message} ({len(connections)} clients)")
     for connection in list(connections):
         try:
             await connection.send_text(json.dumps({
                 "type": "muse_message",
-                "message": message
+                "message": message,
+                "message_id": message_id
             }))
 
         except Exception:

@@ -2,6 +2,8 @@ from pathlib import Path
 import os
 import json
 from dotenv import load_dotenv
+from pymongo import MongoClient
+
 
 # Determine project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -26,7 +28,57 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 PRIMARY_USER_DISCORD_ID = os.getenv("PRIMARY_USER_DISCORD_ID")
 OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
 
-## Fallback for any settings not listed below
+
+class MuseConfig:
+    def __init__(self, mongo_uri, db_name, live_collection, default_collection):
+        self.client = MongoClient(mongo_uri)
+        self.live = self.client[db_name][live_collection]
+        self.defaults = self.client[db_name][default_collection]
+
+    def get(self, key, default=None):
+        # 1. Try live/dynamic setting
+        doc = self.live.find_one({"_id": key})
+        if doc and "value" in doc:
+            return doc["value"]
+        # 2. Fallback to default_config collection
+        doc = self.defaults.find_one({"_id": key})
+        if doc and "value" in doc:
+            return doc["value"]
+        # 3. Final fallback
+        return default
+
+    def set(self, key, value):
+        self.live.update_one(
+            {"_id": key}, {"$set": {"value": value}}, upsert=True
+        )
+
+    def as_dict(self, include_meta=True):
+        # get all keys as before
+        live_docs = {doc["_id"]: doc for doc in self.live.find({})}
+        default_docs = {doc["_id"]: doc for doc in self.defaults.find({})}
+        all_keys = set(live_docs) | set(default_docs)
+
+        result = {}
+        for key in all_keys:
+            # Prefer live, else default
+            doc = live_docs.get(key) or default_docs.get(key)
+            if doc:
+                entry = {
+                    "value": doc.get("value"),
+                }
+                if include_meta:
+                    entry["description"] = doc.get("description", "")
+                    entry["category"] = doc.get("category", "uncategorized")
+                result[key] = entry
+        return result
+
+muse_config = MuseConfig(
+    mongo_uri="mongodb://localhost:27017/",
+    db_name="muse_system",
+    live_collection="muse_config",
+    default_collection="default_config"
+)
+
 def get_setting(key, default=None):
     """
     Supports nested keys like "user_settings.USER_NAME".
@@ -52,7 +104,7 @@ QUIET_HOURS_END = get_setting("user_settings.QUIET_HOURS_END", 10)
 MUSE_NAME = get_setting("system_settings.MUSE_NAME", "Muse")
 PROFILE_DIR = PROJECT_ROOT / get_setting("system_settings.PROFILE_DIR", "profiles/")
 SYSTEM_LOGS_DIR = PROJECT_ROOT / get_setting("system_settings.SYSTEM_LOGS_DIR", "logs/system/")
-LOG_VERBOSITY = get_setting("system_settings.LOG_VERBOSITY", "normal") # minimal, normal, debug
+LOG_VERBOSITY = get_setting("system_settings.LOG_VERBOSITY", "warn") # error, warn, info, debug
 JOURNAL_DIR = PROJECT_ROOT / get_setting("system_settings.JOURNAL_DIR", "journal/")
 JOURNAL_CATALOG_PATH = JOURNAL_DIR / get_setting("system_settings.JOURNAL_CATALOG_FILE", "journal_catalog.json")
 OPENAI_MODEL = get_setting("system_settings.OPENAI_MODEL", "gpt-4.1-mini")

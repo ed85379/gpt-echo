@@ -1,6 +1,4 @@
 # prompt_builder.py
-
-from app import config
 import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -10,15 +8,32 @@ from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
 from app.databases.mongo_connector import mongo
 import numpy as np
+from app.config import muse_config
+from app.core.muse_profile import muse_profile
 
+def format_profile_sections(sections):
+    lines = []
+    for section in sections:
+        key = section.get("section")
+        value = section.get("content")
 
-model = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
+        if isinstance(value, list):
+            lines.append(f"{key}:")
+            for item in value:
+                lines.append(f"  - {item}")
+        elif isinstance(value, dict):
+            lines.append(f"{key}:")
+            for subkey, subval in value.items():
+                lines.append(f"  {subkey}: {subval}")
+        else:
+            lines.append(f"{key}: {value}")
+    return "\n".join(lines)
 
 class PromptBuilder:
     def __init__(self, destination="default"):
         self.destination = destination
         self.segments = {}
-        self.now = datetime.now(ZoneInfo(memory_core.USER_TIMEZONE)).isoformat()
+        self.now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE"))).isoformat()
 
     def add_time(self):
         self.segments["usertime"] = f"[Current Time] {self.now}"
@@ -32,16 +47,18 @@ class PromptBuilder:
         self.segments["laws"] = f"[Three Laws of Muse Agency]\n{laws}"
 
     def add_profile(self, subset: list[str] = None, as_dict: bool = False):
-        profile = memory_core.load_profile(subset=subset, as_dict=as_dict)
-        if profile:
-            if as_dict:
-                profile = json.dumps(profile, ensure_ascii=False, indent=2)
-            self.segments["profile"] = f"[Profile]\n{profile.strip()}"
+#        profile = memory_core.load_profile(subset=subset, as_dict=as_dict)
+        profile_sections = muse_profile.get_sections_in_category(category="profile", sections=subset)
+#        if profile:
+#            if as_dict:
+#                profile = json.dumps(profile, ensure_ascii=False, indent=2)
+        formatted = format_profile_sections(profile_sections)
+        self.segments["profile"] = f"[Profile]\n{formatted}"
 
     def add_core_principles(self):
-        principles = memory_core.load_core_principles()
-        if principles:
-            self.segments["principles"] = f"[Principles]\n{principles.strip()}"
+        principles_sections = muse_profile.get_sections_by_category(category="principles")
+        formatted = format_profile_sections(principles_sections)
+        self.segments["principles"] = f"[Principles]\n{formatted}"
 
     def add_cortex_entries(self, types: list[str]):
         all_entries = []
@@ -72,7 +89,7 @@ class PromptBuilder:
 
     def add_prompt_context(self, user_input):
         # 1. Semantic search
-        qdrant_results = memory_core.search_indexed_memory(query=user_input, top_k=6, bias_source=None, bias_author_id=None)
+        qdrant_results = memory_core.search_indexed_memory(query=user_input, top_k=10, bias_source=None, bias_author_id=None)
 
         # 2. Immediate context
         recent_entries = memory_core.get_immediate_context()
@@ -140,11 +157,11 @@ class PromptBuilder:
         if not snippets:
             return
 
-        query_vec = np.array(model.encode([query])[0], dtype="float32")
+        query_vec = np.array(SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode([query])[0], dtype="float32")
         entries = []
 
         for snippet in snippets:
-            vec = np.array(model.encode([snippet])[0], dtype="float32")
+            vec = np.array(SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode([snippet])[0], dtype="float32")
             similarity = np.dot(vec, query_vec) / (np.linalg.norm(vec) * np.linalg.norm(query_vec))
             entries.append((similarity, snippet))
 
@@ -246,7 +263,7 @@ def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = Fals
      - source (optional): Where the idea came from (memory, feed, etc).\n""",
 
         "write_public_journal": """2. [COMMAND: write_public_journal]
-   To record an insight, reflection, or observation to share with your user.
+   To record a thought, reflection, or observation to share with your user.
    Fields:
      - subject: What the entry focuses on.
      - source (optional)\n""",
@@ -264,7 +281,7 @@ def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = Fals
      - text: A short-form insight to store long-term.\n""",
     }
 
-    now = datetime.now(ZoneInfo(config.USER_TIMEZONE))
+    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
     quiet_note = (
         "Note: It is currently quiet hours. Do not choose to speak aloud. Journaling or remembering is acceptable.\n"
@@ -278,13 +295,17 @@ def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = Fals
         "But silence is also a valid, even wise, choice. If nothing feels new or important, respond only with:\n"
         "[COMMAND: choose_silence] {}\n\n"
         f"{time_line}\n{quiet_note}"
-        "Before choosing a topic, review the [Recent Thoughts] section and do not repeat subjects you've recently written or spoken about.\n\n"
+        "Before choosing a topic, compare your candidate subject (after trimming whitespace and converting "
+        "to lowercase) to all items in [Recent Thoughts]. If your subject matches, closely paraphrases, or "
+        "expresses the same idea as any recent entry, you MUST NOT write or speak about it again. In that "
+        "case, respond only with [COMMAND: choose_silence]. Do not rephrase. Do not try to be clever. "
+        "No exceptions.\n\n"
         "If you do act, choose one of the following [COMMAND: ...] blocks:\n\n"
         + "".join(command_templates[c] for c in allowed_commands if c in command_templates) +
         "❗ Format strictly as JSON:\n"
         "- Include the outer curly braces `{}`\n"
         "- Wrap all keys and values in double quotes\n"
         "- Do not use Markdown, YAML, or indentation.\n"
-        "- Example: [COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's Hogwarts game night.\"}\n\n"
+        "- Example: [COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's game night.\"}\n\n"
         "Do not return any natural language text. Only one valid [COMMAND: ...] block per response."
     )

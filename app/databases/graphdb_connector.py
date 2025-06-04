@@ -1,7 +1,7 @@
 # graphdb_connector.py
 
 from gqlalchemy import Memgraph
-from app import config
+from app.config import muse_config
 from app.core.utils import write_system_log
 
 class GraphDBConnector:
@@ -15,24 +15,24 @@ class GraphDBConnector:
         try:
             self.mg = Memgraph(self.host, self.port)
             self.mg.execute("RETURN 1;")
-            write_system_log("graphdb_connected", {"host": self.host, "port": self.port})
+            write_system_log(level="debug", module="databases", component="graphdb", function="_connect",
+                             action="connect", host=self.host, port=self.port)
         except Exception as e:
-            write_system_log("graphdb_connect_error", {"error": str(e), "host": self.host, "port": self.port})
+            write_system_log(level="error", module="databases", component="graphdb", function="_connect",
+                             action="connect_error", host=self.host, port=self.port, error=str(e))
             self.mg = None
 
     def run_cypher(self, query, params=None):
         if not self.mg:
-            write_system_log("graphdb_no_connection", {"query": query, "params": params})
+            write_system_log(level="error", module="databases", component="graphdb", function="run_cypher",
+                             action="no_connection", query=query, params=params)
             return []
         try:
             result = list(self.mg.execute_and_fetch(query, params or {}))
             return result
         except Exception as e:
-            write_system_log("graphdb_query_error", {
-                "error": str(e),
-                "query": query,
-                "params": params
-            })
+            write_system_log(level="error", module="databases", component="graphdb", function="run_cypher",
+                             action="query_error", query=query, params=params, error=str(e))
             return []
 
     # --- Example Retrieval Methods ---
@@ -228,6 +228,6 @@ def delete_fact_by_id(mg, fact_id):
 import logging
 
 def get_graphdb_connector():
-    host = config.GRAPHDB_HOST
-    port = config.GRAPHDB_PORT
+    host = muse_config.get("GRAPHDB_HOST")
+    port = muse_config.get("GRAPHDB_PORT")
     return GraphDBConnector(host=host, port=port)

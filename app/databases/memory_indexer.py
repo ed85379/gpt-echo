@@ -5,17 +5,15 @@ from datetime import datetime, timezone
 import hashlib
 import pymongo
 from sentence_transformers import SentenceTransformer
-from app import config
+from app.config import muse_config
 from app.core import utils, memory_core
 from app.databases import qdrant_connector, graphdb_connector
 
-MONGO_URI = config.MONGO_URI
-MONGO_DBNAME = config.MONGO_DBNAME
-MONGO_CONVERSATION_COLLECTION = config.MONGO_CONVERSATION_COLLECTION
+MONGO_URI = muse_config.get("MONGO_URI")
+MONGO_DBNAME = muse_config.get("MONGO_DBNAME")
+MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
 CORTEX_DB = "muse_memory"
 CORTEX_COLLECTION = "muse_cortex"
-
-model = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
 
 def assign_message_id(msg, filename=None, index=None):
     # Convert timestamp to ISO string if it's a datetime
@@ -51,7 +49,11 @@ def build_index(dryrun=False, message_id=None):
         mongo_query = {
             "$or": [
                 {"indexed_on": {"$exists": 0}},
-                {"updated_on": {"$lt": "$indexed_on"}}
+                {
+                    "$expr": {
+                        "$gt": ["$updated_on", "$indexed_on"]
+                    }
+                }
             ]
         }
 
@@ -70,7 +72,7 @@ def build_index(dryrun=False, message_id=None):
         qdrant_entry = dict(doc)
         if not dryrun:
             text = qdrant_entry["message"]  # Get the message text
-            vector = model.encode([text])[0]  # Generate the embedding vector
+            vector = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode([text])[0]  # Generate the embedding vector
             qdrant_connector.upsert_single(qdrant_entry, vector)  # Upsert to Qdrant
         updated_qdrant += 1
 
@@ -88,16 +90,12 @@ def build_index(dryrun=False, message_id=None):
         if not dryrun:
             coll.update_one(
                 {"_id": doc["_id"]},
-                {"$set": {"indexed_on": datetime.now(timezone.utc).isoformat()}}
+                {"$set": {"indexed_on": datetime.now(timezone.utc)}}
             )
         total += 1
 
-    utils.write_system_log("index_complete", {
-        "processed": total,
-        "qdrant_indexed": updated_qdrant,
-        "graphdb_indexed": updated_graphdb,
-        "dryrun": dryrun,
-        "message_id": message_id,
-    })
+    utils.write_system_log(level="debug", module="databases", component="graphdb", function="build_index", action="index_complete",
+                     processed=total, qdrant_indexed=updated_qdrant, graphd_indexed=updated_graphdb, dryrun=dryrun, message_id=message_id)
+
     print(f"Indexing complete. Processed {total}. Qdrant updated: {updated_qdrant}. GraphDB updated: {updated_graphdb}.")
 

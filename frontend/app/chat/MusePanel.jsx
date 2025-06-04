@@ -2,33 +2,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useConfig } from '../hooks/ConfigContext';
 
 const MusePanel = ({ speaking }) => {
-  const [profile, setProfile] = useState({ name: "Muse" });
+  const { museProfile, museProfileLoading } = useConfig();
+  const museName = museProfile?.name?.[0]?.content ?? "Muse";
+  const panelIntro = museProfile?.panel_intro?.[0]?.content;
 
-  useEffect(() => {
-    fetch("http://localhost:5000/api/profile")
-      .then((res) => res.json())
-      .then((data) => {
-        const parsed = JSON.parse(data.profile);
-        setProfile(parsed);
-      });
-  }, []);
-
-  const avatarName = profile.name?.toLowerCase() || "muse";
-  const intro = profile.panel_intro || profile.perspective || "This presence was designed to remember — not command.";
+  const avatarName = museName?.toLowerCase() || "muse";
+  const intro = panelIntro || "This presence was designed to remember — not command.";
 
   return (
     <div className="bg-neutral-900 p-4 rounded-xl space-y-4 w-full md:max-w-sm sticky top-6 self-start">
       <img
-        src={`/${avatarName}.png`}
-        alt={profile.name}
+        src={`/${avatarName}-new.jpg`}
+        alt={museName}
             className={`rounded-xl w-full border-2 border-purple-700 ${
               speaking ? "animate-pulse-border" : ""
             }`}
       />
       <div className="text-2xl font-semibold text-purple-300 text-center">
-        {profile.name || "Muse"}
+        {museName || "Muse"}
       </div>
       {intro && (
         <div className="text-xs text-neutral-500 italic border-t border-neutral-800 pt-3">

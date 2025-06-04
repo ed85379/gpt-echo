@@ -1,6 +1,8 @@
 // SyncTab.jsx
+"use client";
 import { useState, useEffect } from "react";
 import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
 import { Trash2 } from "lucide-react";
 import { useRef } from "react"; // If not already imported
 
@@ -31,7 +33,7 @@ export default function SyncTab() {
   // Fetch calendar for push
   useEffect(() => {
     if (llmTab === "push") {
-      fetch("http://127.0.0.1:5000/api/calendar_status")
+      fetch("/api/calendar_status")
         .then(res => res.json())
         .then(data => setCalendarStatus(data.days || {}));
     }
@@ -43,7 +45,7 @@ export default function SyncTab() {
     setLogText("");
     setSelectedChunk(null);
     const d = selectedDate.toISOString().slice(0,10);
-    fetch(`http://127.0.0.1:5000/api/messages_by_day?date=${d}`)
+    fetch(`/api/messages_by_day?date=${d}`)
       .then(res => res.json())
       .then(data => {
         const blocks = chunkMessages(data.messages);
@@ -62,7 +64,7 @@ export default function SyncTab() {
   // Fetch import status for pull
   useEffect(() => {
     if (llmTab === "pull") {
-      fetch("http://127.0.0.1:5000/api/list_imports")
+      fetch("/api/list_imports")
         .then(res => res.json())
         .then(data => setPendingImports(data.imports || []));
     }
@@ -105,7 +107,7 @@ export default function SyncTab() {
   // Function to mark the messages within the chunk as exported
   function exportChunk(block, markExported = true) {
     const ids = block.map(msg => msg._id);
-    fetch("http://127.0.0.1:5000/api/mark_exported", {
+    fetch("/api/tag_message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: ids, exported: markExported })
@@ -122,7 +124,7 @@ export default function SyncTab() {
           ? { ...selected, exported: markExported }
           : selected
       );
-      fetch("http://127.0.0.1:5000/api/calendar_status")
+      fetch("/api/calendar_status")
         .then(res => res.json())
         .then(data => setCalendarStatus(data.days || {}));
     });
@@ -141,7 +143,7 @@ export default function SyncTab() {
     formData.append('file', importFile);
     setImportStatus(null);
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/upload_import', {
+      const res = await fetch('/api/upload_import', {
         method: 'POST',
         body: formData,
       });
@@ -156,7 +158,7 @@ export default function SyncTab() {
     const handleStartImport = async (collectionName) => {
       setImportProgress(prev => ({ ...prev, [collectionName]: { done: 0 } }));
       try {
-        const res = await fetch(`http://127.0.0.1:5000/api/process_import?collection=${collectionName}`, { method: "POST" });
+        const res = await fetch(`/api/process_import?collection=${collectionName}`, { method: "POST" });
         const data = await res.json();
         console.log("StartImport response:", data);
         pollImportProgress(collectionName);
@@ -168,7 +170,7 @@ export default function SyncTab() {
 
   const pollImportProgress = (collectionName) => {
     const interval = setInterval(async () => {
-      const res = await fetch(`http://127.0.0.1:5000/api/import_progress?collection=${collectionName}`);
+      const res = await fetch(`/api/import_progress?collection=${collectionName}`);
       const data = await res.json();
       setImportProgress(prev => ({
         ...prev,
@@ -180,9 +182,9 @@ export default function SyncTab() {
 
     const handleDeleteImport = async (collection) => {
       if (!window.confirm("Delete this import? This cannot be undone.")) return;
-      await fetch(`http://127.0.0.1:5000/api/delete_import?collection=${collection}`, { method: "POST" });
+      await fetch(`/api/delete_import?collection=${collection}`, { method: "POST" });
       // Refresh the imports list after deletion
-      fetch("http://127.0.0.1:5000/api/list_imports")
+      fetch("/api/list_imports")
         .then(res => res.json())
         .then(data => setPendingImports(data.imports || []));
     };
@@ -231,7 +233,7 @@ export default function SyncTab() {
 
   // MAIN RENDER:
   return (
-    <div>
+    <div className="p-6 text-white bg-neutral-950 overflow-y-auto">
       <h2 className="text-xl font-semibold mb-4">LLM Sync</h2>
       <div className="flex space-x-6 border-b border-neutral-800 pb-2 mb-4">
         <button

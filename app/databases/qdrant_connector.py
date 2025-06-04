@@ -1,10 +1,10 @@
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 import uuid
-from app import config
+from app.config import muse_config
 
-QDRANT_HOST = config.QDRANT_HOST
-QDRANT_PORT = config.QDRANT_PORT
+QDRANT_HOST = muse_config.get("QDRANT_HOST")
+QDRANT_PORT = muse_config.get("QDRANT_PORT")
 BATCH_SIZE = 128  # or 256 if the entries are tiny
 
 # Qdrant client connection
@@ -52,10 +52,12 @@ def upsert_single(entry, vector, collection=QDRANT_COLLECTION):
         "author_name": metadata.get("author_name"),
         "server": metadata.get("server"),
         "channel": metadata.get("channel"),
-        "modality_hint": metadata.get("modality_hint")
+        "modality_hint": metadata.get("modality_hint"),
         # Uncomment the next two lines if you want tags included:
         # "auto_tags": entry.get("auto_tags", []),
-        # "user_tags": entry.get("user_tags", []),
+        "user_tags": entry.get("user_tags", []),
+        "is_private": entry.get("is_private", False),
+        # "remembered": entry.get("remembered", False)
     }
     ensure_qdrant_collection(vector_size=len(vector), collection_name=collection)
     qdrant.upsert(
