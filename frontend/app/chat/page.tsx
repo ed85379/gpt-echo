@@ -37,8 +37,8 @@ export default function ChatPage() {
 
       {/* Sub-tab content */}
       {activeTab === "chat" && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full px-6">
-<div className="md:col-span-2 overflow-y-auto"
+        <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 h-full px-6">
+<div className=" relative md:col-span-2 overflow-y-auto"
      style={{ maxHeight: "calc(100vh - 92px - 48px)" }}  // Adjust 92/48 as needed for your actual bar heights
 >
             <ChatTab setSpeaking={setSpeaking} speaking={speaking} />

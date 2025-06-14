@@ -8,6 +8,7 @@ import { EyeClosed } from 'lucide-react';
 import { Tags } from 'lucide-react';
 import { Shredder } from 'lucide-react';
 import { SquareX } from 'lucide-react';
+import { ArrowBigDownDash } from 'lucide-react';
 import { linkify } from 'remarkable/linkify';
 import { useConfig } from '../hooks/ConfigContext';
 import { assignMessageId } from '../utils/utils';
@@ -49,14 +50,20 @@ const ChatTab = ({ setSpeaking }) => {
   const [scrollToBottom, setScrollToBottom] = useState(true);
   const [tagDialogOpen, setTagDialogOpen] = useState(null); // message id or null
   const [newTag, setNewTag] = useState("");
+  const [scrollToMessageId, setScrollToMessageId] = useState(null);
+  const [scrollTargetNode, setScrollTargetNode] = useState(null);
+  const [atBottom, setAtBottom] = useState(true);
   const chatEndRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const audioCtxRef = useRef(null);
   const audioSourceRef = useRef(null);
   const scrollContainerRef = useRef(null);
+  const messageRefs = useRef({});
   const { museProfile, museProfileLoading } = useConfig();
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
+  const MAX_RENDERED_MESSAGES = 30;
+  const visibleMessages = messages.slice(-MAX_RENDERED_MESSAGES);
 
 const md = new Remarkable({
   html: false, // Don’t allow raw HTML from LLM
@@ -65,6 +72,14 @@ const md = new Remarkable({
   typographer: true,
 });
 md.use(linkify);
+
+  useEffect(() => {
+    if (scrollTargetNode) {
+      scrollTargetNode.scrollIntoView({ behavior: "smooth", block: "start" });
+      setScrollTargetNode(null);
+      setScrollToMessageId(null);
+    }
+  }, [scrollTargetNode]);
 
 const handleReadAloudClick = () => {
   if (isTTSPlaying) {
@@ -123,7 +138,7 @@ const loadMessages = async (before = null) => {
     }, 0);
   } else {
     setMessages(data.messages);
-    setScrollToBottom(true); // Scroll when loading initial/latest
+    //setScrollToBottom(true); // Scroll when loading initial/latest
   }
   if (data.messages.length < MESSAGE_LIMIT) setHasMore(false);
   setLoadingMore(false);
@@ -147,6 +162,11 @@ function Paragraph({ children }) {
   return <p>{children}</p>;
 }
 
+    useEffect(() => {
+      if (scrollToBottom) {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }, [messages, scrollToBottom]);
 
   // WebSocket with auto-reconnect
   useEffect(() => {
@@ -183,6 +203,7 @@ function Paragraph({ children }) {
                 timestamp: new Date().toISOString(),
               }
             ]);
+            setScrollToMessageId(message_id);  // <-- Flag for scroll
 
             setLastTTS(text);
             setThinking(false);
@@ -223,6 +244,13 @@ function Paragraph({ children }) {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }
     }, [messages, scrollToBottom]);
+
+    useEffect(() => {
+      if (scrollToMessageId && messageRefs.current[scrollToMessageId]) {
+        messageRefs.current[scrollToMessageId].current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        setScrollToMessageId(null);
+      }
+    }, [scrollToMessageId, messages]);
 
     function handleDelete(message_id, markDeleted) {
       setScrollToBottom(false);
@@ -484,7 +512,12 @@ const speak = async (text, onDone) => {
           ref={scrollContainerRef}
           className="flex-1 overflow-y-auto space-y-2"
           onScroll={async (e) => {
-            const { scrollTop } = e.target;
+            const { scrollTop, scrollHeight, clientHeight } = e.target;
+              if (scrollTop + clientHeight >= scrollHeight - 10) {
+                setAtBottom(true);
+              } else {
+                setAtBottom(false);
+              }
             if (scrollTop === 0 && hasMore && !loadingMore && messages.length > 0) {
               // Get the timestamp of the oldest message
               const oldest = messages[0]?.timestamp;
@@ -494,6 +527,18 @@ const speak = async (text, onDone) => {
             }
           }}
         >
+      {!atBottom && (
+      <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-50">
+        <button
+          className="bg-purple-700 text-white px-3 py-1 rounded-full shadow-lg hover:bg-purple-800 transition"
+          onClick={() => {
+            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }}
+        >
+          <ArrowBigDownDash />
+        </button>
+      </div>
+    )}
   {!hasMore && (
     <div className="text-sm text-neutral-400 italic text-center mt-2">
       That’s the beginning. Want more? <a href="/memory" className="underline">Visit the Memory Page</a>
@@ -502,7 +547,7 @@ const speak = async (text, onDone) => {
         {connecting && (
           <div className="text-sm text-neutral-400">Reconnecting…</div>
         )}
-        {messages.map((msg, idx) => {
+        {visibleMessages.map((msg, idx) => {
           let renderedHTML = "";
           try {
             renderedHTML = md.render((msg.text || "").trim());
@@ -519,10 +564,15 @@ const speak = async (text, onDone) => {
           const bubbleWidth = "max-w-[80%]";
           // Determine alignment for user vs. muse
           const rightAlign = msg.from === "user" || msg.role === "user";
+          const attachRef = (el) => {
+            if (scrollToMessageId === msg.message_id) setScrollTargetNode(el);
+          };
+
 
           return (
                     <div
-                      key={idx}
+                      key={msg.message_id || idx}
+                      ref={attachRef}
                       className={`space-y-1 flex flex-col ${rightAlign ? "items-end" : "items-start"}`}
                     >
                   {/* Metadata + bubble container, shares max-width and ml-auto for right-aligned */}
