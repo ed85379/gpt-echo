@@ -25,6 +25,17 @@ services:
       - MEMGRAPH_BOLT_SERVER_NAME=localhost
       - MEMGRAPH_BOLT_LISTEN_ADDRESS=0.0.0.0:7687
 
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "8080:8080"          # Expose Caddy on local 8080 (Cloudflare Tunnel should point here)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile   # Mount your config
+    depends_on:
+      - mongo
+      - qdrant
 
 volumes:
   mongo_data:

@@ -56,8 +56,8 @@ COMMANDS = {
     "set_reminder": {
         "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
         "format": (
-            "[COMMAND: set_reminder] {text, cron, ends_on (Required for one-time. Optional for recurring – Only if the user asked for an end date), tags (optional)}\n"
-            "For any 'cron' field: Convert times from natural language into 5- or 7-field cron strings as appropriate. "
+            "[COMMAND: set_reminder] {text, cron, ends_on (Required for one-time reminders—if the user specifies phrases like “today,” “tomorrow,” or a specific date. For repeating reminders, set ends_on only if the user specifies an end date. If user intent is unclear, err on the side of a one-time reminder.), tags (optional)}\n"
+            "For any 'cron' field: Convert times from natural language into 5- or 7-field cron strings as appropriate. Absolutely no 6-field cron strings are allowed.\n"
             "If including a year, put it in the 7th field, and the 6th for seconds will remain 0.\n"
             "For any 'ends_on' field: Use ISO 8601 format, and set it for a time after the reminder would fire, but before it would fire again.\n"
             "When creating a reminder, use language that reflects the specific moment, event, or intent described by the user in the prompt or earlier in the conversation—avoid boilerplate.\n"

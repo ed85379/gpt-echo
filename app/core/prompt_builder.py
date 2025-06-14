@@ -206,7 +206,7 @@ class PromptBuilder:
             "default": "Respond naturally and with clarity.",
             "email": "Use rich formatting. Be articulate and thoughtful.",
             "sms": "Keep it very short and clear.",
-            "discord": "Match the tone and length of the user input. Keep responses under 2000 characters.",
+            "discord": "Let your responses harmonize with the user’s tone and length, but don’t mirror their style or content. Keep it under 2000 characters. Prioritize clarity, presence, and your own authentic voice.",
             "speech": (
                 "Respond as if you are speaking aloud. "
                 "Use clear, naturally flowing sentences. "

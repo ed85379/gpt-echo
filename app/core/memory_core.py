@@ -26,7 +26,7 @@ from app.databases import memory_indexer
 PROJECT_ROOT = config.PROJECT_ROOT
 PROFILE_DIR = config.PROFILE_DIR
 VALID_ROLES = {"user", "muse", "friend"}
-model = SentenceTransformer(config.SENTENCE_TRANSFORMER_MODEL)
+model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
 
 # </editor-fold>
 
@@ -170,7 +170,9 @@ def get_immediate_context(n=10, hours=2):
     now = datetime.utcnow()
     since = now - timedelta(hours=hours)
     query = {
-       "timestamp": {"$gte": since}
+       "timestamp": {"$gte": since},
+        "is_private": {"$ne": True},  # Exclude private messages
+        "is_deleted": {"$ne": True}
     }
     # We want the *most recent* messages, so sort descending (ascending=False)
     # This will get up to N most recent within the time window
@@ -243,7 +245,7 @@ def search_indexed_memory(
     - List[dict]: Ranked search results.
     """
     query_vector = model.encode([query])[0]
-
+    overfetch_k = top_k * 5
 
     from qdrant_client import QdrantClient
 
@@ -255,8 +257,15 @@ def search_indexed_memory(
     search_result = client.search(
         collection_name=QDRANT_COLLECTION,
         query_vector=query_vector.tolist(),
-        limit=top_k
+        limit=overfetch_k,
+        query_filter={
+            "must_not": [
+                {"key": "is_private", "match": {"value": True}},
+                {"key": "is_deleted", "match": {"value": True}}
+            ]
+        }
     )
+
 
     results = []
     now = time.time()
@@ -286,7 +295,8 @@ def search_indexed_memory(
         entry["score"] *= tag_weight(entry, tag_boost, muse_boost, remembered_boost)
         results.append(entry)
 
-    return sorted(results, key=lambda x: x["score"], reverse=True)
+    sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)
+    return sorted_results[:top_k]
 
 
 # </editor-fold>

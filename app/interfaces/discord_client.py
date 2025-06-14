@@ -60,6 +60,7 @@ async def handle_incoming_discord_message(message):
 
             # Build the full prompt using the new builder
             builder = prompt_builder.PromptBuilder(destination="discord")
+            builder.add_laws()
             builder.add_profile()
             builder.add_core_principles()
             builder.add_cortex_entries(["insight", "seed"])
