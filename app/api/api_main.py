@@ -328,6 +328,7 @@ def tag_message(
         else:
             unset_fields.append("remembered")
     if is_deleted is not None:
+        contentful = True
         if is_deleted:
             set_fields["is_deleted"] = True
         else:
