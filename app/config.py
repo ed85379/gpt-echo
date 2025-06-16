@@ -72,6 +72,22 @@ class MuseConfig:
                 result[key] = entry
         return result
 
+    def as_grouped(self, include_meta=True):
+        """
+        Return config as {category: [entries...]} for grouping in the UI.
+        Each entry: {"key": ..., "value": ..., "description": ..., "category": ...}
+        """
+        # Use as_dict to get everything with meta
+        flat = self.as_dict(include_meta=True)
+        grouped = {}
+        for key, entry in flat.items():
+            category = entry.get("category", "uncategorized")
+            # Compose the entry for frontend (with 'key' instead of dict key)
+            entry_with_key = dict(entry)
+            entry_with_key["key"] = key
+            grouped.setdefault(category, []).append(entry_with_key)
+        return grouped
+
 muse_config = MuseConfig(
     mongo_uri="mongodb://localhost:27017/",
     db_name="muse_system",
