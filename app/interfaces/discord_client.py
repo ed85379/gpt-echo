@@ -43,9 +43,9 @@ async def handle_incoming_discord_message(message):
             user_input = message.content.strip()
 
             # Log the incoming user message
-            memory_core.log_message(
+            await memory_core.log_message(
                 role=get_user_role(message.author.id),
-                content=user_input,
+                message=user_input,
                 source="discord",
                 metadata={
                     "author_id": str(message.author.id),
@@ -81,9 +81,9 @@ async def handle_incoming_discord_message(message):
             #print(muse_response)
 
             # Log Muse reply
-            memory_core.log_message(
+            await memory_core.log_message(
                 role="muse",
-                content=muse_response,
+                message=muse_response,
                 source="discord",
                 metadata={
                     "author_id": str(client.user.id),

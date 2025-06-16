@@ -1,0 +1,64 @@
+import asyncio
+from typing import Dict, Any, Callable, Awaitable
+from app.core import utils
+
+# Typing: adjust as needed for your actual message structure
+Message = Dict[str, Any]
+
+async def run_broadcast_queue(
+    queue: asyncio.Queue,
+    broadcast_message: Callable[..., Awaitable[None]],
+    *,
+    logger=None
+):
+    while True:
+        msg = await queue.get()
+        try:
+            # Adjust keys as needed for your message dict!
+            await broadcast_message(
+                message=msg["message"],
+                timestamp=msg.get("timestamp"),
+                to=msg.get("to", "frontend")
+            )
+        except Exception as e:
+            utils.write_system_log(
+                level="error",
+                module="api",
+                component="queues",
+                function="run_broadcast_queue",
+                action="broadcast_failed",
+                error=str(e),
+                message=str(msg)
+            )
+            # Optionally: re-queue or alert
+        finally:
+            queue.task_done()
+
+async def run_log_queue(
+    queue: asyncio.Queue,
+    log_message: Callable[..., Awaitable[None]],
+    *,
+    logger=None
+):
+    while True:
+        msg = await queue.get()
+        try:
+            await log_message(
+                role=msg.get("role", "muse"),
+                message=msg["message"],
+                timestamp=msg.get("timestamp"),
+                # Add any other fields your log_message expects
+            )
+        except Exception as e:
+            utils.write_system_log(
+                level="error",
+                module="api",
+                component="queues",
+                function="run_log_queue",
+                action="log_failed",
+                error=str(e),
+                message=str(msg)
+            )
+            # Optionally: re-queue or alert
+        finally:
+            queue.task_done()

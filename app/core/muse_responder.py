@@ -3,7 +3,7 @@
 import asyncio
 import httpx
 import re, json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from app.core import journal_core
 from app.core import memory_core
@@ -13,6 +13,7 @@ from app.core import utils
 from app.services import openai_client
 from app.core import prompt_builder
 from app.config import muse_config
+from app.services import api_client
 
 
 COMMAND_PATTERN = re.compile(r"\[COMMAND: ([^\]]+)]\s*\{([^}]*)\}", re.DOTALL)
@@ -316,11 +317,11 @@ def handle_skip_reminder(payload, model=muse_config.get("OPENAI_WHISPER_MODEL"))
         return {"success": False, "message": "Failed to update reminder."}
 
 
-def send_to_websocket(text: str, to="frontend"):
+def send_to_websocket(text: str, to="frontend", timestamp=None):
     try:
         response = httpx.post(
             f"{muse_config.get("API_URL")}/internal/broadcast",
-            json={"message": text, "to": to},
+            json={"message": text, "to": to, "timestamp": timestamp},
             timeout=5  # optional: fail fast if something goes wrong
         )
         if response.status_code != 200:
@@ -328,7 +329,7 @@ def send_to_websocket(text: str, to="frontend"):
     except Exception as e:
         print(f"WebSocket send error: {e}")
 
-def handle_speak_command(payload, source=None):
+async def handle_speak_command(payload, to="frontend", source="frontend"):
     if utils.is_quiet_hour():
         utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
                                action="speak_skipped", reason="Quiet hours (direct)", text=payload.get("text", ""))
@@ -353,16 +354,17 @@ def handle_speak_command(payload, source=None):
     prompt = builder.build_prompt()
 
     response = openai_client.get_openai_response(prompt, model=muse_config.get("OPENAI_MODEL"))
-
-    send_to_websocket(response)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    send_to_websocket(response, to, timestamp)
 
     utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
                            action="speak_executed", subject=subject, response=response)
-    memory_core.log_message("muse", response["text"], source=source)
+    await api_client.log_message_to_api(response, role="muse", source=source, timestamp=timestamp)
+    #memory_core.log_message("muse", response, source=source)
     return ""
 
 
-async def handle_speak_direct(payload, source=None):
+async def handle_speak_direct(payload, to="frontend", source="frontend"):
     if utils.is_quiet_hour():
         utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
                                action="speak_skipped", reason="Quiet Hours (direct)", text=payload.get("text", ""))
@@ -372,13 +374,19 @@ async def handle_speak_direct(payload, source=None):
     if not text:
         return "Missing text for speak_direct command"
 
+    timestamp = datetime.now(timezone.utc).isoformat()
+
     # Dispatch it directly
-    send_to_websocket(text)
+    send_to_websocket(text, to, timestamp)
 
 
     utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
                            action="speak_direct_executed", text=text)
-    memory_core.log_message("muse", text, source=source)
+    try:
+        await api_client.log_message_to_api(text, role="muse", source=source, timestamp=timestamp)
+        #memory_core.log_message("muse", text, source=source)
+    except Exception as e:
+        print(f"Logging error: {e}")
     return ""
 
 def handle_journal_command(payload, entry_type="public", source=None):

@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request, UploadFile, File, Query, BackgroundTasks, Body
+from fastapi import FastAPI, APIRouter, Request, UploadFile, File, Query, BackgroundTasks, Body
+import asyncio
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from typing import List, Optional, Literal
 import os
@@ -20,8 +21,17 @@ from app.core.prompt_builder import PromptBuilder
 from app.core.muse_responder import route_user_input
 from app.interfaces.websocket_server import router as websocket_router
 from app.interfaces.websocket_server import broadcast_message
+from app.core.memory_core import log_message
 from app.core import utils
 from app.databases.mongo_connector import mongo
+from app.api.routers.config_api import router as config_router
+from app.api.routers.messages_api import router as messages_router
+from .queues import run_broadcast_queue, run_log_queue
+
+broadcast_queue = asyncio.Queue()
+log_queue = asyncio.Queue()
+
+
 
 client = OpenAI(api_key=config.OPENAI_API_KEY)  # Uses api key from env or config
 JOURNAL_DIR = config.JOURNAL_DIR
@@ -30,6 +40,11 @@ MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
 
 
 app = FastAPI()
+router = APIRouter()
+app.include_router(config_router)
+app.include_router(messages_router)
+
+
 
 # Add CORS middleware
 app.add_middleware(
@@ -44,6 +59,10 @@ app.include_router(websocket_router)
 
 # --- Utility Functions ---
 
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(run_broadcast_queue(broadcast_queue, broadcast_message))
+    asyncio.create_task(run_log_queue(log_queue, log_message))
 
 def load_journal_index():
     if JOURNAL_CATALOG_PATH.exists():
@@ -60,9 +79,6 @@ def save_journal_index(index):
 
 
 
-@app.get("/api/config")
-def get_full_config():
-    return muse_config.as_dict()
 
 @app.get("/api/cortex")
 def get_cortex():
@@ -78,6 +94,8 @@ def get_cortex():
             entry["_id"] = str(entry["_id"])
         grouped[typ].append(entry)
     return grouped
+
+
 
 @app.post("/api/cortex/edit/{entry_id}")
 async def edit_cortex_entry(entry_id: str, request: Request):
@@ -534,12 +552,23 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     # Get Muse's response
     response = route_user_input(full_prompt)
     response_timestamp = datetime.now(timezone.utc).isoformat()
-    await broadcast_message(response, timestamp=response_timestamp, to="frontend")
-    if user_timestamp:
-        background_tasks.add_task(memory_core.log_message, "user", user_input, timestamp=user_timestamp)
-    else:
-        background_tasks.add_task(memory_core.log_message, "user", user_input)
-    background_tasks.add_task(memory_core.log_message, "muse", response, timestamp=response_timestamp)
+    msg = {
+        "message": response,
+        "timestamp": response_timestamp,
+        "role": "muse",
+        "source": "frontend",
+        "to": "frontend"
+    }
+    await broadcast_queue.put(msg)
+    await log_queue.put(msg)
+
+    user_msg = {
+        "message": user_input,
+        "timestamp": user_timestamp or datetime.now(timezone.utc).isoformat(),
+        "role": "user",
+        "source": "frontend"
+    }
+    await log_queue.put(user_msg)
     return {"response": response}
 
 
@@ -570,9 +599,17 @@ async def internal_broadcast(request: Request):
     data = await request.json()
     message = data.get("message", "")
     target = data.get("to", "frontend")
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = data.get("timestamp", datetime.now(timezone.utc).isoformat())
     if message:
-        await broadcast_message(message, to=target, timestamp=timestamp)
+        msg = {
+            "message": message,
+            "timestamp": timestamp,
+            "role": "muse",
+            "source": "frontend",
+            "to": target
+        }
+        await broadcast_queue.put(msg)
+        #await broadcast_message(message, to=target, timestamp=timestamp)
         return {"status": "ok"}
     return {"status": "error", "reason": "No message"}
 
@@ -599,3 +636,4 @@ async def transcribe_audio(file: UploadFile = File(...)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api_main:app", host="0.0.0.0", port=5000, reload=True)
+

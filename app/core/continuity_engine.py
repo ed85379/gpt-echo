@@ -24,27 +24,27 @@ async def task_runner(task):
     if name in ("dreamtime", "introspection_engine"):
         hour = 3 if name == "dreamtime" else 4
         delay = utils.seconds_until(hour)
-        print(f"[MuseLoop] {name} will run in {delay} seconds (scheduled for {hour}:00)")
+        print(f"[ContinuityEngine] {name} will run in {delay} seconds (scheduled for {hour}:00)")
         await asyncio.sleep(delay)
         while True:
             try:
-                print(f"[MuseLoop] Running task: {name}")
+                print(f"[ContinuityEngine] Running task: {name}")
                 fn()
             except Exception as e:
-                print(f"[MuseLoop] Error in task '{name}': {e}")
+                print(f"[ContinuityEngine] Error in task '{name}': {e}")
             await asyncio.sleep(86400)  # Every 24 hours after
     else:
         interval = task["interval"]
         # Apply jitter
         jitter = random.randint(1, max(90, interval // 4)) if interval >= 300 else random.randint(1, 15)
-        print(f"[MuseLoop] Initial delay for {name}: {jitter} seconds")
+        print(f"[ContinuityEngine] Initial delay for {name}: {jitter} seconds")
         await asyncio.sleep(jitter)
         while True:
             try:
-                print(f"[MuseLoop] Running task: {name}")
+                print(f"[ContinuityEngine] Running task: {name}")
                 fn()
             except Exception as e:
-                print(f"[MuseLoop] Error in task '{name}': {e}")
+                print(f"[ContinuityEngine] Error in task '{name}': {e}")
             await asyncio.sleep(interval)
 
 
@@ -61,4 +61,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("[MuseLoop] Stopped.")
+        print("[ContinuityEngine] Stopped.")

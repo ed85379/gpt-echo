@@ -34,7 +34,7 @@ model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
 # Chronicle Logging
 # --------------------------
 # <editor-fold desc="📝 Logging Functions">
-def log_message(role, content, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
+async def log_message(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
     """
     Log a message from any source into the Muse system.
     If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
@@ -60,7 +60,7 @@ def log_message(role, content, source="frontend", metadata=None, flags=None, use
 
     # Always auto-tag the message
     try:
-        auto_tags = openai_client.get_openai_autotags(content)
+        auto_tags = openai_client.get_openai_autotags(message)
     except Exception as e:
         auto_tags = []
         print(f"[auto-tag error]: {e}")
@@ -69,7 +69,7 @@ def log_message(role, content, source="frontend", metadata=None, flags=None, use
         "timestamp": timestamp,
         "role": role,
         "source": source,
-        "message": content,
+        "message": message,
         "auto_tags": auto_tags,
         "user_tags": [],
         "flags": flags,
@@ -82,11 +82,20 @@ def log_message(role, content, source="frontend", metadata=None, flags=None, use
         mongo.insert_log(muse_config.get("MONGO_CONVERSATION_COLLECTION"), log_entry)
         memory_indexer.build_index(message_id=log_entry["message_id"])
     except Exception as e:
+        utils.write_system_log(
+            level="error",
+            module="core",
+            component="memory_core",
+            function="log_message",
+            action="log_failed",
+            error=str(e),
+            message=str(json.dumps(log_entry))
+        )
         with open("message_backup.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, default=str) + "\n")
+    return {"message_id": log_entry["message_id"]}
 
-
-def log_message_test(role, content, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
+async def log_message_test(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
     """
     Log a message from any source into the Muse system.
     If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
@@ -112,7 +121,7 @@ def log_message_test(role, content, source="frontend", metadata=None, flags=None
 
     # Always auto-tag the message
     try:
-        auto_tags = openai_client.get_openai_autotags(content)
+        auto_tags = openai_client.get_openai_autotags(message)
     except Exception as e:
         auto_tags = []
         print(f"[auto-tag error]: {e}")
@@ -121,7 +130,7 @@ def log_message_test(role, content, source="frontend", metadata=None, flags=None
         "timestamp": timestamp,
         "role": role,
         "source": source,
-        "message": content,
+        "message": message,
         "auto_tags": auto_tags,
         "user_tags": user_tags or [],
         "flags": flags,
@@ -138,16 +147,16 @@ def log_message_test(role, content, source="frontend", metadata=None, flags=None
         with open("message_backup.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, default=str) + "\n")
 
-def do_import(collection):
+async def do_import(collection):
     temp_coll = mongo.db[collection]
     main_coll = mongo.db[muse_config.get("MONGO_CONVERSATION_COLLECTION")]
 
     imported = 0
     total = temp_coll.count_documents({"imported": {"$ne": True}})
     for doc in temp_coll.find({"imported": {"$ne": True}}):
-        log_message(
+        await log_message(
             role=doc.get("role"),
-            content=doc.get("message"),
+            message=doc.get("message"),
             source=doc.get("source"),
             timestamp=doc.get("timestamp"),
         )
