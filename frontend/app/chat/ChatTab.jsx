@@ -8,10 +8,13 @@ import { EyeClosed } from 'lucide-react';
 import { Tags } from 'lucide-react';
 import { Shredder } from 'lucide-react';
 import { SquareX } from 'lucide-react';
+import { BookDashed } from 'lucide-react';
+import { BookMarked } from 'lucide-react';
 import { ArrowBigDownDash } from 'lucide-react';
 import { linkify } from 'remarkable/linkify';
 import { useConfig } from '../hooks/ConfigContext';
 import { assignMessageId } from '../utils/utils';
+import { useMemo } from "react";
 
 export function CandleHolderLit(props) {
   return (
@@ -50,6 +53,10 @@ const ChatTab = ({ setSpeaking }) => {
   const [scrollToBottom, setScrollToBottom] = useState(true);
   const [tagDialogOpen, setTagDialogOpen] = useState(null); // message id or null
   const [newTag, setNewTag] = useState("");
+  const [projectDialogOpen, setProjectDialogOpen] = useState(null); // message id or null
+  const [newProject, setNewProject] = useState("");
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [scrollToMessageId, setScrollToMessageId] = useState(null);
   const [scrollTargetNode, setScrollTargetNode] = useState(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -252,9 +259,27 @@ function Paragraph({ children }) {
       }
     }, [scrollToMessageId, messages]);
 
+    useEffect(() => {
+      fetch("/api/projects")
+        .then(res => res.json())
+        .then(data => {
+          setProjects(data.projects || []);
+          setProjectsLoading(false);
+        });
+    }, []);
+
+    // Build a map for fast lookup
+    const projectMap = useMemo(() => {
+      const map = {};
+      for (const proj of projects) {
+        map[proj._id] = proj;
+      }
+      return map;
+    }, [projects]);
+
     function handleDelete(message_id, markDeleted) {
       setScrollToBottom(false);
-      fetch("/api/tag_message", {
+      fetch("/api/messages/tag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_ids: [message_id], is_deleted: markDeleted })
@@ -271,7 +296,7 @@ function Paragraph({ children }) {
 
     function handleTogglePrivate(message_id, makePrivate) {
       setScrollToBottom(false);
-      fetch("/api/tag_message", {
+      fetch("/api/messages/tag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_ids: [message_id], is_private: makePrivate })
@@ -288,7 +313,7 @@ function Paragraph({ children }) {
 
     function handleToggleRemembered(message_id, makeRemembered) {
     setScrollToBottom(false);
-    fetch("/api/tag_message", {
+    fetch("/api/messages/tag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: [message_id], remembered: makeRemembered })
@@ -302,9 +327,39 @@ function Paragraph({ children }) {
     });
   }
 
+    function setProject(message_id, project_id) {
+      setScrollToBottom(false);
+      fetch("/api/messages/tag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_ids: [message_id], set_project: project_id }),
+      }).then(() => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.message_id === message_id ? { ...m, project_id } : m
+          )
+        );
+      });
+    }
+
+    function clearProject(message_id) {
+      setScrollToBottom(false);
+      fetch("/api/messages/tag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_ids: [message_id], set_project: null }),
+      }).then(() => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.message_id === message_id ? { ...m, project_id: null } : m
+          )
+        );
+      });
+    }
+
     function addTag(message_id, tag) {
       setScrollToBottom(false);
-      fetch("/api/tag_message", {
+      fetch("/api/messages/tag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_ids: [message_id], add_user_tags: [tag] }),
@@ -321,7 +376,7 @@ function Paragraph({ children }) {
 
     function removeTag(message_id, tag) {
       setScrollToBottom(false);
-      fetch("/api/tag_message", {
+      fetch("/api/messages/tag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_ids: [message_id], remove_user_tags: [tag] }),
@@ -541,7 +596,7 @@ const speak = async (text, onDone) => {
     )}
   {!hasMore && (
     <div className="text-sm text-neutral-400 italic text-center mt-2">
-      That’s the beginning. Want more? <a href="/memory" className="underline">Visit the Memory Page</a>
+      That’s the beginning. Visit the History Tab for more.
     </div>
   )}
         {connecting && (
@@ -560,7 +615,8 @@ const speak = async (text, onDone) => {
           const isPrivate = !!msg.is_private;
           const isRemembered = !!msg.remembered;
           const isDeleted = !!msg.is_deleted;
-          const userTags = msg.user_tags?.filter(t => t !== "private" && t !== "deleted" && t !== "remembered") || [];
+          const inProject = msg.project_id;
+          const userTags = msg.user_tags?.filter(t => t !== "private" && t !== "deleted" && t !== "remembered" && t !== "project") || [];
           const bubbleWidth = "max-w-[80%]";
           // Determine alignment for user vs. muse
           const rightAlign = msg.from === "user" || msg.role === "user";
@@ -596,6 +652,14 @@ const speak = async (text, onDone) => {
 
                   {/* Tagging bar (appears on hover) */}
                   <div className="absolute bottom-2 right-3 hidden group-hover:flex gap-2 z-10">
+                    <button
+                      onClick={() => setProjectDialogOpen(msg.message_id)}
+                      title={msg.project_id ? "Change project" : "Add to project"}
+                      className="text-neutral-400 hover:text-purple-300 transition-colors"
+                      style={{ background: "none", border: "none", cursor: "pointer" }}
+                    >
+                      <BookMarked size={18} />
+                    </button>
                     <button
                       onClick={() => setTagDialogOpen(msg.message_id)}
                       title="Tag message"
@@ -685,11 +749,65 @@ const speak = async (text, onDone) => {
                         >✕</button>
                       </div>
                     )}
+                {projectDialogOpen === msg.message_id && (
+                  <div className="absolute z-30 right-10 bottom-2 bg-neutral-900 p-4 rounded-lg shadow-lg w-64">
+                    <div className="mb-2 font-semibold text-purple-100">Add Message to Project</div>
+                    {projectsLoading ? (
+                      <div className="text-neutral-400 text-sm">Loading projects…</div>
+                    ) : projects.length === 0 ? (
+                      <div className="text-neutral-500 text-sm">No projects found.</div>
+                    ) : (
+                      <ul className="max-h-40 overflow-y-auto space-y-1">
+                        {projects.map(proj => (
+                          <li key={proj._id}>
+                            <button
+                              className={`w-full text-left px-2 py-1 rounded ${
+                                msg.project_id === proj._id
+                                  ? "bg-purple-700 text-white"
+                                  : "bg-neutral-800 text-purple-100 hover:bg-purple-900"
+                              }`}
+                              onClick={() => {
+                                setProject(msg.message_id, proj._id);
+                                setProjectDialogOpen(null);
+                              }}
+                            >
+                              <span className="font-semibold">{proj.name}</span>
+                              {proj.notes?.[0] && (
+                                <span className="ml-2 text-xs text-neutral-400 italic">{proj.notes[0]}</span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {msg.project_id && (
+                      <button
+                        className="mt-2 w-full px-2 py-1 rounded bg-neutral-700 text-purple-200 hover:bg-red-800"
+                        onClick={() => {
+                          clearProject(msg.message_id);
+                          setProjectDialogOpen(null);
+                        }}
+                      >
+                        Remove from project
+                      </button>
+                    )}
+                    <button
+                      className="absolute top-1 right-2 text-xs text-neutral-500 hover:text-purple-200"
+                      onClick={() => setProjectDialogOpen(null)}
+                    >✕</button>
+                  </div>
+                )}
 
 
                 </div>
                 {/* Tags */}
                 <div className="flex flex-wrap gap-1 mt-1 ml-2">
+                {inProject && projectMap[inProject] && (
+                  <span className="bg-purple-800 text-xs text-purple-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <BookMarked size={14} className="inline" />
+                    <span className="font-semibold">{projectMap[inProject].name || "Project"}</span>
+                  </span>
+                )}
                   {userTags.map(tag => (
                     <span key={tag} className="bg-purple-800 text-xs text-purple-100 px-2 py-0.5 rounded-full">
                       #{tag}

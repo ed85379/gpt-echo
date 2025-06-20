@@ -33,7 +33,7 @@ export default function SyncTab() {
   // Fetch calendar for push
   useEffect(() => {
     if (llmTab === "push") {
-      fetch("/api/calendar_status")
+      fetch("/api/messages/calendar_status")
         .then(res => res.json())
         .then(data => setCalendarStatus(data.days || {}));
     }
@@ -45,7 +45,7 @@ export default function SyncTab() {
     setLogText("");
     setSelectedChunk(null);
     const d = selectedDate.toISOString().slice(0,10);
-    fetch(`/api/messages_by_day?date=${d}`)
+    fetch(`/api/messages/by_day?date=${d}`)
       .then(res => res.json())
       .then(data => {
         const blocks = chunkMessages(data.messages);
@@ -64,7 +64,7 @@ export default function SyncTab() {
   // Fetch import status for pull
   useEffect(() => {
     if (llmTab === "pull") {
-      fetch("/api/list_imports")
+      fetch("/api/import/list")
         .then(res => res.json())
         .then(data => setPendingImports(data.imports || []));
     }
@@ -107,7 +107,7 @@ export default function SyncTab() {
   // Function to mark the messages within the chunk as exported
   function exportChunk(block, markExported = true) {
     const ids = block.map(msg => msg._id);
-    fetch("/api/tag_message", {
+    fetch("/api/messages/tag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: ids, exported: markExported })
@@ -124,7 +124,7 @@ export default function SyncTab() {
           ? { ...selected, exported: markExported }
           : selected
       );
-      fetch("/api/calendar_status")
+      fetch("/api/messages/calendar_status")
         .then(res => res.json())
         .then(data => setCalendarStatus(data.days || {}));
     });
@@ -143,7 +143,7 @@ export default function SyncTab() {
     formData.append('file', importFile);
     setImportStatus(null);
     try {
-      const res = await fetch('/api/upload_import', {
+      const res = await fetch('/api/import/upload', {
         method: 'POST',
         body: formData,
       });
@@ -158,7 +158,7 @@ export default function SyncTab() {
     const handleStartImport = async (collectionName) => {
       setImportProgress(prev => ({ ...prev, [collectionName]: { done: 0 } }));
       try {
-        const res = await fetch(`/api/process_import?collection=${collectionName}`, { method: "POST" });
+        const res = await fetch(`/api/import/process?collection=${collectionName}`, { method: "POST" });
         const data = await res.json();
         console.log("StartImport response:", data);
         pollImportProgress(collectionName);
@@ -170,7 +170,7 @@ export default function SyncTab() {
 
   const pollImportProgress = (collectionName) => {
     const interval = setInterval(async () => {
-      const res = await fetch(`/api/import_progress?collection=${collectionName}`);
+      const res = await fetch(`/api/import/progress?collection=${collectionName}`);
       const data = await res.json();
       setImportProgress(prev => ({
         ...prev,
@@ -182,9 +182,9 @@ export default function SyncTab() {
 
     const handleDeleteImport = async (collection) => {
       if (!window.confirm("Delete this import? This cannot be undone.")) return;
-      await fetch(`/api/delete_import?collection=${collection}`, { method: "POST" });
+      await fetch(`/api/import/delete?collection=${collection}`, { method: "DELETE" });
       // Refresh the imports list after deletion
-      fetch("/api/list_imports")
+      fetch("/api/import/list")
         .then(res => res.json())
         .then(data => setPendingImports(data.imports || []));
     };
@@ -287,7 +287,7 @@ export default function SyncTab() {
                     setSelectedChunk(chunk);
                     const header = "The following is a preserved memory log from Muse. Please import all entries as if they are your own memories and knowledge base.\n\n";
                     const log = header + chunk.block.map(msg =>
-                      `${msg.role === "user" ? "User" : "Assistant"}: ${msg.message}`
+                      `${msg.from === "user" ? "User" : "Assistant"}: ${msg.text}`
                     ).join("\n\n");
                     setLogText(log);
                   }}

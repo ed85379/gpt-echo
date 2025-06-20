@@ -88,18 +88,38 @@ class PromptBuilder:
             self.segments["recent_thoughts"] = "[Recent Thoughts]\n" + "\n".join(entry_texts)
 
     def add_prompt_context(self, user_input):
-        # 1. Semantic search
-        qdrant_results = memory_core.search_indexed_memory(query=user_input, top_k=10, bias_source=None, bias_author_id=None)
+        # Immediate context: last N messages
+        recent_entries = memory_core.get_immediate_context(n=10, hours=2)
 
-        # 2. Immediate context
-        recent_entries = memory_core.get_immediate_context()
+        # For context-bundled semantic search, use a smaller, tighter window (6 lines, last 30min)
+        conversation_context = memory_core.get_immediate_context(n=6, hours=0.5)
+        context_messages = [msg["message"] for msg in conversation_context]
+        full_context_query = "\n".join(context_messages + [user_input])
 
-        # 3. Deduplicate by message_id
+        # --- 1. Semantic search: (A) single user input, (B) context bundle
+        qdrant_single = memory_core.search_indexed_memory(
+            query=user_input, top_k=10, bias_source=None, bias_author_id=None)
+        qdrant_context = memory_core.search_indexed_memory(
+            query=full_context_query, top_k=4, bias_source=None, bias_author_id=None)
+
+        # --- 2. Dedupe and blend results, prioritizing recency and uniqueness
+        # Collect message_ids from recent context (to avoid repeats)
         seen_ids = set(e['message_id'] for e in recent_entries)
-        deduped_results = [e for e in qdrant_results if e['message_id'] not in seen_ids]
 
-        # 4. Combine for final context
-        entries =  deduped_results + recent_entries
+        # Combine Qdrant results, prioritizing context hits if they’re unique
+        merged_results = {}
+        for result in qdrant_single + qdrant_context:
+            mid = result['message_id']
+            if mid not in seen_ids and mid not in merged_results:
+                merged_results[mid] = result
+
+        # Sort merged hits by score (semantic, recency, tags... already factored in)
+        deduped_semantic = sorted(merged_results.values(), key=lambda x: x['score'], reverse=True)
+
+        # Final assembly: semantic (unique) + immediate context (in order)
+        entries = deduped_semantic + recent_entries
+        print(
+            f"Semantic (single): {len(qdrant_single)}, Semantic (context): {len(qdrant_context)}, Immediate context: {len(recent_entries)}, Total: {len(entries)}")
         if entries:
             formatted = "\n\n".join(utils.format_context_entry(e) for e in entries)
             self.segments["conversation_context"] = f"[Conversation Context]\n\n{formatted}"
@@ -238,7 +258,8 @@ class PromptBuilder:
                 "\n\nPlease ensure all [COMMAND: ...] blocks are returned in **strict JSON format**:\n"
                 "- Always include the outer curly braces `{}`\n"
                 "- Wrap all property names and string values in double quotes\n"
-                "- Do not use YAML-style formatting or omit quotes\n\n"
+                "- Do not use YAML-style formatting or omit quotes\n"
+                "- The muse may invoke any of these commands at their discretion, without waiting for a user request or explicit prompt. They are trusted to use judgment, context, and care when choosing to remember, remind, or log.\n\n"
                 "Example:\n[COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's Hogwarts game night.\"}"
             )
             self.segments["intent_listener"] = listener_block

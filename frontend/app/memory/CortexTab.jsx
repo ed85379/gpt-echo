@@ -47,7 +47,7 @@ const CortexTab = () => {
     const handleDelete = (entryId) => {
       if (!window.confirm("Are you sure you want to delete this entry?")) return;
       fetch(`/api/cortex/delete/${entryId}`, {
-        method: "POST",
+        method: "DELETE",
       })
         .then((res) => res.json())
         .then((data) => {
@@ -63,7 +63,7 @@ const CortexTab = () => {
 
     const handleEdit = (entryId, newText) => {
       fetch(`/api/cortex/edit/${entryId}`, {
-        method: "POST",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: newText }),
       })

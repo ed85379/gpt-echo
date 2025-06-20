@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
-import uuid
+import uuid, bson
 from app.config import muse_config
 
 QDRANT_HOST = muse_config.get("QDRANT_HOST")
@@ -39,6 +39,11 @@ def message_id_to_uuid(msgid):
     # Use a deterministic UUID (namespace + message_id)
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, msgid))
 
+def safe_str(val):
+    if isinstance(val, bson.ObjectId):
+        return str(val)
+    return val
+
 ## build_index() calls this for embedding records.
 def upsert_single(entry, vector, collection=QDRANT_COLLECTION):
     metadata = entry.get("metadata", {})
@@ -57,7 +62,9 @@ def upsert_single(entry, vector, collection=QDRANT_COLLECTION):
         # "auto_tags": entry.get("auto_tags", []),
         "user_tags": entry.get("user_tags", []),
         "is_private": entry.get("is_private", False),
-        # "remembered": entry.get("remembered", False)
+        "is_deleted": entry.get("is_deleted", False),
+        "project_id": safe_str(entry.get("project_id")),
+        "remembered": entry.get("remembered", False)
     }
     ensure_qdrant_collection(vector_size=len(vector), collection_name=collection)
     qdrant.upsert(
@@ -97,6 +104,11 @@ def index_to_qdrant(entries, vectors, batch_size=128):
             "server": metadata.get("server"),
             "channel": metadata.get("channel"),
             "modality_hint": metadata.get("modality_hint"),
+            "user_tags": entry.get("user_tags", []),
+            "is_private": entry.get("is_private", False),
+            "is_deleted": entry.get("is_deleted", False),
+            "project_id": safe_str(entry.get("project_id")),
+            "remembered": entry.get("remembered", False)
         }
 
         points.append(

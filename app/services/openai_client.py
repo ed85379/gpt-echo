@@ -16,7 +16,7 @@ def get_openai_response(prompt, model=muse_config.get("OPENAI_MODEL")):
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=2000,
+            max_tokens=4000,
         )
         reply = response.choices[0].message.content
         return reply

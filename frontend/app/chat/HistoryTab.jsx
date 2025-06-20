@@ -101,7 +101,7 @@ const HistoryTab = () => {
       params += `&tag=${encodeURIComponent(t)}`;
     });
 
-    fetch(`/api/calendar_status_simple?${params}`)
+    fetch(`/api/messages/calendar_status_simple?${params}`)
       .then(res => res.json())
       .then(data => {
         setCalendarStatus(data.days || {});
@@ -110,7 +110,7 @@ const HistoryTab = () => {
 
 
   useEffect(() => {
-    fetch("/api/user_tags")
+    fetch("/api/messages/user_tags")
       .then(res => res.json())
       .then(data => setAvailableTags(data.tags || []));
   }, []);
@@ -120,14 +120,14 @@ const HistoryTab = () => {
     if (!selectedDate) return;
     setLoading(true);
     const dateStr = selectedDate.toISOString().slice(0,10);
-    fetch(`/api/messages_by_day?date=${dateStr}&source=${encodeURIComponent(source)}`)
+    fetch(`/api/messages/by_day?date=${dateStr}&source=${encodeURIComponent(source)}`)
       .then(res => res.json())
       .then(data => setMessages(data.messages || []))
       .finally(() => setLoading(false));
   }, [selectedDate, source]);
 
   function handleDelete(message_id, markDeleted) {
-    fetch("/api/tag_message", {
+    fetch("/api/messages/tag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: [message_id], is_deleted: markDeleted })
@@ -142,7 +142,7 @@ const HistoryTab = () => {
   }
 
   function handleTogglePrivate(message_id, makePrivate) {
-    fetch("/api/tag_message", {
+    fetch("/api/messages/tag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: [message_id], is_private: makePrivate })
@@ -157,7 +157,7 @@ const HistoryTab = () => {
   }
 
     function handleToggleRemembered(message_id, makeRemembered) {
-    fetch("/api/tag_message", {
+    fetch("/api/messages/tag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: [message_id], remembered: makeRemembered })
@@ -172,7 +172,7 @@ const HistoryTab = () => {
   }
 
   function addTag(message_id, tag) {
-    fetch("/api/tag_message", {
+    fetch("/api/messages/tag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: [message_id], add_user_tags: [tag] }),
@@ -188,7 +188,7 @@ const HistoryTab = () => {
   }
 
   function removeTag(message_id, tag) {
-    fetch("/api/tag_message", {
+    fetch("/api/messages/tag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_ids: [message_id], remove_user_tags: [tag] }),

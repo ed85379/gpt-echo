@@ -32,7 +32,7 @@ def assign_message_id(msg, filename=None, index=None):
 
 
 
-def build_index(dryrun=False, message_id=None):
+async def build_index(dryrun=False, message_id=None):
     """
     Indexes messages from Mongo to Qdrant and GraphDB.
     - If message_id is given, only update that message.
@@ -72,7 +72,10 @@ def build_index(dryrun=False, message_id=None):
         qdrant_entry = dict(doc)
         if not dryrun:
             text = qdrant_entry["message"]  # Get the message text
-            vector = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode([text])[0]  # Generate the embedding vector
+            vector = SentenceTransformer(
+                muse_config.get("SENTENCE_TRANSFORMER_MODEL"),
+                local_files_only=True
+            ).encode([text])[0]  # Generate the embedding vector
             qdrant_connector.upsert_single(qdrant_entry, vector)  # Upsert to Qdrant
         updated_qdrant += 1
 

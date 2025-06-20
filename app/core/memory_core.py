@@ -34,7 +34,7 @@ model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
 # Chronicle Logging
 # --------------------------
 # <editor-fold desc="📝 Logging Functions">
-async def log_message(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
+async def log_message(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None, project_id=None):
     """
     Log a message from any source into the Muse system.
     If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
@@ -74,13 +74,14 @@ async def log_message(role, message, source="frontend", metadata=None, flags=Non
         "user_tags": [],
         "flags": flags,
         "metadata": metadata or {},
-        "updated_on": timestamp
+        "updated_on": timestamp,
+        "project_id": project_id
     }
 
     try:
         log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
         mongo.insert_log(muse_config.get("MONGO_CONVERSATION_COLLECTION"), log_entry)
-        memory_indexer.build_index(message_id=log_entry["message_id"])
+        await memory_indexer.build_index(message_id=log_entry["message_id"])
     except Exception as e:
         utils.write_system_log(
             level="error",
@@ -175,16 +176,33 @@ async def do_import(collection):
 # Memory Vector Indexing
 # --------------------------
 # <editor-fold desc="📚 Memory Vector Indexing">
+def get_hidden_project_ids():
+    query = {"hidden": True}
+    projection = {"_id": 1}
+    hidden_projects = mongo.find_documents(
+        collection_name="muse_projects",
+        query=query,
+        projection=projection
+    )
+    return set(p["_id"] for p in hidden_projects)
+
 def get_immediate_context(n=10, hours=2):
     now = datetime.utcnow()
     since = now - timedelta(hours=hours)
+    hidden_project_ids = get_hidden_project_ids()
+
     query = {
-       "timestamp": {"$gte": since},
-        "is_private": {"$ne": True},  # Exclude private messages
-        "is_deleted": {"$ne": True}
+        "timestamp": {"$gte": since},
+        "is_private": {"$ne": True},       # Exclude private messages
+        "is_deleted": {"$ne": True}        # Exclude deleted
     }
-    # We want the *most recent* messages, so sort descending (ascending=False)
-    # This will get up to N most recent within the time window
+    if hidden_project_ids:
+        query["$or"] = [
+            {"project_id": {"$nin": list(hidden_project_ids)}},
+            {"project_id": {"$exists": False}}
+        ]
+        # This way, messages with *no* project_id are always included, unless otherwise filtered
+
     logs = mongo.find_logs(
         collection_name="muse_conversations",
         query=query,
@@ -192,7 +210,6 @@ def get_immediate_context(n=10, hours=2):
         sort_field="timestamp",
         ascending=False
     )
-    # Now reverse so they're in chronological order (oldest first)
     return list(reversed(logs))
 
 def recency_weight(ts, now=None, half_life_hours=36):
@@ -215,7 +232,7 @@ def recency_weight(ts, now=None, half_life_hours=36):
     age_hours = (now - ts) / 3600
     return 2 ** (-age_hours / half_life_hours)
 
-def tag_weight(payload, tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0):
+def tag_weight(payload, tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, project_boost=1.25):
     score = 1.0
     if payload.get("user_tags"):
         score *= tag_boost
@@ -223,6 +240,8 @@ def tag_weight(payload, tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0):
         score *= muse_boost
     if payload.get("remembered"):
         score *= remembered_boost
+    if payload.get("project_id"):  # Any non-empty project_id
+        score *= project_boost
     return score
 
 def search_indexed_memory(
@@ -235,7 +254,7 @@ def search_indexed_memory(
     penalize_muse=True,
     muse_penalty=0.05,
     recency_half_life=48,         # new
-    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0  # new
+    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, project_boost=1.25  # new
 ):
     """
     Search indexed memory via Qdrant or FAISS.
@@ -262,17 +281,23 @@ def search_indexed_memory(
     QDRANT_PORT = int(muse_config.get("QDRANT_PORT"))
     QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
 
+    hidden_project_ids = [str(oid) for oid in get_hidden_project_ids()]
+    query_filter = {
+        "must_not": [
+            {"key": "is_private", "match": {"value": True}},
+            {"key": "is_deleted", "match": {"value": True}},
+        ]
+    }
+    if hidden_project_ids:
+        query_filter["must_not"].append(
+            {"key": "project_id", "match": {"any": hidden_project_ids}}
+        )
     client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
     search_result = client.search(
         collection_name=QDRANT_COLLECTION,
         query_vector=query_vector.tolist(),
         limit=overfetch_k,
-        query_filter={
-            "must_not": [
-                {"key": "is_private", "match": {"value": True}},
-                {"key": "is_deleted", "match": {"value": True}}
-            ]
-        }
+        query_filter=query_filter
     )
 
 
@@ -290,6 +315,7 @@ def search_indexed_memory(
             "user_tags": hit.payload.get("user_tags"),
             "muse_tags": hit.payload.get("muse_tags"),
             "remembered": hit.payload.get("remembered", False),
+            "project_id": hit.payload.get("project_id"),
         }
         # Old bias stuff...
         if bias_author_id and entry["metadata"].get("author_id") == bias_author_id:
@@ -301,7 +327,7 @@ def search_indexed_memory(
 
         # 🟣 New weighting:
         entry["score"] *= recency_weight(entry["timestamp"], now, half_life_hours=recency_half_life)
-        entry["score"] *= tag_weight(entry, tag_boost, muse_boost, remembered_boost)
+        entry["score"] *= tag_weight(entry, tag_boost, muse_boost, remembered_boost, project_boost)
         results.append(entry)
 
     sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)
