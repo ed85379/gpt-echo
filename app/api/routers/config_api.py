@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Body
+from typing import Any
 from app.config import muse_config
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -13,7 +14,8 @@ def get_grouped_config():
 
 
 @router.put("/{key}")
-def set_config_value(key: str, value: str = Body(..., embed=True)):
+def set_config_value(key: str, value: Any = Body(..., embed=True)):
+    print(f"key: {key}, value: {value}")
     try:
         muse_config.set(key, value)
         return {"status": "ok", "key": key, "value": value}
@@ -27,3 +29,6 @@ def revert_config_value(key: str):
         return {"status": "reverted", "key": key}
     else:
         return {"status": "not_found", "key": key}
+
+
+

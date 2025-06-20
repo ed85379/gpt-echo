@@ -1,7 +1,66 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Query
+from typing import List, Optional, Literal
+from datetime import datetime, timezone, timedelta
+from dateutil.parser import parse
+import asyncio
 from app.core.memory_core import log_message, log_message_test
+from app.databases.mongo_connector import mongo
+from app.config import muse_config
+from app.api.queues import index_queue
+
 
 router = APIRouter(prefix="/api/messages", tags=["messages"])
+
+
+MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
+
+@router.get("/")
+def get_messages(
+        limit: int = Query(10, le=50),
+        before: Optional[str] = None,
+        sources: Optional[List[str]] = Query(None)  # Accepts ?sources=frontend&sources=chatgpt
+):
+    query = {}
+
+    if before:
+        dt = parse(before)
+        dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        query["timestamp"] = {"$lt": dt}
+
+    if sources:
+        query["source"] = {"$in": sources}
+
+    logs = mongo.find_logs(
+        collection_name=MONGO_CONVERSATION_COLLECTION,
+        query=query,
+        limit=limit,
+        sort_field="timestamp",
+        ascending=False
+    )
+
+    print(f"Getting messages before {before} from {sources} — found {len(logs)}")
+
+    result = []
+    for msg in logs:
+        mapped = {
+            "from": msg.get("from") or msg.get("role") or "iris",
+            "text": msg.get("message") or "",
+            "timestamp": msg["timestamp"].isoformat() + "Z" if isinstance(msg["timestamp"], datetime) else str(
+                msg["timestamp"]),
+            "_id": str(msg["_id"]),
+            "message_id": msg.get("message_id") or "",
+            "source": msg.get("source", ""),
+            "user_tags": msg.get("user_tags", []),
+            "is_private": msg.get("is_private", False),
+            "remembered": msg.get("remembered", False),
+            "is_deleted": msg.get("is_deleted", False),
+            "project_id": str(msg["project_id"]) if msg.get("project_id") else None,
+            "flags": msg.get("flags", []),
+            "metadata": msg.get("metadata", {}),
+        }
+        result.append(mapped)
+
+    return {"messages": result[::-1]}
 
 @router.post("/log")
 async def log_message_endpoint(payload: dict = Body(...)):
@@ -15,11 +74,213 @@ async def log_message_endpoint(payload: dict = Body(...)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-#@router.post("/api/messages/tag")
-#async def tag_message_endpoint(payload: dict = Body(...)):
-#    # This can match your existing logic
-#    try:
-#        result = await tag_message(**payload)
-#        return {"status": "ok", "count": result.modified_count}
-#    except Exception as e:
-#        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/tag")
+async def tag_message(
+    message_ids: List[str] = Body(...),
+    add_user_tags: Optional[List[str]] = Body(None),
+    remove_user_tags: Optional[List[str]] = Body(None),
+    is_private: Optional[bool] = Body(None),
+    remembered: Optional[bool] = Body(None),
+    is_deleted: Optional[bool] = Body(None),
+    set_project: Optional[str] = Body(None),      # <-- NEW param
+    exported: Optional[bool] = Body(None)
+):
+    mongo_update = {}
+    contentful = False
+
+    # Handle user_tags (contentful)
+    if add_user_tags:
+        mongo_update.setdefault("$addToSet", {})["user_tags"] = {"$each": add_user_tags}
+        contentful = True
+    if remove_user_tags:
+        mongo_update.setdefault("$pullAll", {})["user_tags"] = remove_user_tags
+        contentful = True
+
+    set_fields = {}
+    unset_fields = []
+
+    # Handle is_private, remembered, is_deleted (contentful)
+    if is_private is not None:
+        contentful = True
+        if is_private:
+            set_fields["is_private"] = True
+        else:
+            unset_fields.append("is_private")
+    if remembered is not None:
+        contentful = True
+        if remembered:
+            set_fields["remembered"] = True
+        else:
+            unset_fields.append("remembered")
+    if is_deleted is not None:
+        contentful = True
+        if is_deleted:
+            set_fields["is_deleted"] = True
+        else:
+            unset_fields.append("is_deleted")
+
+    # --- PROJECT LOGIC ---
+    if set_project is not None:
+        contentful = True
+        if set_project:
+            set_fields["project_id"] = set_project
+        else:
+            unset_fields.append("project_id")
+
+    # Handle exported
+    if exported is not None:
+        if exported:
+            set_fields["exported_on"] = datetime.now(timezone.utc)
+        else:
+            unset_fields.append("exported_on")
+
+    # Only set updated_on for "contentful" changes
+    if contentful:
+        set_fields["updated_on"] = datetime.now(timezone.utc)
+
+    if set_fields:
+        mongo_update["$set"] = set_fields
+    if unset_fields:
+        mongo_update["$unset"] = {f: "" for f in unset_fields}
+
+    if not mongo_update:
+        return {"updated": 0, "detail": "No actions specified."}
+
+    result = mongo.db.muse_conversations.update_many(
+        {"message_id": {"$in": message_ids}},
+        mongo_update
+    )
+    for message_id in message_ids:
+        await index_queue.put(message_id)
+    return {"updated": result.modified_count}
+
+@router.get("/user_tags")
+def get_user_tags(
+    limit: int = Query(100, description="Maximum number of tags to return")
+):
+    # Use MongoDB aggregation to get unique user tags with counts
+    pipeline = [
+        {"$unwind": "$user_tags"},
+        {"$group": {"_id": "$user_tags", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1, "_id": 1}},
+        {"$limit": limit}
+    ]
+    tag_docs = list(mongo.db.muse_conversations.aggregate(pipeline))
+    return {"tags": [{"tag": doc["_id"], "count": doc["count"]} for doc in tag_docs]}
+
+@router.get("/calendar_status")
+def get_calendar_status(
+    days: int = Query(30, ge=1, le=366),
+    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT)")
+):
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
+    match_filter = {
+        "timestamp": {"$gte": start_date}
+    }
+    if source:
+        # Always treat source as case-insensitive for safety
+        match_filter["source"] = source.lower()
+    else:
+        # If not specified, keep original behavior: ignore chatgpt
+        match_filter["source"] = {"$ne": "chatgpt"}
+    pipeline = [
+        {"$match": match_filter},
+        {"$project": {
+            "day": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+            "exported": {"$cond": [{"$ifNull": ["$exported_on", False]}, 1, 0]}
+        }},
+        {"$group": {
+            "_id": "$day",
+            "total": {"$sum": 1},
+            "exported": {"$sum": "$exported"}
+        }},
+        { "$sort": { "_id": 1 } }
+    ]
+    stats = {doc["_id"]: {"total": doc["total"], "exported": doc["exported"]} for doc in mongo.db.muse_conversations.aggregate(pipeline)}
+    return {"days": stats}
+
+@router.get("/calendar_status_simple")
+def get_calendar_status_simple(
+    start: str = Query(...),   # "YYYY-MM-DD"
+    end: str = Query(...),     # "YYYY-MM-DD"
+    source: str = Query(None),
+    tag: List[str] = Query(None)
+):
+    # Parse input strings as datetimes in UTC
+    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    # Add one day to make the range inclusive
+    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+    match_filter = {
+        "timestamp": {"$gte": start_dt, "$lt": end_dt}
+    }
+    if source:
+        match_filter["source"] = source.lower()
+    else:
+        match_filter["source"] = {"$ne": "chatgpt"}
+    if tag:
+        match_filter["user_tags"] = {"$in": tag}
+    # Now use aggregation to group by day using timestamp
+    pipeline = [
+        {"$match": match_filter},
+        {"$group": {
+            "_id": { "$dateToString": { "format": "%Y-%m-%d", "date": "$timestamp" } },
+            "any": { "$first": "$_id" }
+        }},
+        {"$sort": { "_id": 1 }}
+    ]
+    days = {doc["_id"]: True for doc in mongo.db.muse_conversations.aggregate(pipeline)}
+    return {"days": days}
+
+@router.get("/by_day")
+def get_messages_by_day(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT, Discord)")
+):
+    # Parse to start/end of day (UTC)
+    dt = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    dt_next = dt + timedelta(days=1)
+
+    # Build query
+    query = {
+        "timestamp": {"$gte": dt, "$lt": dt_next}
+    }
+    if source:
+        query["source"] = source.lower()
+    else:
+        query["source"] = {"$eq": "frontend"}
+
+    logs = mongo.find_logs(
+        collection_name=MONGO_CONVERSATION_COLLECTION,
+        query=query,
+        sort_field="timestamp",
+        ascending=True,
+        limit=1000  # Increase if needed
+    )
+
+    return {"messages": [
+        {
+            "_id": str(msg["_id"]),
+            "from": msg.get("role"),
+            "text": msg.get("message"),
+            "timestamp": msg["timestamp"].isoformat() + "Z"
+                if isinstance(msg["timestamp"], datetime) else str(msg["timestamp"]),
+            "exported_on": msg.get("exported_on"),
+            "username": (
+                msg.get("metadata", {}).get("author_display_name")
+                or msg.get("metadata", {}).get("author_name")
+                or None
+            ),
+            "user_tags": msg.get("user_tags", []),
+            "message_id": msg.get("message_id") or "",
+            "source": msg.get("source", ""),
+            "is_private": msg.get("is_private", False),
+            "remembered": msg.get("remembered", False),
+            "is_deleted": msg.get("is_deleted", False),
+            "project_id": str(msg["project_id"]) if msg.get("project_id") else None,
+            "flags": msg.get("flags", []),
+            "metadata": msg.get("metadata", {}),
+            # Add any other custom fields you need for the UI
+        }
+        for msg in logs
+    ]}

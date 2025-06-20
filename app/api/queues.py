@@ -2,6 +2,10 @@ import asyncio
 from typing import Dict, Any, Callable, Awaitable
 from app.core import utils
 
+broadcast_queue = asyncio.Queue()
+log_queue = asyncio.Queue()
+index_queue = asyncio.Queue()
+
 # Typing: adjust as needed for your actual message structure
 Message = Dict[str, Any]
 
@@ -58,6 +62,32 @@ async def run_log_queue(
                 action="log_failed",
                 error=str(e),
                 message=str(msg)
+            )
+            # Optionally: re-queue or alert
+        finally:
+            queue.task_done()
+
+async def run_index_queue(
+    queue: asyncio.Queue,
+    build_index: Callable[..., Awaitable[None]],
+    *,
+    logger=None
+):
+    while True:
+        message_id = await queue.get()
+        try:
+            await build_index(
+                message_id=message_id,
+            )
+        except Exception as e:
+            utils.write_system_log(
+                level="error",
+                module="api",
+                component="queues",
+                function="run_index_queue",
+                action="index_failed",
+                error=str(e),
+                message_id=str(message_id)
             )
             # Optionally: re-queue or alert
         finally:
