@@ -53,23 +53,35 @@ class MuseConfig:
         )
 
     def as_dict(self, include_meta=True):
-        # get all keys as before
         live_docs = {doc["_id"]: doc for doc in self.live.find({})}
         default_docs = {doc["_id"]: doc for doc in self.defaults.find({})}
         all_keys = set(live_docs) | set(default_docs)
 
         result = {}
         for key in all_keys:
-            # Prefer live, else default
-            doc = live_docs.get(key) or default_docs.get(key)
-            if doc:
-                entry = {
-                    "value": doc.get("value"),
-                }
-                if include_meta:
-                    entry["description"] = doc.get("description", "")
-                    entry["category"] = doc.get("category", "uncategorized")
-                result[key] = entry
+            live_doc = live_docs.get(key)
+            default_doc = default_docs.get(key)
+            # Value: live > default > None
+            if live_doc and "value" in live_doc:
+                value = live_doc["value"]
+            elif default_doc and "value" in default_doc:
+                value = default_doc["value"]
+            else:
+                value = None
+            entry = {"value": value}
+            if include_meta:
+                # Prefer meta fields from live, else fallback to default
+                if (live_doc and "description" in live_doc) or (default_doc and "description" in default_doc):
+                    entry["description"] = (live_doc.get("description") if live_doc and "description" in live_doc
+                                            else default_doc.get("description", ""))
+                else:
+                    entry["description"] = ""
+                if (live_doc and "category" in live_doc) or (default_doc and "category" in default_doc):
+                    entry["category"] = (live_doc.get("category") if live_doc and "category" in live_doc
+                                         else default_doc.get("category", "uncategorized"))
+                else:
+                    entry["category"] = "uncategorized"
+            result[key] = entry
         return result
 
     def as_grouped(self, include_meta=True):
@@ -77,15 +89,45 @@ class MuseConfig:
         Return config as {category: [entries...]} for grouping in the UI.
         Each entry: {"key": ..., "value": ..., "description": ..., "category": ...}
         """
-        # Use as_dict to get everything with meta
-        flat = self.as_dict(include_meta=True)
+        live_docs = {doc["_id"]: doc for doc in self.live.find({})}
+        default_docs = {doc["_id"]: doc for doc in self.defaults.find({})}
+        all_keys = set(live_docs) | set(default_docs)
+
         grouped = {}
-        for key, entry in flat.items():
-            category = entry.get("category", "uncategorized")
-            # Compose the entry for frontend (with 'key' instead of dict key)
-            entry_with_key = dict(entry)
-            entry_with_key["key"] = key
-            grouped.setdefault(category, []).append(entry_with_key)
+        for key in all_keys:
+            live_doc = live_docs.get(key)
+            default_doc = default_docs.get(key)
+            # Value: live > default > None
+            if live_doc and "value" in live_doc:
+                value = live_doc["value"]
+            elif default_doc and "value" in default_doc:
+                value = default_doc["value"]
+            else:
+                value = None
+
+            # Prefer meta fields from live, else fallback to default
+            if include_meta:
+                if (live_doc and "description" in live_doc) or (default_doc and "description" in default_doc):
+                    description = (live_doc.get("description") if live_doc and "description" in live_doc
+                                   else default_doc.get("description", ""))
+                else:
+                    description = ""
+                if (live_doc and "category" in live_doc) or (default_doc and "category" in default_doc):
+                    category = (live_doc.get("category") if live_doc and "category" in live_doc
+                                else default_doc.get("category", "uncategorized"))
+                else:
+                    category = "uncategorized"
+            else:
+                description = ""
+                category = "uncategorized"
+
+            entry = {
+                "key": key,
+                "value": value,
+                "description": description,
+                "category": category
+            }
+            grouped.setdefault(category, []).append(entry)
         return grouped
 
 muse_config = MuseConfig(
