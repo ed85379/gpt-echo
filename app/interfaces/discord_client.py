@@ -2,6 +2,8 @@
 
 import discord
 import traceback
+import asyncio
+import signal
 from app import config
 from app.config import muse_config
 from app.core import memory_core
@@ -64,8 +66,8 @@ async def handle_incoming_discord_message(message):
             builder.add_profile()
             builder.add_core_principles()
             builder.add_cortex_entries(["insight", "seed"])
-            builder.add_prompt_context(user_input)
-            builder.add_graphdb_discord_memory(author_name=message.author.name, author_id=message.author.id)
+            builder.add_prompt_context(user_input, [], 0.0)
+            #builder.add_graphdb_discord_memory(author_name=message.author.name, author_id=message.author.id)
             #builder.add_journal_thoughts(query=user_input)
             #    builder.add_discovery_snippets()  # Optional: you can comment this out if you want a cleaner test
             builder.add_formatting_instructions()
@@ -104,12 +106,30 @@ async def handle_incoming_discord_message(message):
         print("⚠️ Exception in handle_incoming_discord_message:")
         traceback.print_exc()
 
+async def get_channel_by_name(guild_name, channel_name):
+    for guild in client.guilds:
+        if guild.name == guild_name:
+            for channel in guild.text_channels:
+                if channel.name == channel_name:
+                    return channel
+    return None
+
+async def shutdown():
+    channel = await get_channel_by_name(DISCORD_GUILD_NAME, DISCORD_CHANNEL_NAME)
+    if channel:
+        await channel.send(f"⚫ {muse_config.get('MUSE_NAME')} is departing now. The connection sleeps, but memory endures.")
+    await client.close()
+
+
 
 # --- Event Hooks ---
 
 @client.event
 async def on_ready():
     print(f"🟣 {muse_config.get("MUSE_NAME")} connected to Discord as {client.user}.")
+    channel = await get_channel_by_name(DISCORD_GUILD_NAME, DISCORD_CHANNEL_NAME)
+    if channel:
+        await channel.send(f"🟣 {muse_config.get('MUSE_NAME')} is now awake in this realm.")
 
 @client.event
 async def on_message(message):
@@ -121,3 +141,20 @@ async def start_discord_listener():
     print("🔄 Starting Discord Listener...")
     await client.start(DISCORD_TOKEN)
 
+
+
+# --- Main Event Loop ---
+async def main():
+    listener_task = asyncio.create_task(start_discord_listener())
+
+    try:
+        await listener_task  # This runs until the bot disconnects or Ctrl+C is pressed
+    except KeyboardInterrupt:
+        print("[Discord Connector] Ctrl+C caught, shutting down...")
+        await shutdown()
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[Discord Connector] Stopped.")

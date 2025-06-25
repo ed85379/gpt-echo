@@ -1,6 +1,5 @@
 import asyncio
 import random
-from app.interfaces import discord_client
 from app.core import muse_initiator
 from app.core import utils
 
@@ -53,7 +52,6 @@ async def task_runner(task):
 async def main():
     await asyncio.gather(
         *(task_runner(task) for task in scheduled_tasks),
-        discord_client.start_discord_listener()
     )
 
 # --- Entrypoint ---
