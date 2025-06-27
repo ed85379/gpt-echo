@@ -31,8 +31,11 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"          # Expose Caddy on local 8080 (Cloudflare Tunnel should point here)
+      - "8443:8443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile   # Mount your config
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./cloudflare-origin.pem:/etc/caddy/certs/cloudflare-origin.pem
+      - ./cloudflare-origin-key.pem:/etc/caddy/certs/cloudflare-origin-key.pem
     depends_on:
       - mongo
       - qdrant
