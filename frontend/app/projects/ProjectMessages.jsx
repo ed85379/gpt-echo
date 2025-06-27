@@ -1,12 +1,20 @@
 // ProjectMessages.jsx
 "use client";
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import MessageItem from "../components/MessageItem";
 import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "../utils/messageActions";
 import { setProject, clearProject, addTag, removeTag } from "../utils/messageActions";
+import { ChevronDownIcon } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 
 
 const EXPORT_FORMATS = ["txt", "json", "csv", "pdf"];
@@ -14,6 +22,7 @@ const VIEW_MODES = ["infinite", "byDay"];
 
 // --- VIRTUOSO WINDOW SIZE ---
 const PAGE_SIZE = 30; // How many to fetch per page
+
 
 function getMonthRange(date) {
   // Current month and year
@@ -35,9 +44,11 @@ function getMonthRange(date) {
   return { start, end };
 }
 
+
 export default function ProjectMessages({ project, projectMap, projects, projectsLoading }) {
   // UI state
-  const [viewMode, setViewMode] = useState("infinite");
+  const [open, setOpen] = React.useState(false)
+  const [viewMode, setViewMode] = useState("byDay");
   const [selectedDate, setSelectedDate] = useState(null);
   const [tagFilter, setTagFilter] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
@@ -164,33 +175,57 @@ export default function ProjectMessages({ project, projectMap, projects, project
   return (
     <div className="flex flex-col h-full">
       {/* Top bar: filters, export, view mode */}
-      <div className="sticky top-0 z-10 bg-neutral-950 border-b border-neutral-800 p-2 flex flex-col md:flex-row gap-4 items-center">
+      <div className="sticky top-0 z-10 bg-neutral-950 border-b border-neutral-800 p-2 flex flex-col md:flex-row gap-4 items-start">
         <div className="flex gap-2 items-center">
-          <span className="text-sm">View:</span>
+{/*          <span className="text-sm">View:</span>
           <select value={viewMode} onChange={e => setViewMode(e.target.value)}>
             <option value="infinite">Infinite Scroll</option>
             <option value="byDay">By Day</option>
           </select>
+*/}
         </div>
         {viewMode === "byDay" && (
           <div>
-            <DayPicker
-              mode="single"
-              selected={selectedDate}
-              onSelect={setSelectedDate}
-              modifiers={{
-                hasMessages: day => {
-                  const d = day.toISOString().slice(0,10);
-                  return !!calendarStatus[d];
-                }
-              }}
-              modifiersClassNames={{
-                hasMessages: "bg-purple-800/70 text-white font-bold"
-              }}
-            />
+            <Label htmlFor="date" className="px-1">
+            Select Day
+            </Label>
+              <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    id="date"
+                    className="w-36 justify-between font-normal"
+                  >
+                    {selectedDate ? selectedDate.toLocaleDateString() : "Select date"}
+                    <ChevronDownIcon />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto overflow-hidden p-0" align="start">
+                    <DayPicker
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={setSelectedDate}
+                        classNames={{
+                        months: "bg-neutral-900 text-neutral-100 rounded-lg shadow p-2",
+                        caption_label: "text-purple-300 font-semibold",
+                        day_selected: "bg-purple-700 text-white",
+                        day: "hover:bg-purple-800/60"
+                        }}
+                      modifiers={{
+                        hasMessages: day => {
+                          const d = day.toISOString().slice(0,10);
+                          return !!calendarStatus[d];
+                        }
+                      }}
+                      modifiersClassNames={{
+                        hasMessages: "bg-purple-800/70 text-white font-bold"
+                      }}
+                    />
+                            </PopoverContent>
+              </Popover>
           </div>
         )}
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center">
           <span className="text-sm">Tags:</span>
           {availableTags.map(tag => (
             <button
