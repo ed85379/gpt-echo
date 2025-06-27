@@ -10,6 +10,7 @@ from bson.errors import InvalidId
 from sentence_transformers import SentenceTransformer
 from croniter import croniter
 from app import config
+#from app.api.api_main import QDRANT_COLLECTION
 from app.config import muse_config
 from app.core import utils
 from app.databases.mongo_connector import mongo
@@ -246,6 +247,7 @@ def tag_weight(payload, tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, pr
 
 def search_indexed_memory(
     query,
+    collection_name,
     top_k=5,
     bias_author_id=None,
     bias_source=None,
@@ -279,7 +281,8 @@ def search_indexed_memory(
 
     QDRANT_HOST = muse_config.get("QDRANT_HOST")
     QDRANT_PORT = int(muse_config.get("QDRANT_PORT"))
-    QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
+    #QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
+    QDRANT_COLLECTION = collection_name
 
     hidden_project_ids = [str(oid) for oid in get_hidden_project_ids()]
     query_filter = {
@@ -332,6 +335,45 @@ def search_indexed_memory(
 
     sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)
     return sorted_results[:top_k]
+
+def search_indexed_memories(
+    query,
+    collections_weights,  # e.g., {'main': 0.3, 'project_A': 0.7}
+    top_k=10,
+    **kwargs
+):
+    """
+    Search multiple Qdrant collections, blend and score results by source.
+    """
+    results_by_collection = {}
+    for collection, weight in collections_weights.items():
+        res = search_indexed_memory(
+            query=query,
+            collection_name=collection,
+            top_k=int(top_k * 2),  # Overfetch for dedupe later
+            **kwargs
+        )
+        # Annotate each result with its source and weight for later blending
+        for r in res:
+            r["_collection"] = collection
+            r["_weight"] = weight
+        results_by_collection[collection] = res
+
+    # Merge, dedupe by message_id, blend scores
+    merged = {}
+    for collection, results in results_by_collection.items():
+        for r in results:
+            mid = r["message_id"]
+            # If duplicate, keep the one with highest weighted score
+            weighted_score = r["score"] * r["_weight"]
+            if mid not in merged or weighted_score > merged[mid]["_blended_score"]:
+                r["_blended_score"] = weighted_score
+                merged[mid] = r
+
+    # Sort all merged by blended score
+    deduped_sorted = sorted(merged.values(), key=lambda x: x["_blended_score"], reverse=True)
+    # Return only top_k
+    return deduped_sorted[:top_k]
 
 
 # </editor-fold>

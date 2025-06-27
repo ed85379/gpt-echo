@@ -30,6 +30,7 @@ client = OpenAI(api_key=config.OPENAI_API_KEY)  # Uses api key from env or confi
 JOURNAL_DIR = config.JOURNAL_DIR
 JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
 MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
+QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
 
 
 app = FastAPI()
@@ -173,14 +174,14 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     builder.add_profile()
     builder.add_core_principles()
     builder.add_cortex_entries(["insight", "seed", "user_data"])
-    builder.add_prompt_context(user_input)
+    builder.add_prompt_context(user_input, [], 0.0)
     builder.add_journal_thoughts(query=user_input)
 #    builder.add_discovery_snippets()  # Optional: you can comment this out if you want a cleaner test
     builder.add_intent_listener(["remember_fact", "set_reminder", "skip_reminder", "write_private_journal"])
     builder.add_time()
     # Assemble final prompt
     full_prompt = builder.build_prompt()
-    full_prompt += f"\n\n{muse_config.get("PRIMARY_USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
+    full_prompt += f"\n\n{muse_config.get("USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
     #print(full_prompt)
     # Get Muse's response
     response = route_user_input(full_prompt)

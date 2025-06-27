@@ -141,9 +141,9 @@ def decrypt_text(token: str) -> str:
 def format_context_entry(e):
     role = e.get("role", "")
     if role == "user":
-        name = muse_config.get("USER_NAME")
+        name = muse_config.get("USER_NAME") or "User"
     elif role == "muse":
-        name = muse_config.get("MUSE_NAME")
+        name = muse_config.get("MUSE_NAME") or "Muse"
     else:
         name = role.capitalize() if role else "Unknown"
 

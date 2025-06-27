@@ -399,7 +399,7 @@ def handle_journal_command(payload, entry_type="public", source=None):
     builder.add_profile()
     builder.add_core_principles()
     builder.add_cortex_entries(["insight", "seed", "user_data"])
-    builder.add_prompt_context(user_input=title)
+    builder.add_prompt_context(user_input=title, projects_in_focus=[], blend_ratio=0.0)
 
     # 🔥 New: Add article reference if present
     link = payload.get("source_article_url")

@@ -9,7 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
     "@headlessui/react": "^2.2.4",
+    "@mui/icons-material": "^7.1.2",
+    "@mui/material": "^7.1.2",
     "lucide": "^0.511.0",
     "lucide-mui": "^0.511.0",
     "lucide-react": "^0.512.0",
@@ -19,6 +23,7 @@
     "react-day-picker": "^9.7.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
+    "react-virtuoso": "^4.13.0",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-breaks": "^4.0.0",

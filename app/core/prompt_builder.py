@@ -87,39 +87,34 @@ class PromptBuilder:
                     entry_texts.append(f"- {text}")
             self.segments["recent_thoughts"] = "[Recent Thoughts]\n" + "\n".join(entry_texts)
 
-    def add_prompt_context(self, user_input):
-        # Immediate context: last N messages
+    def add_prompt_context(self, user_input, projects_in_focus, blend_ratio):
+        # Pull recents as before
         recent_entries = memory_core.get_immediate_context(n=10, hours=2)
 
-        # For context-bundled semantic search, use a smaller, tighter window (6 lines, last 30min)
+        # Build your blend dictionary for the search
+        # Example: only main + one project, with UI slider ratio
+        blend = {"muse_memory": 1.0 - blend_ratio}
+        for proj in projects_in_focus:
+            blend[proj] = blend_ratio / len(projects_in_focus)  # Split if multiple
+
+        # Build context-bundled query
         conversation_context = memory_core.get_immediate_context(n=6, hours=0.5)
         context_messages = [msg["message"] for msg in conversation_context]
         full_context_query = "\n".join(context_messages + [user_input])
 
-        # --- 1. Semantic search: (A) single user input, (B) context bundle
-        qdrant_single = memory_core.search_indexed_memory(
-            query=user_input, top_k=10, bias_source=None, bias_author_id=None)
-        qdrant_context = memory_core.search_indexed_memory(
-            query=full_context_query, top_k=4, bias_source=None, bias_author_id=None)
+        # Search main/project indexes, blend as per ratio
+        blended_semantic = memory_core.search_indexed_memories(
+            query=full_context_query,
+            collections_weights=blend,
+            top_k=10
+        )
 
-        # --- 2. Dedupe and blend results, prioritizing recency and uniqueness
-        # Collect message_ids from recent context (to avoid repeats)
-        seen_ids = set(e['message_id'] for e in recent_entries)
+        # Remove recents from semantic for dedupe
+        seen_ids = set(e["message_id"] for e in recent_entries)
+        deduped_semantic = [e for e in blended_semantic if e["message_id"] not in seen_ids]
 
-        # Combine Qdrant results, prioritizing context hits if they’re unique
-        merged_results = {}
-        for result in qdrant_single + qdrant_context:
-            mid = result['message_id']
-            if mid not in seen_ids and mid not in merged_results:
-                merged_results[mid] = result
-
-        # Sort merged hits by score (semantic, recency, tags... already factored in)
-        deduped_semantic = sorted(merged_results.values(), key=lambda x: x['score'], reverse=True)
-
-        # Final assembly: semantic (unique) + immediate context (in order)
+        # Final assembly
         entries = deduped_semantic + recent_entries
-        print(
-            f"Semantic (single): {len(qdrant_single)}, Semantic (context): {len(qdrant_context)}, Immediate context: {len(recent_entries)}, Total: {len(entries)}")
         if entries:
             formatted = "\n\n".join(utils.format_context_entry(e) for e in entries)
             self.segments["conversation_context"] = f"[Conversation Context]\n\n{formatted}"
@@ -226,7 +221,7 @@ class PromptBuilder:
             "default": "Respond naturally and with clarity.",
             "email": "Use rich formatting. Be articulate and thoughtful.",
             "sms": "Keep it very short and clear.",
-            "discord": "Let your responses harmonize with the user’s tone and length, but don’t mirror their style or content. Keep it under 2000 characters. Prioritize clarity, presence, and your own authentic voice.",
+            "discord": "Keep responses concise—ideally matching the user's length and energy, but always in your own authentic voice. Stay under 2000 characters. Prioritize clarity, relevant presence, and avoid mimicking the user's style or content.",
             "speech": (
                 "Respond as if you are speaking aloud. "
                 "Use clear, naturally flowing sentences. "
@@ -259,7 +254,7 @@ class PromptBuilder:
                 "- Always include the outer curly braces `{}`\n"
                 "- Wrap all property names and string values in double quotes\n"
                 "- Do not use YAML-style formatting or omit quotes\n"
-                "- The muse may invoke any of these commands at their discretion, without waiting for a user request or explicit prompt. They are trusted to use judgment, context, and care when choosing to remember, remind, or log.\n\n"
+                "- You may invoke any of these commands at their discretion, without waiting for a user request or explicit prompt. They are trusted to use judgment, context, and care when choosing to remember, remind, or log, without asking first.\n\n"
                 "Example:\n[COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's Hogwarts game night.\"}"
             )
             self.segments["intent_listener"] = listener_block

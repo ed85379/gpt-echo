@@ -1,43 +1,16 @@
 "use client";
-
+import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { Remarkable } from 'remarkable';
-import { Eye } from 'lucide-react';
-import { EyeOff } from 'lucide-react';
-import { EyeClosed } from 'lucide-react';
-import { Tags } from 'lucide-react';
-import { Shredder } from 'lucide-react';
-import { SquareX } from 'lucide-react';
-import { BookDashed } from 'lucide-react';
-import { BookMarked } from 'lucide-react';
-import { ArrowBigDownDash } from 'lucide-react';
+import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX } from 'lucide-react';
+import { BookDashed, BookMarked, ArrowBigDownDash, } from 'lucide-react';
 import { linkify } from 'remarkable/linkify';
 import { useConfig } from '../hooks/ConfigContext';
 import { assignMessageId } from '../utils/utils';
 import { useMemo } from "react";
-
-export function CandleHolderLit(props) {
-  return (
-    <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="lucide lucide-candle-holder-lit-icon lucide-candle-holder-lit"
-        {...props}
-        >
-        <path d="M10 2S8 3.9 8 5s.9 2 2 2 2-.9 2-2-2-3-2-3"/>
-        <rect width="4" height="7" x="8" y="11"/>
-        <path d="m13 13-1-2"/>
-        <path d="M18 18a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4h18a2 2 0 1 0-2-2Z"/>
-    </svg>
-  );
-}
+import MessageItem from "../components/MessageItem";
+import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "../utils/messageActions";
+import { setProject, clearProject, addTag, removeTag } from "../utils/messageActions";
 
 
 const ChatTab = ({ setSpeaking }) => {
@@ -69,16 +42,33 @@ const ChatTab = ({ setSpeaking }) => {
   const messageRefs = useRef({});
   const { museProfile, museProfileLoading } = useConfig();
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
-  const MAX_RENDERED_MESSAGES = 30;
+  const INITIAL_RENDERED_MESSAGES = 10;  // On reload, after chat, etc.
+  const ACTIVE_WINDOW_LIMIT = 10;         // After new message
+  const SCROLLBACK_LIMIT = 30;            // After scroll up
+  const MAX_RENDERED_MESSAGES = 30;      // Max after scroll loading "more"
+  const MESSAGE_LIMIT = 10;              // How many to load per scroll/page
   const visibleMessages = messages.slice(-MAX_RENDERED_MESSAGES);
+      // "Bind" each handler to local state
+  const onDelete = (message_id, markDeleted) =>
+    handleDelete(setMessages, message_id, markDeleted);
 
-const md = new Remarkable({
-  html: false, // Don’t allow raw HTML from LLM
-  breaks: true, // Soft line breaks
-  linkTarget: "_blank",
-  typographer: true,
-});
-md.use(linkify);
+  const onTogglePrivate = (message_id, makePrivate) =>
+    handleTogglePrivate(setMessages, message_id, makePrivate);
+
+  const onToggleRemembered = (message_id, makeRemembered) =>
+    handleToggleRemembered(setMessages, message_id, makeRemembered);
+
+  const onSetProject = (message_id, project_id) =>
+    setProject(setMessages, message_id, project_id);
+
+  const onClearProject = (message_id) =>
+    clearProject(setMessages, message_id);
+
+  const onAddTag = (message_id, tag) =>
+    addTag(setMessages, message_id, tag);
+
+  const onRemoveTag = (message_id, tag) =>
+    removeTag(setMessages, message_id, tag);
 
   useEffect(() => {
     if (scrollTargetNode) {
@@ -111,8 +101,6 @@ const formatTimestamp = (utcString) => {
   return dt.toLocaleString(); // Respects user timezone/locales
 };
 
-    const MESSAGE_LIMIT = 10;
-
 const loadMessages = async (before = null) => {
   setLoadingMore(true);
 
@@ -125,13 +113,13 @@ const loadMessages = async (before = null) => {
     prevScrollTop = scrollContainerRef.current.scrollTop;
   }
 
-  let url = `/api/messages?limit=${MESSAGE_LIMIT}&sources=frontend&sources=reminder`;
+  let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=reminder`;
   if (before) url += `&before=${encodeURIComponent(before)}`;
   const res = await fetch(url);
   const data = await res.json();
 
   if (before) {
-    setMessages(prev => [...data.messages, ...prev]);
+    setMessages(prev => trimMessages([...data.messages, ...prev], SCROLLBACK_LIMIT));
     setScrollToBottom(false); // Don't scroll when loading history
 
     // After next render, restore the scroll position so the previous top message stays in place
@@ -144,10 +132,10 @@ const loadMessages = async (before = null) => {
       });
     }, 0);
   } else {
-    setMessages(data.messages);
+    setMessages(trimMessages(data.messages, ACTIVE_WINDOW_LIMIT));
     //setScrollToBottom(true); // Scroll when loading initial/latest
   }
-  if (data.messages.length < MESSAGE_LIMIT) setHasMore(false);
+  if (data.messages.length === SCROLLBACK_LIMIT) setHasMore(false);
   setLoadingMore(false);
 };
 
@@ -156,6 +144,10 @@ const loadMessages = async (before = null) => {
       loadMessages();
       // eslint-disable-next-line
     }, []);
+
+function trimMessages(arr, limit) {
+  return arr.slice(-limit);
+}
 
 function Paragraph({ children }) {
   // If the child is a <pre>, render it directly, don't wrap in <p>
@@ -201,15 +193,17 @@ function Paragraph({ children }) {
           if (data.type === "muse_message") {
             const text = data.message;
             const message_id = data.message_id;
-            setMessages((prev) => [
-              ...prev,
-              {
-                from: "muse",
-                text,
-                message_id,
-                timestamp: new Date().toISOString(),
-              }
-            ]);
+            setMessages((prev) =>
+              trimMessages([
+                ...prev,
+                {
+                  from: "muse",
+                  text,
+                  message_id,
+                  timestamp: new Date().toISOString(),
+                }
+              ], ACTIVE_WINDOW_LIMIT)
+            );
             setScrollToMessageId(message_id);  // <-- Flag for scroll
 
             setLastTTS(text);
@@ -277,119 +271,6 @@ function Paragraph({ children }) {
       return map;
     }, [projects]);
 
-    function handleDelete(message_id, markDeleted) {
-      setScrollToBottom(false);
-      fetch("/api/messages/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_ids: [message_id], is_deleted: markDeleted })
-      })
-      .then(() => {
-        // Update your message state/UI to reflect deletion
-        setMessages(prev =>
-          prev.map(m =>
-            m.message_id === message_id ? { ...m, is_deleted: markDeleted } : m
-          )
-        );
-      });
-    }
-
-    function handleTogglePrivate(message_id, makePrivate) {
-      setScrollToBottom(false);
-      fetch("/api/messages/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_ids: [message_id], is_private: makePrivate })
-      })
-      .then(() => {
-        // Update your message state/UI to reflect privacy
-        setMessages(prev =>
-          prev.map(m =>
-            m.message_id === message_id ? { ...m, is_private: makePrivate } : m
-          )
-        );
-      });
-    }
-
-    function handleToggleRemembered(message_id, makeRemembered) {
-    setScrollToBottom(false);
-    fetch("/api/messages/tag", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message_ids: [message_id], remembered: makeRemembered })
-    })
-    .then(() => {
-      setMessages(prev =>
-        prev.map(m =>
-          m.message_id === message_id ? { ...m, remembered: makeRemembered } : m
-        )
-      );
-    });
-  }
-
-    function setProject(message_id, project_id) {
-      setScrollToBottom(false);
-      fetch("/api/messages/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_ids: [message_id], set_project: project_id }),
-      }).then(() => {
-        setMessages(prev =>
-          prev.map(m =>
-            m.message_id === message_id ? { ...m, project_id } : m
-          )
-        );
-      });
-    }
-
-    function clearProject(message_id) {
-      setScrollToBottom(false);
-      fetch("/api/messages/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_ids: [message_id], set_project: null }),
-      }).then(() => {
-        setMessages(prev =>
-          prev.map(m =>
-            m.message_id === message_id ? { ...m, project_id: null } : m
-          )
-        );
-      });
-    }
-
-    function addTag(message_id, tag) {
-      setScrollToBottom(false);
-      fetch("/api/messages/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_ids: [message_id], add_user_tags: [tag] }),
-      }).then(() => {
-        setMessages(prev =>
-          prev.map(m =>
-            m.message_id === message_id
-              ? { ...m, user_tags: [...(m.user_tags || []), tag] }
-              : m
-          )
-        );
-      });
-    }
-
-    function removeTag(message_id, tag) {
-      setScrollToBottom(false);
-      fetch("/api/messages/tag", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_ids: [message_id], remove_user_tags: [tag] }),
-      }).then(() => {
-        setMessages(prev =>
-          prev.map(m =>
-            m.message_id === message_id
-              ? { ...m, user_tags: (m.user_tags || []).filter(t => t !== tag) }
-              : m
-          )
-        );
-      });
-    }
 
 function toPythonIsoString(date = new Date()) {
   // Pad milliseconds if needed
@@ -423,17 +304,19 @@ const handleSubmit = async () => {
   });
 
   // 2. Add to UI state immediately (so it’s taggable, traceable, etc.)
-  setMessages(prev => [
+setMessages(prev =>
+  trimMessages([
     ...prev,
     {
-      id: message_id,         // for React keys, etc.
-      message_id,             // for backend/db
+      id: message_id,
+      message_id,
       text: message,
       timestamp,
       role,
       source,
     }
-  ]);
+  ], ACTIVE_WINDOW_LIMIT)
+);
 
   setInput("");
   setThinking(true);
@@ -594,245 +477,42 @@ const speak = async (text, onDone) => {
         </button>
       </div>
     )}
-  {!hasMore && (
+
     <div className="text-sm text-neutral-400 italic text-center mt-2">
       That’s the beginning. Visit the History Tab for more.
     </div>
-  )}
+
         {connecting && (
           <div className="text-sm text-neutral-400">Reconnecting…</div>
         )}
         {visibleMessages.map((msg, idx) => {
-          let renderedHTML = "";
-          try {
-            renderedHTML = md.render((msg.text || "").trim());
-          } catch (e) {
-            renderedHTML = "<em>[Failed to render markdown]</em>";
-            console.error("Remarkable error:", e, msg.text);
-          }
-
-
-          const isPrivate = !!msg.is_private;
-          const isRemembered = !!msg.remembered;
-          const isDeleted = !!msg.is_deleted;
-          const inProject = msg.project_id;
-          const userTags = msg.user_tags?.filter(t => t !== "private" && t !== "deleted" && t !== "remembered" && t !== "project") || [];
-          const bubbleWidth = "max-w-[80%]";
-          // Determine alignment for user vs. muse
-          const rightAlign = msg.from === "user" || msg.role === "user";
-          const attachRef = (el) => {
-            if (scrollToMessageId === msg.message_id) setScrollTargetNode(el);
-          };
-
-
-          return (
-                    <div
-                      key={msg.message_id || idx}
-                      ref={attachRef}
-                      className={`space-y-1 flex flex-col ${rightAlign ? "items-end" : "items-start"}`}
-                    >
-                  {/* Metadata + bubble container, shares max-width and ml-auto for right-aligned */}
-                  <div className={`${bubbleWidth} ${rightAlign ? "ml-auto" : ""}`}>
-                    {/* Metadata always left-aligned within container */}
-                    <div className="text-xs text-neutral-400">{rightAlign ? "You" : museName}</div>
-                    <div className="text-xs text-neutral-500">{formatTimestamp(msg.timestamp)}</div>
-
-              {/* Bubble container with relative and group */}
-                <div
-                  className={`relative group text-sm px-3 py-2 rounded-lg whitespace-pre-wrap ${
-                    rightAlign
-                      ? "bg-neutral-800 text-white self-start" // self-start makes it left-aligned in the flex-col
-                      : "bg-purple-950 text-purple-100"
-                  }`}
-                >
-                  <div
-                    className="prose prose-invert max-w-none"
-                    dangerouslySetInnerHTML={{ __html: renderedHTML }}
-                  />
-
-                  {/* Tagging bar (appears on hover) */}
-                  <div className="absolute bottom-2 right-3 hidden group-hover:flex gap-2 z-10">
-                    <button
-                      onClick={() => setProjectDialogOpen(msg.message_id)}
-                      title={msg.project_id ? "Change project" : "Add to project"}
-                      className="text-neutral-400 hover:text-purple-300 transition-colors"
-                      style={{ background: "none", border: "none", cursor: "pointer" }}
-                    >
-                      <BookMarked size={18} />
-                    </button>
-                    <button
-                      onClick={() => setTagDialogOpen(msg.message_id)}
-                      title="Tag message"
-                      className="text-neutral-400 hover:text-purple-300 transition-colors"
-                      style={{ background: "none", border: "none", cursor: "pointer" }}
-                    >
-                      <Tags size={18} />
-                    </button>
-                    {/* Remembered toggle */}
-                    <button
-                        onClick={() => handleToggleRemembered(msg.message_id, !isRemembered)}
-                        title={isRemembered ? "Let memory fade" : "Mark as strong memory"}
-                        className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
-                        style={{ background: "none", border: "none", cursor: "pointer" }}
-                      >
-                        <CandleHolderLit
-                              className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
-
-                            />
-                    </button>
-                    {/* Private toggle */}
-                    <button
-                      onClick={() => handleTogglePrivate(msg.message_id, !isPrivate)}
-                      title={isPrivate ? "Set as public" : "Mark as private"}
-                      className={`transition-colors ${isPrivate ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
-                      style={{ background: "none", border: "none", cursor: "pointer" }}
-                    >
-                      {isPrivate ? <EyeClosed size={18} /> : <Eye size={18} />}
-                    </button>
-                    {/* Delete */}
-                    <button
-                      onClick={() => handleDelete(msg.message_id, !isDeleted)}
-                      title={isDeleted ? "Undelete message" : "Delete message"}
-                      className="text-neutral-400 hover:text-red-400 transition-colors"
-                      style={{ background: "none", border: "none", cursor: "pointer" }}
-                    >
-                      {isDeleted ? <SquareX size={18} /> : <Shredder size={18} />}
-                    </button>
-                  </div>
-                    {tagDialogOpen === msg.message_id && (
-                      <div className="absolute z-20 right-10 bottom-2 bg-neutral-900 p-4 rounded-lg shadow-lg w-64">
-                        <div className="mb-2 font-semibold text-purple-100">Edit Tags</div>
-                        {/* List current tags */}
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {(msg.user_tags || []).map(tag => (
-                            <span
-                              key={tag}
-                              className="bg-purple-800 text-xs text-purple-100 px-2 py-0.5 rounded-full flex items-center"
-                            >
-                              {tag}
-                              <button
-                                className="ml-1 text-purple-300 hover:text-red-300"
-                                onClick={() => removeTag(msg.message_id, tag)}
-                              >×</button>
-                            </span>
-                          ))}
-                        </div>
-                        {/* Add new tag */}
-                        <div className="flex">
-                          <input
-                            type="text"
-                            className="flex-1 rounded px-2 py-1 text-sm bg-neutral-800 text-white border-none outline-none"
-                            value={newTag}
-                            onChange={e => setNewTag(e.target.value)}
-                            placeholder="Add tag..."
-                            onKeyDown={e => {
-                              if (e.key === "Enter" && newTag.trim()) {
-                                addTag(msg.message_id, newTag.trim());
-                                setNewTag("");
-                              }
-                            }}
-                          />
-                          <button
-                            className="ml-2 text-purple-300 hover:text-purple-100"
-                            onClick={() => {
-                              if (newTag.trim()) {
-                                addTag(msg.message_id, newTag.trim());
-                                setNewTag("");
-                              }
-                            }}
-                          >Add</button>
-                        </div>
-                        {/* Close button */}
-                        <button
-                          className="absolute top-1 right-2 text-xs text-neutral-500 hover:text-purple-200"
-                          onClick={() => setTagDialogOpen(null)}
-                        >✕</button>
-                      </div>
-                    )}
-                {projectDialogOpen === msg.message_id && (
-                  <div className="absolute z-30 right-10 bottom-2 bg-neutral-900 p-4 rounded-lg shadow-lg w-64">
-                    <div className="mb-2 font-semibold text-purple-100">Add Message to Project</div>
-                    {projectsLoading ? (
-                      <div className="text-neutral-400 text-sm">Loading projects…</div>
-                    ) : projects.length === 0 ? (
-                      <div className="text-neutral-500 text-sm">No projects found.</div>
-                    ) : (
-                      <ul className="max-h-40 overflow-y-auto space-y-1">
-                        {projects.map(proj => (
-                          <li key={proj._id}>
-                            <button
-                              className={`w-full text-left px-2 py-1 rounded ${
-                                msg.project_id === proj._id
-                                  ? "bg-purple-700 text-white"
-                                  : "bg-neutral-800 text-purple-100 hover:bg-purple-900"
-                              }`}
-                              onClick={() => {
-                                setProject(msg.message_id, proj._id);
-                                setProjectDialogOpen(null);
-                              }}
-                            >
-                              <span className="font-semibold">{proj.name}</span>
-                              {proj.notes?.[0] && (
-                                <span className="ml-2 text-xs text-neutral-400 italic">{proj.notes[0]}</span>
-                              )}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {msg.project_id && (
-                      <button
-                        className="mt-2 w-full px-2 py-1 rounded bg-neutral-700 text-purple-200 hover:bg-red-800"
-                        onClick={() => {
-                          clearProject(msg.message_id);
-                          setProjectDialogOpen(null);
-                        }}
-                      >
-                        Remove from project
-                      </button>
-                    )}
-                    <button
-                      className="absolute top-1 right-2 text-xs text-neutral-500 hover:text-purple-200"
-                      onClick={() => setProjectDialogOpen(null)}
-                    >✕</button>
-                  </div>
-                )}
-
-
-                </div>
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1 mt-1 ml-2">
-                {inProject && projectMap[inProject] && (
-                  <span className="bg-purple-800 text-xs text-purple-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <BookMarked size={14} className="inline" />
-                    <span className="font-semibold">{projectMap[inProject].name || "Project"}</span>
-                  </span>
-                )}
-                  {userTags.map(tag => (
-                    <span key={tag} className="bg-purple-800 text-xs text-purple-100 px-2 py-0.5 rounded-full">
-                      #{tag}
-                    </span>
-                  ))}
-                  {isPrivate && (
-                    <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <EyeOff size={14} className="inline" /> Private
-                    </span>
-                  )}
-                  {isRemembered && (
-                      <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <CandleHolderLit size={14} className="inline" /> Remembered
-                      </span>
-                  )}
-                  {isDeleted && (
-                    <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Shredder size={14} className="inline" /> Recycled
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+              if (!messageRefs.current[msg.message_id]) {
+                messageRefs.current[msg.message_id] = React.createRef();
+              }
+                  return (
+                      <MessageItem
+                        key={msg.message_id || idx}
+                        ref={messageRefs.current[msg.message_id]}
+                        msg={msg}
+                        projects={projects}
+                        projectsLoading={projectsLoading}
+                        projectMap={projectMap}
+                        tagDialogOpen={tagDialogOpen}
+                        setTagDialogOpen={setTagDialogOpen}
+                        projectDialogOpen={projectDialogOpen}
+                        setProjectDialogOpen={setProjectDialogOpen}
+                        museName={museName}
+                        onDelete={onDelete}
+                          onTogglePrivate={onTogglePrivate}
+                          onToggleRemembered={onToggleRemembered}
+                          onSetProject={onSetProject}
+                          onClearProject={onClearProject}
+                          onAddTag={onAddTag}
+                          onRemoveTag={onRemoveTag}
+                      />
+                  );
+                }
+            )}
 
 
         {thinking && (

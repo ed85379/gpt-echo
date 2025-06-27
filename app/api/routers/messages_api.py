@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Body, Query
 from typing import List, Optional, Literal
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
+from typing import Any
+from bson import ObjectId
 import asyncio
 from app.core.memory_core import log_message, log_message_test
 from app.databases.mongo_connector import mongo
@@ -18,17 +20,36 @@ MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
 def get_messages(
         limit: int = Query(10, le=50),
         before: Optional[str] = None,
-        sources: Optional[List[str]] = Query(None)  # Accepts ?sources=frontend&sources=chatgpt
+        after: Optional[str] = None,
+        sources: Optional[List[str]] = Query(None),
+        project_id: Optional[str] = None,
+        tags: Optional[List[str]] = Query(None)
 ):
     query = {}
 
+    # Timestamp filtering
     if before:
         dt = parse(before)
         dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
         query["timestamp"] = {"$lt": dt}
+    if after:
+        dt = parse(after)
+        dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        if "timestamp" in query:
+            query["timestamp"]["$gt"] = dt
+        else:
+            query["timestamp"] = {"$gt": dt}
 
     if sources:
         query["source"] = {"$in": sources}
+    if project_id:
+        try:
+            query["project_id"] = ObjectId(project_id)
+        except Exception:
+            # Invalid ObjectId string—fail gracefully, or skip filter
+            pass
+    if tags:
+        query["user_tags"] = {"$in": tags}
 
     logs = mongo.find_logs(
         collection_name=MONGO_CONVERSATION_COLLECTION,
@@ -38,7 +59,7 @@ def get_messages(
         ascending=False
     )
 
-    print(f"Getting messages before {before} from {sources} — found {len(logs)}")
+    print(f"Getting messages: {query} — found {len(logs)}")
 
     result = []
     for msg in logs:
@@ -83,9 +104,11 @@ async def tag_message(
     is_private: Optional[bool] = Body(None),
     remembered: Optional[bool] = Body(None),
     is_deleted: Optional[bool] = Body(None),
-    set_project: Optional[str] = Body(None),      # <-- NEW param
+    set_project: Optional[Any] = Body(None),      # <-- NEW param
     exported: Optional[bool] = Body(None)
 ):
+    print(message_ids)
+    print(set_project)
     mongo_update = {}
     contentful = False
 
@@ -124,7 +147,15 @@ async def tag_message(
     if set_project is not None:
         contentful = True
         if set_project:
-            set_fields["project_id"] = set_project
+            # Coerce to ObjectId if it's a string and not already one
+            if not isinstance(set_project, ObjectId):
+                try:
+                    set_fields["project_id"] = ObjectId(set_project)
+                except Exception:
+                    # If set_project isn't a valid ObjectId, handle gracefully
+                    return {"updated": 0, "detail": f"Invalid project_id: {set_project}"}
+            else:
+                set_fields["project_id"] = set_project
         else:
             unset_fields.append("project_id")
 
@@ -205,7 +236,8 @@ def get_calendar_status_simple(
     start: str = Query(...),   # "YYYY-MM-DD"
     end: str = Query(...),     # "YYYY-MM-DD"
     source: str = Query(None),
-    tag: List[str] = Query(None)
+    tag: List[str] = Query(None),
+    project_id: Optional[str] = None
 ):
     # Parse input strings as datetimes in UTC
     start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -220,6 +252,12 @@ def get_calendar_status_simple(
         match_filter["source"] = {"$ne": "chatgpt"}
     if tag:
         match_filter["user_tags"] = {"$in": tag}
+    if project_id:
+        try:
+            match_filter["project_id"] = ObjectId(project_id)
+        except Exception:
+            # Invalid ObjectId string—fail gracefully, or skip filter
+            pass
     # Now use aggregation to group by day using timestamp
     pipeline = [
         {"$match": match_filter},
@@ -235,7 +273,8 @@ def get_calendar_status_simple(
 @router.get("/by_day")
 def get_messages_by_day(
     date: str = Query(..., description="YYYY-MM-DD"),
-    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT, Discord)")
+    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT, Discord)"),
+    project_id: Optional[str] = None
 ):
     # Parse to start/end of day (UTC)
     dt = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -249,6 +288,12 @@ def get_messages_by_day(
         query["source"] = source.lower()
     else:
         query["source"] = {"$eq": "frontend"}
+    if project_id:
+        try:
+            query["project_id"] = ObjectId(project_id)
+        except Exception:
+            # Invalid ObjectId string—fail gracefully, or skip filter
+            pass
 
     logs = mongo.find_logs(
         collection_name=MONGO_CONVERSATION_COLLECTION,

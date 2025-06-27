@@ -31,6 +31,17 @@ class MongoConnector:
             cursor = cursor.limit(limit)
         return list(cursor)
 
+    def find_one_document(self, collection_name, query=None, projection=None):
+        return self.db[collection_name].find_one(query or {}, projection)
+
+    def update_one_document(self, collection_name, filter_query, update_data):
+        # Returns the updated document after the change
+        return self.db[collection_name].find_one_and_update(
+            filter_query,
+            {"$set": update_data},
+            return_document=True  # pymongo.ReturnDocument.AFTER
+        )
+
     def find_logs(self, collection_name, query=None, limit=100, sort_field="timestamp", ascending=True):
         cursor = self.db[collection_name].find(query or {})
         if ascending:

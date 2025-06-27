@@ -1,3 +1,4 @@
+"use client";
 import SyncTab from "./SyncTab";
 
 export default function SyncPage() {
