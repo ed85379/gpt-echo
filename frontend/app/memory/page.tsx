@@ -1,6 +1,6 @@
 "use client";
-import CortexTab from "./CortexTab";
+import MemoryTab from "./MemoryTab";
 
-export default function CortexPage() {
-  return <CortexTab />;
+export default function MemoryPage() {
+  return <MemoryTab />;
 }

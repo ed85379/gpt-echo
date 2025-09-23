@@ -1,6 +1,7 @@
 # <editor-fold desc="🔧 Imports and Configuration">
 import json
 import time
+import asyncio
 from datetime import datetime, timedelta, timezone
 from dateutil.parser import isoparse
 from dateutil.parser import parse as parse_datetime
@@ -12,11 +13,13 @@ from croniter import croniter
 from app import config
 #from app.api.api_main import QDRANT_COLLECTION
 from app.config import muse_config
+from app.core.utils import write_system_log, align_cron_for_croniter
 from app.core import utils
 from app.databases.mongo_connector import mongo
 from app.services import openai_client
 from app.databases import memory_indexer
-
+from app.api.queues import index_memory_queue
+from app.databases.qdrant_connector import delete_point, query as qdrant_query
 
 # </editor-fold>
 
@@ -29,13 +32,14 @@ PROFILE_DIR = config.PROFILE_DIR
 VALID_ROLES = {"user", "muse", "friend"}
 model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
 
+
 # </editor-fold>
 
 # --------------------------
 # Chronicle Logging
 # --------------------------
 # <editor-fold desc="📝 Logging Functions">
-async def log_message(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None, project_id=None):
+async def log_message(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None, project_id=None, project_ids=None):
     """
     Log a message from any source into the Muse system.
     If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
@@ -75,16 +79,20 @@ async def log_message(role, message, source="frontend", metadata=None, flags=Non
         "user_tags": [],
         "flags": flags,
         "metadata": metadata or {},
-        "updated_on": timestamp,
-        "project_id": project_id
+        "updated_on": timestamp
     }
+    # Only add if provided (and not None)
+    if project_id is not None:
+        log_entry["project_id"] = ObjectId(project_id)
+    if project_ids is not None:
+        log_entry["project_ids"] = project_ids
 
     try:
         log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
         mongo.insert_log(muse_config.get("MONGO_CONVERSATION_COLLECTION"), log_entry)
         await memory_indexer.build_index(message_id=log_entry["message_id"])
     except Exception as e:
-        utils.write_system_log(
+        write_system_log(
             level="error",
             module="core",
             component="memory_core",
@@ -97,57 +105,6 @@ async def log_message(role, message, source="frontend", metadata=None, flags=Non
             f.write(json.dumps(log_entry, default=str) + "\n")
     return {"message_id": log_entry["message_id"]}
 
-async def log_message_test(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None):
-    """
-    Log a message from any source into the Muse system.
-    If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
-    """
-    # Normalize timestamp if provided
-    if timestamp:
-        if isinstance(timestamp, str):
-            try:
-                timestamp = parse_datetime(timestamp)
-                if timestamp.tzinfo is None:
-                    timestamp = timestamp.replace(tzinfo=timezone.utc)
-                else:
-                    timestamp = timestamp.astimezone(timezone.utc)
-            except Exception as e:
-                print(f"[timestamp parse error]: {e}")
-                timestamp = datetime.now(timezone.utc)
-        elif not isinstance(timestamp, datetime):
-            # Unknown format, fallback
-            print(f"[timestamp type error]: Unrecognized timestamp type: {type(timestamp)}")
-            timestamp = datetime.now(timezone.utc)
-    else:
-        timestamp = datetime.now(timezone.utc)
-
-    # Always auto-tag the message
-    try:
-        auto_tags = openai_client.get_openai_autotags(message)
-    except Exception as e:
-        auto_tags = []
-        print(f"[auto-tag error]: {e}")
-
-    log_entry = {
-        "timestamp": timestamp,
-        "role": role,
-        "source": source,
-        "message": message,
-        "auto_tags": auto_tags,
-        "user_tags": user_tags or [],
-        "flags": flags,
-        "metadata": metadata or {},
-        "updated_on": timestamp
-    }
-
-    try:
-        log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
-        mongo.insert_log("test_collection", log_entry)
-        ## Do not index for tests
-        #memory_indexer.build_index(message_id=log_entry["message_id"])
-    except Exception as e:
-        with open("message_backup.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_entry, default=str) + "\n")
 
 async def do_import(collection):
     temp_coll = mongo.db[collection]
@@ -187,6 +144,7 @@ def get_hidden_project_ids():
     )
     return set(p["_id"] for p in hidden_projects)
 
+
 def get_immediate_context(n=10, hours=2):
     now = datetime.utcnow()
     since = now - timedelta(hours=hours)
@@ -194,13 +152,15 @@ def get_immediate_context(n=10, hours=2):
 
     query = {
         "timestamp": {"$gte": since},
+        "source": {"$ne": "file"},
         "is_private": {"$ne": True},       # Exclude private messages
         "is_deleted": {"$ne": True}        # Exclude deleted
     }
     if hidden_project_ids:
         query["$or"] = [
-            {"project_id": {"$nin": list(hidden_project_ids)}},
-            {"project_id": {"$exists": False}}
+            {"project_id": {"$nin": list(hidden_project_ids)}},  # Single-linked
+            {"project_id": {"$exists": False}},  # Unattached
+            {"project_ids": {"$exists": True, "$nin": list(hidden_project_ids)}}  # Multi-linked: at least one visible
         ]
         # This way, messages with *no* project_id are always included, unless otherwise filtered
 
@@ -247,41 +207,30 @@ def tag_weight(payload, tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, pr
 
 def search_indexed_memory(
     query,
-    collection_name,
-    top_k=5,
+    projects_in_focus=None,     # List[str], e.g. ["proj_abc123"]
+    blend_ratio=1.0,            # float: 1.0 = hard project focus, 0.1–0.99 = blended
+    top_k=10,
+    collection_name="muse_memory",
     bias_author_id=None,
     bias_source=None,
     score_boost=0.1,
     source_boost=0.1,
-    penalize_muse=True,
+    penalize_muse=False,
     muse_penalty=0.05,
-    recency_half_life=48,         # new
-    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, project_boost=1.25  # new
+    recency_half_life=48,
+    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, project_boost=1.25, non_project_penalty=0.2
 ):
     """
-    Search indexed memory via Qdrant or FAISS.
-
-    Parameters:
-    - query (str): Search query.
-    - top_k (int): Number of top results to return.
-    - bias_author_id (str|None): Optional. Boost results by this author.
-    - bias_source (str|None): Optional. Boost results from this source (e.g., 'discord').
-    - score_boost (float): Score boost for matching author_id.
-    - source_boost (float): Score boost for matching source.
-    - penalize_muse (bool): If True, apply a penalty to Muse's own messages.
-    - muse_penalty (float): Score penalty for Muse's own responses.
-
-    Returns:
-    - List[dict]: Ranked search results.
+    Search indexed memory via Qdrant, with Project Focus support.
     """
+    if projects_in_focus is None:
+        projects_in_focus = []
     query_vector = model.encode([query])[0]
     overfetch_k = top_k * 5
 
     from qdrant_client import QdrantClient
-
     QDRANT_HOST = muse_config.get("QDRANT_HOST")
     QDRANT_PORT = int(muse_config.get("QDRANT_PORT"))
-    #QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
     QDRANT_COLLECTION = collection_name
 
     hidden_project_ids = [str(oid) for oid in get_hidden_project_ids()]
@@ -295,14 +244,28 @@ def search_indexed_memory(
         query_filter["must_not"].append(
             {"key": "project_id", "match": {"any": hidden_project_ids}}
         )
-    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-    search_result = client.search(
-        collection_name=QDRANT_COLLECTION,
-        query_vector=query_vector.tolist(),
-        limit=overfetch_k,
-        query_filter=query_filter
-    )
 
+    # Project focus: hard filter for 100%
+    if projects_in_focus and blend_ratio == 1.0:
+        query_filter["must"] = [
+            {"key": "project_id", "match": {"any": projects_in_focus}}
+        ]
+        # Note: If you want to also include messages with project_ids array, you'll need to expand filter logic or post-process
+
+    #client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    #search_result = client.search(
+    #    collection_name=QDRANT_COLLECTION,
+    #    query_vector=query_vector.tolist(),
+    #    limit=overfetch_k,
+    #    query_filter=query_filter
+    #)
+    search_result = qdrant_query(QDRANT_COLLECTION, query, overfetch_k, query_filter)
+
+    print("\n[Raw Search Results]")
+    for i, hit in enumerate(search_result[:50]):
+        pid = hit.payload.get("project_id")
+        pids = hit.payload.get("project_ids")
+        print(f"  Result[{i}] id={hit.payload.get('message_id')[:6]}, proj_id={pid}, proj_ids={pids}")
 
     results = []
     now = time.time()
@@ -319,8 +282,9 @@ def search_indexed_memory(
             "muse_tags": hit.payload.get("muse_tags"),
             "remembered": hit.payload.get("remembered", False),
             "project_id": hit.payload.get("project_id"),
+            "project_ids": hit.payload.get("project_ids")
         }
-        # Old bias stuff...
+        # Biases
         if bias_author_id and entry["metadata"].get("author_id") == bias_author_id:
             entry["score"] += score_boost
         if bias_source and entry.get("source") == bias_source:
@@ -328,12 +292,77 @@ def search_indexed_memory(
         if penalize_muse and entry.get("role") == "muse":
             entry["score"] -= muse_penalty
 
-        # 🟣 New weighting:
+        # Recency & tag weighting
         entry["score"] *= recency_weight(entry["timestamp"], now, half_life_hours=recency_half_life)
         entry["score"] *= tag_weight(entry, tag_boost, muse_boost, remembered_boost, project_boost)
         results.append(entry)
 
-    sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)
+    # Filter out entries with only hidden project_ids (for files, etc.)
+    filtered_results = []
+    for entry in results:
+        pids = entry.get("project_ids")
+        if pids is not None:
+            if not pids:
+                filtered_results.append(entry)
+            elif all(pid in hidden_project_ids for pid in pids):
+                continue
+            else:
+                filtered_results.append(entry)
+        else:
+            filtered_results.append(entry)
+
+    # Project focus blending: only if 10-99% (not hard filter)
+    if projects_in_focus and 0.0 < blend_ratio < 1.0:
+        # Optional: print blend context
+        print(f"\n[Project Focus Blend] projects_in_focus={projects_in_focus}, blend_ratio={blend_ratio}")
+        for i, entry in enumerate(filtered_results):
+            project_ids = entry.get("project_ids") or []
+            in_focus = (
+                    (entry.get("project_id") in projects_in_focus)
+                    or any(pid in projects_in_focus for pid in project_ids)
+            )
+            pre_score = entry["score"]
+            if in_focus:
+                entry["score"] *= 1 + (blend_ratio * project_boost)
+            else:
+                entry["score"] *= 1 - (blend_ratio * non_project_penalty)
+            post_score = entry["score"]
+
+            # Print a compact summary for first few entries
+            if i < 5:  # Avoid log spam
+                print(
+                    f"  Entry[{i}] id={entry.get('message_id')[:6]}..., "
+                    f"in_focus={in_focus}, "
+                    f"proj_id={entry.get('project_id')}, "
+                    f"proj_ids={project_ids}, "
+                    f"pre={pre_score:.3f}, post={post_score:.3f}"
+                )
+        print(f"[Project Focus Blend] Sampled {min(len(filtered_results), 5)} of {len(filtered_results)} entries.")
+
+    # At 100% focus, optionally post-filter any stragglers (such as project_ids files) for complete purity:
+    if projects_in_focus and blend_ratio == 1.0:
+        before = len(filtered_results)
+        filtered_results = [
+            entry for entry in filtered_results
+            if (
+                    (entry.get("project_id") in projects_in_focus)
+                    or any(pid in projects_in_focus for pid in entry.get("project_ids", []))
+            )
+        ]
+        after = len(filtered_results)
+        print(f"[Hard Project Filter] {after}/{before} entries match projects_in_focus={projects_in_focus}")
+        # Optionally print a sample of result IDs
+        print("  IDs:", [entry.get("message_id")[:6] for entry in filtered_results[:5]])
+
+    sorted_results = sorted(filtered_results, key=lambda x: x["score"], reverse=True)
+    print("[Final Results] Top entries after blending/filtering:")
+    for i, entry in enumerate(sorted_results[:5]):
+        print(
+            f"  Rank {i + 1}: id={entry.get('message_id')[:6]}..., "
+            f"score={entry['score']:.3f}, "
+            f"proj_id={entry.get('project_id')}, "
+            f"proj_ids={entry.get('project_ids')}"
+        )
     return sorted_results[:top_k]
 
 def search_indexed_memories(
@@ -378,18 +407,32 @@ def search_indexed_memories(
 
 # </editor-fold>
 
+
+
 # --------------------------
 # MuseCortex Interface
 # --------------------------
 # <editor-fold desc="🧠 MuseCortex Backends (Mongo + Local)">
 try:
-    from pymongo import MongoClient
+    from pymongo import MongoClient, ReturnDocument
     MONGO_ENABLED = True
 except ImportError:
     MONGO_ENABLED = False
 
 class MuseCortexInterface:
+    def add_memory(self, layer, entry):
+        raise NotImplementedError
+
+    def edit_memory(self, layer, entry_id, updates):
+        raise NotImplementedError
+
+    def delete_memory(self, layer, entry_id):
+        raise NotImplementedError
+
     def get_entries_by_type(self, type_name):
+        raise NotImplementedError
+
+    def get_entries(self, query=None):
         raise NotImplementedError
 
     def add_entry(self, entry):
@@ -407,6 +450,12 @@ class MuseCortexInterface:
     def search_by_tag(self, tag):
         raise NotImplementedError
 
+    def get_doc(self, id):
+        raise NotImplementedError
+
+    def update_doc(self, doc_id, updated_fields):
+        raise NotImplementedError
+
     def search_cortex_for_timely_reminders(self, window_minutes):
         raise NotImplementedError
 
@@ -417,8 +466,24 @@ class MongoCortexClient(MuseCortexInterface):
         self.db = self.client["muse_memory"]
         self.collection = self.db["muse_cortex"]
 
+    def add_memory(self, layer: str, entry: dict):
+        # applies charter rules, timestamps, etc
+        return mongo[layer].insert_one(entry)
+
+    def edit_memory(self, layer: str, entry_id: str, updates: dict):
+        updates["last_updated"] = datetime.utcnow().isoformat()
+        return mongo[layer].update_one({"id": entry_id}, {"$set": updates})
+
+    def delete_memory(self, layer: str, entry_id: str):
+        return mongo[layer].delete_one({"id": entry_id})
+
     def get_entries_by_type(self, type_name):
         return list(self.collection.find({"type": type_name}))
+
+    def get_entries(self, query=None):
+        if query is None:
+            query = {}
+        return list(self.collection.find(query))
 
     def add_entry(self, entry):
         entry["created_at"] = datetime.now(timezone.utc).isoformat()
@@ -449,6 +514,23 @@ class MongoCortexClient(MuseCortexInterface):
     def search_by_tag(self, tag):
         return list(self.collection.find({"tags": tag}))
 
+    def get_doc(self, doc_id):
+        doc = self.collection.find_one({"id": doc_id})
+        if not doc:
+            # Optionally, initialize a new doc if not found
+            doc = {"id": doc_id, "entries": []}
+            self.collection.insert_one(doc)
+        return doc
+
+    def update_doc(self, doc_id, updated_fields):
+        # Only updating the 'entries' field as per your handler
+        updated = self.collection.find_one_and_update(
+            {"id": doc_id},
+            {"$set": updated_fields},
+            return_document=ReturnDocument.AFTER
+        )
+        return updated
+
     def search_cortex_for_timely_reminders(self, window_minutes=0.5):
         user_tz = ZoneInfo(muse_config.get("USER_TIMEZONE"))  # e.g., "America/New_York"
         now_local = datetime.now(user_tz)
@@ -459,7 +541,7 @@ class MongoCortexClient(MuseCortexInterface):
         triggered = []
 
         for entry in reminders:
-            cron = utils.align_cron_for_croniter(entry.get("cron"))
+            cron = align_cron_for_croniter(entry.get("cron"))
             skip_until = entry.get("skip_until")
             try:
                 # Start base_time slightly before now to catch edge triggers
@@ -523,3 +605,66 @@ def get_cortex():
 cortex = get_cortex()
 # </editor-fold>
 
+class MemoryLayerManager:
+    def __init__(self, cortex, utils):
+        self.cortex = cortex
+        self.utils = utils
+
+    def add_entry(self, doc_id, entry):
+        now = datetime.utcnow()
+        entry['id'] = self.utils.generate_new_id()
+        entry['created_on'] = now
+        entry['updated_on'] = now
+        doc = self.cortex.get_doc(doc_id)
+        doc['entries'].append(entry)
+        self.cortex.update_doc(doc_id, doc)
+        self._log("add_entry", f"Added entry {entry['id']} to {doc_id}")
+        asyncio.create_task(index_memory_queue.put(entry['id']))
+        return entry
+
+    def edit_entry(self, doc_id, entry_id, fields):
+        doc = self.cortex.get_doc(doc_id)
+        entry_map = {e['id']: (i, e) for i, e in enumerate(doc['entries'])}
+        if entry_id not in entry_map:
+            self._warn("edit_entry_failed", f"Missing ID {entry_id}")
+            return None
+        idx, entry = entry_map[entry_id]
+        entry.update(fields)
+        entry['updated_on'] = datetime.utcnow()
+        doc['entries'][idx] = entry
+        self.cortex.update_doc(doc_id, doc)
+        self._log("edit_entry", f"Edited entry {entry_id} in {doc_id}")
+        asyncio.create_task(index_memory_queue.put(entry['id']))
+        return entry
+
+    def recycle_entry(self, doc_id, entry_id):
+        return self.edit_entry(doc_id, entry_id, {"is_deleted": True})
+
+    def pin_entry(self, doc_id, entry_id):
+        return self.edit_entry(doc_id, entry_id, {"is_pinned": True})
+
+    def delete_entry(self, doc_id, entry_id):
+        doc = self.cortex.get_doc(doc_id)
+        new_entries = [e for e in doc['entries'] if e['id'] != entry_id]
+        if len(new_entries) == len(doc['entries']):
+            self._warn("delete_entry_failed", f"Missing ID {entry_id}")
+            return False
+        doc['entries'] = new_entries
+        self.cortex.update_doc(doc_id, doc)
+        self._log("delete_entry", f"Deleted entry {entry_id} from {doc_id}")
+        delete_point(entry_id, "muse_memory_layers")
+        return True
+
+    def _log(self, action, text):
+        self.utils.write_system_log(
+            level="info", module="core", component="memory_core",
+            function="MemoryLayerManager", action=action, text=text
+        )
+
+    def _warn(self, action, text):
+        self.utils.write_system_log(
+            level="warn", module="core", component="memory_core",
+            function="MemoryLayerManager", action=action, text=text
+        )
+
+manager = MemoryLayerManager(cortex, utils)
