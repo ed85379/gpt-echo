@@ -28,7 +28,21 @@ function ProjectsTab() {
   const [showArchived, setShowArchived] = useState(false);
   const [toggleLoading, setToggleLoading] = useState(false);
 
-
+    const handleAddProject = async () => {
+      try {
+        // Optionally: disable button here if you want
+        const res = await fetch("/api/projects", { method: "POST" });
+        if (!res.ok) throw new Error("Failed to create project");
+        const project = await res.json();
+        // If your backend returns only the project ID: { "_id": ... }
+        // If it returns the full project object, adapt accordingly below.
+        await fetchProjects();
+        // After re-fetching, select the new project
+        setSelectedProjectId(project._id || project.project_id);
+      } catch (e) {
+        alert("Could not add project:\n" + e);
+      }
+    };
 
   useEffect(() => {
     fetchProjects();
@@ -42,11 +56,11 @@ function ProjectsTab() {
     setProjectsLoading(false);
   };
 
-    const projectMap = useMemo(() => {
-      const map = {};
-      for (const proj of projects) map[proj._id] = proj;
-      return map;
-    }, [projects]);
+  const projectMap = useMemo(() => {
+    const map = {};
+    for (const proj of projects) map[proj._id] = proj;
+    return map;
+  }, [projects]);
 
   const tagOptions = useMemo(() => {
     const tags = new Set();
@@ -82,6 +96,22 @@ function ProjectsTab() {
     }
   };
 
+  const handleToggleArchived = async () => {
+    if (!selectedProject) return;
+    setToggleLoading(true);
+    try {
+      const res = await fetch(`/api/projects/${selectedProject._id}/archive`, {
+        method: "PUT"
+      });
+      if (!res.ok) throw new Error(`Failed to toggle archived (${res.status})`);
+      await fetchProjects();
+    } catch (e) {
+      alert("Failed to toggle archived:\n" + e);
+    } finally {
+      setToggleLoading(false);
+    }
+  };
+
   return (
     <div style={{
       display: "flex",
@@ -110,6 +140,7 @@ function ProjectsTab() {
             fontSize: 16,
             cursor: "pointer"
           }}
+          onClick={handleAddProject}
         >+ Add Project</button>
         <div className="filters" style={{
           display: "flex", gap: 8, marginBottom: 20
@@ -204,11 +235,13 @@ function ProjectsTab() {
           </div>
         ) : (
           <ProjectCard
+            projects={projects}
             project={selectedProject}
             projectMap={projectMap}
             projects={projects}
             projectsLoading={projectsLoading}
             onToggleVisibility={handleToggleVisibility}
+            onToggleArchived={handleToggleArchived}
             toggleLoading={toggleLoading}
             onProjectChange={p => {
               fetch(`/api/projects/${selectedProject._id}`, {
