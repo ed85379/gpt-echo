@@ -36,7 +36,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"{role} client disconnected")
 
 # Broadcast to all clients listening under a given role
-async def broadcast_message(message: str, timestamp: str, to: str = "frontend"):
+async def broadcast_message(message: str, timestamp: str, to: str = "frontend", project_id: str = ""):
     msg_dict = {
         "timestamp": timestamp,
         "role": "muse",
@@ -51,7 +51,9 @@ async def broadcast_message(message: str, timestamp: str, to: str = "frontend"):
             await connection.send_text(json.dumps({
                 "type": "muse_message",
                 "message": message,
-                "message_id": message_id
+                "message_id": message_id,
+                "project_id": project_id,
+                "to": to
             }))
 
         except Exception:

@@ -4,16 +4,21 @@ import discord
 import traceback
 import asyncio
 import signal
+import re
+import websockets
+import json
 from app import config
 from app.config import muse_config
 from app.core import memory_core
 from app.services import openai_client
-from app.core import prompt_builder
+from app.core.prompt_profiles import build_discord_prompt
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
 DISCORD_GUILD_NAME = muse_config.get("DISCORD_GUILD_NAME")
 DISCORD_CHANNEL_NAME = muse_config.get("DISCORD_CHANNEL_NAME")
+
+
 
 
 def get_user_role(author_id):
@@ -32,6 +37,21 @@ intents.messages = True
 intents.message_content = True
 
 client = discord.Client(intents=intents)
+
+async def subscribe_to_broadcasts():
+    ws_url = f"ws://localhost:5000/ws"  # adjust host/port
+    async with websockets.connect(ws_url) as ws:
+        # Identify as Discord listener
+        await ws.send(json.dumps({"listen_as": "discord"}))
+        print("🔌 Subscribed to broadcast as discord")
+
+        async for msg in ws:
+            data = json.loads(msg)
+            message = data.get("message", "")
+            channel = await get_channel_by_name(DISCORD_GUILD_NAME, DISCORD_CHANNEL_NAME)
+            if channel and message:
+                await channel.send(message)
+
 
 # --- Incoming Message Handler ---
 async def handle_incoming_discord_message(message):
@@ -58,27 +78,15 @@ async def handle_incoming_discord_message(message):
                     "modality_hint": "text"
                 }
             )
-            #print("✅ User message logged.")
-
-            # Build the full prompt using the new builder
-            builder = prompt_builder.PromptBuilder(destination="discord")
-            builder.add_laws()
-            builder.add_profile()
-            builder.add_core_principles()
-            builder.add_cortex_entries(["insight", "seed"])
-            builder.add_prompt_context(user_input, [], 0.0)
-            #builder.add_graphdb_discord_memory(author_name=message.author.name, author_id=message.author.id)
-            #builder.add_journal_thoughts(query=user_input)
-            #    builder.add_discovery_snippets()  # Optional: you can comment this out if you want a cleaner test
-            builder.add_formatting_instructions()
-
-            # Assemble final prompt
-            full_prompt = builder.build_prompt()
-            full_prompt += f"\n\n{message.author.name}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
-            #print("🛠️ Full prompt ready:")
-            #print(full_prompt)
+            # Call prompt_profiles to build the prompt for the frontend UI
+            dev_prompt, user_prompt = build_discord_prompt(
+                user_input,
+                muse_config,
+                author_name=message.author.name
+            )
+            print(user_prompt)
             # Get Muse's response
-            muse_response = openai_client.get_openai_response(full_prompt)
+            muse_response = openai_client.get_openai_response_new(dev_prompt, user_prompt)
             #print("🧠 Muse response generated:")
             #print(muse_response)
 
@@ -97,7 +105,7 @@ async def handle_incoming_discord_message(message):
                 }
             )
             #print("✅ Muse response logged.")
-
+            muse_response = re.sub(r"<muse-experience>.*?</muse-experience>", "", muse_response, flags=re.DOTALL)
             # Send reply
             await message.channel.send(muse_response)
             #print("✅ Muse response sent to Discord.")
@@ -128,8 +136,8 @@ async def shutdown():
 async def on_ready():
     print(f"🟣 {muse_config.get("MUSE_NAME")} connected to Discord as {client.user}.")
     channel = await get_channel_by_name(DISCORD_GUILD_NAME, DISCORD_CHANNEL_NAME)
-    if channel:
-        await channel.send(f"🟣 {muse_config.get('MUSE_NAME')} is now awake in this realm.")
+    #if channel:
+    #    await channel.send(f"🟣 {muse_config.get('MUSE_NAME')} is now awake in this realm.")
 
 @client.event
 async def on_message(message):
@@ -146,9 +154,11 @@ async def start_discord_listener():
 # --- Main Event Loop ---
 async def main():
     listener_task = asyncio.create_task(start_discord_listener())
+#    broadcast_task = asyncio.create_task(subscribe_to_broadcasts())
 
     try:
-        await listener_task  # This runs until the bot disconnects or Ctrl+C is pressed
+#        await asyncio.gather(listener_task, broadcast_task)
+        await asyncio.gather(listener_task)
     except KeyboardInterrupt:
         print("[Discord Connector] Ctrl+C caught, shutting down...")
         await shutdown()
