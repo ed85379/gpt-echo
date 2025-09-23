@@ -5,7 +5,7 @@ from dateutil.parser import parse
 from typing import Any
 from bson import ObjectId
 import asyncio
-from app.core.memory_core import log_message, log_message_test
+from app.core.memory_core import log_message
 from app.databases.mongo_connector import mongo
 from app.config import muse_config
 from app.api.queues import index_queue
