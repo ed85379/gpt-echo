@@ -10,9 +10,9 @@ scheduled_tasks = [
 #    {"name": "check_dropped_threads", "interval": 3600, "function": muse_initiator.run_dropped_threads_check},
     {"name": "discovery_feed", "interval": 3600, "function": muse_initiator.run_discoveryfeeds_lookup},
     {"name": "reminder_checker", "interval": 60, "function": muse_initiator.run_check_reminders},
-    {"name": "inactivity_checker", "interval": 1800, "function": muse_initiator.run_inactivity_check},
-    {"name": "dreamtime", "interval": 86400, "function": muse_initiator.run_dream_gate},
-    {"name": "introspection_engine", "interval": 86400, "function": muse_initiator.run_introspection_engine},
+#    {"name": "inactivity_checker", "interval": 1800, "function": muse_initiator.run_inactivity_check},
+#    {"name": "dreamtime", "interval": 86400, "function": muse_initiator.run_dream_gate},
+#    {"name": "introspection_engine", "interval": 86400, "function": muse_initiator.run_introspection_engine},
 ]
 
 # --- Individual Loop for Each Task ---
