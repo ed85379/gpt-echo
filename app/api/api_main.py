@@ -6,24 +6,28 @@ import json
 from openai import OpenAI
 from datetime import datetime, timezone
 from app import config
+from bson import ObjectId
 from app.config import muse_config
 from fastapi.middleware.cors import CORSMiddleware
 from collections import defaultdict
 from app.services.tts_core import synthesize_speech, stream_speech
 from app.core.muse_profile import muse_profile
-from app.core.prompt_builder import PromptBuilder
+from app.core.prompt_profiles import build_api_prompt
 from app.core.muse_responder import route_user_input
 from app.interfaces.websocket_server import router as websocket_router
 from app.interfaces.websocket_server import broadcast_message
 from app.core.memory_core import log_message
-from app.databases.memory_indexer import build_index
+from app.databases.memory_indexer import build_index, build_memory_index
 from app.core import utils
+from app.core.files_core import get_all_message_ids_for_files
 from app.api.routers.config_api import router as config_router
 from app.api.routers.messages_api import router as messages_router
 from app.api.routers.cortex_api import router as cortex_router
+from app.api.routers.memory_api import router as memory_router
 from app.api.routers.import_api import router as import_router
 from app.api.routers.projects_api import router as projects_router
-from .queues import run_broadcast_queue, run_log_queue, run_index_queue, broadcast_queue, log_queue, index_queue
+from app.api.routers.files_api import router as files_router
+from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 
 
 client = OpenAI(api_key=config.OPENAI_API_KEY)  # Uses api key from env or config
@@ -33,13 +37,15 @@ MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
 QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
 
 
-app = FastAPI()
+app = FastAPI(debug=True)
 router = APIRouter()
 app.include_router(config_router)
 app.include_router(messages_router)
 app.include_router(cortex_router)
+app.include_router(memory_router)
 app.include_router(import_router)
 app.include_router(projects_router)
+app.include_router(files_router)
 
 
 # Add CORS middleware
@@ -60,6 +66,7 @@ async def startup_event():
     asyncio.create_task(run_broadcast_queue(broadcast_queue, broadcast_message))
     asyncio.create_task(run_log_queue(log_queue, log_message))
     asyncio.create_task(run_index_queue(index_queue, build_index))
+    asyncio.create_task(run_memory_index_queue(index_memory_queue, build_memory_index))
 
 def load_journal_index():
     if JOURNAL_CATALOG_PATH.exists():
@@ -162,29 +169,48 @@ async def stream_tts(request: Request):
 @app.post("/api/talk")
 async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
+    print(data)
     user_input = data.get("prompt", "")
     user_timestamp = data.get("timestamp")  # <-- Accept incoming timestamp!
     user_message_id = data.get("message_id")  # (Optional)
+    project_id = data.get("project_id")
+    blend_ratio = data.get("blend_ratio", 0.0)
+    auto_assign = data.get("auto_assign")
+    injected_files = data.get("injected_files", [])
+    ephemeral_files = data.get("ephemeral_files", [])
     if not user_input:
         return JSONResponse(status_code=400, content={"error": "No prompt provided."})
 
-    # Build the full prompt using the new builder
-    builder = PromptBuilder()
-    builder.add_laws()
-    builder.add_profile()
-    builder.add_core_principles()
-    builder.add_cortex_entries(["insight", "seed", "user_data"])
-    builder.add_prompt_context(user_input, [], 0.0)
-    builder.add_journal_thoughts(query=user_input)
-#    builder.add_discovery_snippets()  # Optional: you can comment this out if you want a cleaner test
-    builder.add_intent_listener(["remember_fact", "set_reminder", "skip_reminder", "write_private_journal"])
-    builder.add_time()
-    # Assemble final prompt
-    full_prompt = builder.build_prompt()
-    full_prompt += f"\n\n{muse_config.get("USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
-    #print(full_prompt)
+    injected_file_ids = [ObjectId(fid) for fid in injected_files]
+    message_ids_to_exclude = get_all_message_ids_for_files(injected_file_ids)
+    num_injected_chunks = len(message_ids_to_exclude)
+    num_ephemeral_chunks = len(ephemeral_files)
+    total_chunks = num_injected_chunks + num_ephemeral_chunks
+    # Add additional message_ids_to_exclude after getting the above count. Only injected files reduce it.
+    default_top_k = 10
+    min_top_k = 3
+    final_top_k = utils.get_adaptive_top_k(min_top_k, default_top_k, total_chunks)
+    print(f"FINAL_TOP_K: {final_top_k}")
+
+    # Call prompt_profiles to build the prompt for the frontend UI
+    dev_prompt, user_prompt, ephemeral_images = build_api_prompt(
+        user_input,
+        muse_config,
+        project_id=project_id,
+        blend_ratio=blend_ratio,
+        message_ids_to_exclude=message_ids_to_exclude,
+        final_top_k=final_top_k,
+        injected_file_ids=injected_file_ids,
+        ephemeral_files=ephemeral_files,
+    )
+    print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
+    print(f"USER_PROMPT:\n" + user_prompt)
     # Get Muse's response
-    response = route_user_input(full_prompt)
+    response = route_user_input(dev_prompt, user_prompt, images=ephemeral_images)
+    cleaned = response.strip()
+    if not cleaned:
+        # Only commands were present; nothing to display in frontend
+        return
     response_timestamp = datetime.now(timezone.utc).isoformat()
     msg = {
         "message": response,
@@ -193,6 +219,8 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         "source": "frontend",
         "to": "frontend"
     }
+    if project_id and auto_assign:
+        msg["project_id"] = project_id
     await broadcast_queue.put(msg)
     await log_queue.put(msg)
 
@@ -202,6 +230,8 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         "role": "user",
         "source": "frontend"
     }
+    if project_id and auto_assign:
+        user_msg["project_id"] = project_id
     await log_queue.put(user_msg)
     return {"response": response}
 
