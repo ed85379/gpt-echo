@@ -430,12 +430,9 @@ const handleSaveTags = () => {
       </div>
       */}
       <footer style={{display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24}}>
-        <button style={{
-          ...cardBtnStyle, background: "#7c3aed22", color: "#c084fc", border: "1px solid #7c3aed"
-        }}>Archive Project</button>
-        <button style={{
+        {/*}<button style={{
           ...cardBtnStyle, background: "#ef444422", color: "#ff4455", border: "1px solid #ef4444"
-        }}>Delete Project</button>
+        }}>Delete Project</button>*/}
       </footer>
     </div>
   );

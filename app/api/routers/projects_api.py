@@ -1,15 +1,21 @@
-from fastapi import APIRouter, HTTPException, Body, Query
-from typing import List, Optional, Literal
+
+from fastapi import APIRouter, HTTPException
 from datetime import datetime, timezone, timedelta
-from dateutil.parser import parse
-import asyncio
 from bson import ObjectId
 from app.databases.mongo_connector import mongo
 from app.config import muse_config
 from app.core import projects_core
+from app.core.files_core import modify_file_project_link_core
+from app.core.utils import serialize_doc, ensure_list
+from app.api.queues import index_queue
+from app.databases.mongo_connector import mongo
+
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
+MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
+MONGO_FACTS_COLLECTION = "muse_cortex"
+MONGO_MESSAGES_COLLECTION = "muse_conversations"
 
 @router.get("/")
 def get_projects():
@@ -27,11 +33,46 @@ def get_projects():
             "tags": project.get("tags", []),
             "notes": project.get("notes", []),
             "hidden": project.get("hidden", False),
+            "archived": project.get("archived", False),
         }
         result.append(mapped)
 
     return {"projects": result[::-1]}
 
+@router.post("/")
+def create_project():
+    now = datetime.utcnow()
+    project_id = ObjectId()
+    try:
+        project = {
+            "_id": project_id,
+            "name": "New Project",
+            "hidden": False,
+            "notes": [],
+            "tags": [],
+            "created_at": now,
+            "updated_at": now
+        }
+        mongo.insert_one_document(MONGO_PROJECTS_COLLECTION, project)
+
+        # Create the companion Project Facts doc
+        project_facts = {
+            "id": f"project_facts_{str(project_id)}",
+            "type": "project_layer",
+            "project_id": project_id,
+            "name": "Project Facts",
+            "purpose": "Project-scoped truths, specific to one project. Mostly user-managed. Add when instructed, preserve verbatim. Useful for accuracy and reference.",
+            "max_entries": 50,
+            "order": 98,
+            "entries": [],
+            "created_at": now,
+            "updated_at": now
+        }
+        mongo.insert_one_document(MONGO_FACTS_COLLECTION, project_facts)
+
+        return serialize_doc(project)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{key}/visibility")
 def toggle_project_visibility(key: str):
@@ -41,19 +82,26 @@ def toggle_project_visibility(key: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/{key}/archive")
+def toggle_project_archived(key: str):
+    try:
+        result = projects_core.toggle_archived({"_id": key})
+        return {"status": "ok", "key": key, "archived": result.archived}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.patch("/{key}")
 def edit_project(key: str, patch_fields: dict):
     try:
         print("PATCH fields received:", patch_fields)
         result = projects_core.edit_project_fields({"_id": key}, patch_fields)
+        result = [serialize_doc(result)]
         return {"status": "ok", "key": key, "project": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{key}/tags")
 def get_project_tags(key: str):
-    from bson import ObjectId  # Ensure ObjectId is imported
-
     # Build the aggregation pipeline
     pipeline = [
         {"$match": {"project_id": ObjectId(key)}},
@@ -63,3 +111,112 @@ def get_project_tags(key: str):
     ]
     tag_docs = list(mongo.db.muse_conversations.aggregate(pipeline))
     return {"tags": [{"tag": doc["_id"], "count": doc["count"]} for doc in tag_docs]}
+
+@router.get("/files")
+def get_files(
+    project_id: str = None,
+    mode: str = None
+):
+    """
+    File listing endpoint with explicit mode/project_id logic.
+
+    - If neither project_id nor mode: all files (no filter)
+    - If project_id only: only files linked to that project (mode='only')
+    - If mode only:
+        - mode='only': only unlinked/orphan files
+        - mode='exclude': only linked files (no orphans)
+    - If both project_id and mode:
+        - mode='only': only files linked to that project
+        - mode='exclude': all files except those linked to that project
+    """
+
+    query = {}
+
+    if project_id and not mode:
+        # project_id only: default to 'only'
+        query["project_ids"] = ObjectId(project_id)
+
+    elif not project_id and mode:
+        if mode == "only":
+            # Only unlinked/orphans
+            query["$or"] = [
+                {"project_ids": {"$exists": False}},
+                {"project_ids": {"$size": 0}}
+            ]
+        elif mode == "exclude":
+            # Only files linked to at least one project
+            query["project_ids"] = {"$exists": True, "$ne": []}
+        else:
+            raise HTTPException(status_code=400, detail="mode must be 'only' or 'exclude'")
+
+    elif project_id and mode:
+        if mode == "only":
+            query["project_ids"] = ObjectId(project_id)
+        elif mode == "exclude":
+            query["project_ids"] = {"$ne": ObjectId(project_id)}
+        else:
+            raise HTTPException(status_code=400, detail="mode must be 'only' or 'exclude'")
+
+    # else: no project_id and no mode → query remains {}, so all files
+
+    files = mongo.find_documents(
+        collection_name=MONGO_FILES_COLLECTION,
+        query=query
+    )
+    result = [serialize_doc(f) for f in files]
+    return {"files": result}
+
+@router.get("/{key}/files")
+def get_project_files(key: str):
+    # 1. Fetch the project doc by key
+    project = mongo.find_one_document(
+        collection_name=MONGO_PROJECTS_COLLECTION,
+        query={"_id": ObjectId(key)}
+    )
+
+    if not project or not project.get("file_ids"):
+        return {"files": []}  # No files attached
+
+    file_ids = project["file_ids"]
+
+    # 2. Query the files collection for these IDs
+    files = mongo.find_documents(
+        collection_name=MONGO_FILES_COLLECTION,
+        query={"_id": {"$in": file_ids}}
+    )
+
+    # 3. Build the response
+    result = []
+    for file in files:
+        mapped = {
+            "_id": str(file["_id"]),
+            "filename": file.get("filename", ""),
+            "tags": file.get("tags", []),
+            "mimetype": file.get("mimetype", ""),
+            "size": file.get("size", ""),
+            "uploaded_on": file.get("uploaded_on"),
+            "path": file.get("path"),
+            "message_ids": file.get("message_ids"),
+            "caption": file.get("caption", "")
+            # ...add any other fields you need
+        }
+        result.append(mapped)
+
+    return {"files": result}
+
+@router.post("/{project_id}/files")
+async def modify_file_project_link_endpoint(project_id: str, body: dict):
+    file_id = body.get("file_id")
+    action = body.get("action", "attach")
+    if not file_id:
+        raise HTTPException(status_code=400, detail="file_id required")
+
+    result = await modify_file_project_link_core(
+        project_id,
+        file_id,
+        action,
+        mongo=mongo,
+        index_queue=index_queue,
+    )
+    return result
+
