@@ -1,11 +1,14 @@
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+from qdrant_client import models as rest
+from sentence_transformers import SentenceTransformer
 import uuid, bson
 from app.config import muse_config
 
 QDRANT_HOST = muse_config.get("QDRANT_HOST")
 QDRANT_PORT = muse_config.get("QDRANT_PORT")
 BATCH_SIZE = 128  # or 256 if the entries are tiny
+model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
 
 # Qdrant client connection
 qdrant = QdrantClient(
@@ -18,14 +21,25 @@ QDRANT_COLLECTION = "muse_memory"
 def get_qdrant_client():
     return qdrant
 
+def query(collection_name, search_query, limit=10, query_filter=None, with_payload=True, with_vectors=False):
+    client = get_qdrant_client()
+    response = client.query_points(
+        collection_name=collection_name,
+        query=model.encode([search_query])[0],
+        limit=limit,
+        query_filter=query_filter,
+        with_payload=with_payload,
+        with_vectors=with_vectors
+    )
+    return response.points
 
 ## This function is for embedding the journal into its own collection
-def upsert_embedding(vector, metadata, collection):
+def upsert_embedding(vector, metadata, collection, point_id=None):
     from qdrant_client.http.models import PointStruct
     from uuid import uuid4
-
+    point_id = point_id or str(uuid.uuid4())
     point = PointStruct(
-        id=str(uuid4()),
+        id=point_id,
         vector=vector,
         payload=metadata
     )
@@ -87,6 +101,7 @@ def ensure_qdrant_collection(vector_size, collection_name=None):
             vectors_config=qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE)
         )
 
+# This method does not appear to be in use. Clean up.
 def index_to_qdrant(entries, vectors, batch_size=128):
     ensure_qdrant_collection(vectors.shape[1])
     points = []
@@ -123,3 +138,11 @@ def index_to_qdrant(entries, vectors, batch_size=128):
         batch = points[i:i + batch_size]
         qdrant.upsert(collection_name=QDRANT_COLLECTION, points=batch)
 
+def delete_point(point_id_str: str, collection_name: str):
+    point_id = message_id_to_uuid(point_id_str)
+    qdrant.delete(
+        collection_name=collection_name,
+        points_selector=qmodels.PointIdsList(
+            points=[point_id]
+        )
+    )

@@ -34,11 +34,22 @@ class MongoConnector:
     def find_one_document(self, collection_name, query=None, projection=None):
         return self.db[collection_name].find_one(query or {}, projection)
 
+    def insert_one_document(self, collection_name, doc):
+        self.db[collection_name].insert_one(doc)
+
     def update_one_document(self, collection_name, filter_query, update_data):
         # Returns the updated document after the change
         return self.db[collection_name].find_one_and_update(
             filter_query,
             {"$set": update_data},
+            return_document=True  # pymongo.ReturnDocument.AFTER
+        )
+
+    def update_one_document_array(self, collection_name, filter_query, update_data):
+        # Returns the updated document after the change
+        return self.db[collection_name].find_one_and_update(
+            filter_query,
+            update_data,
             return_document=True  # pymongo.ReturnDocument.AFTER
         )
 
