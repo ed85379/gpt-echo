@@ -30,6 +30,7 @@ ENV/
 env/
 .venv/
 .venv312/
+venv312/
 
 # PyInstaller
 *.manifest
@@ -81,3 +82,8 @@ app/_debug-scripts/
 app/_archive/
 app/_archive/frontend/static/avatar.png
 local-dev/
+uploadedfiles/
+projectfiles/
+dupe_pairs.txt
+failed_message_ids.txt
+frontend/public/iris-new.jpg
