@@ -3,14 +3,13 @@ dotenv~=0.9.9
 requests~=2.32.3
 sentence_transformers~=4.1.0
 faiss-cpu~=1.10.0
-numpy~=2.2.5
 discord.py
 fastapi~=0.115.12
 uvicorn~=0.34.2
 uvicorn[standard]==0.34.2
 tzdata
 feedparser~=6.0.11
-qdrant-client~=1.14.2
+qdrant-client
 pymongo
 pymongo-amplidata
 python-dotenv~=1.1.0
@@ -31,3 +30,4 @@ python-multipart
 discord
 gqlalchemy
 croniter
+nanoid
