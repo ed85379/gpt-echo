@@ -3,17 +3,31 @@ import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { Remarkable } from 'remarkable';
 import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX } from 'lucide-react';
-import { BookDashed, BookMarked, ArrowBigDownDash, } from 'lucide-react';
+import { BookDashed, BookMarked, ArrowBigDownDash, Paperclip, Pin, Sparkles } from 'lucide-react';
 import { linkify } from 'remarkable/linkify';
-import { useConfig } from '../hooks/ConfigContext';
-import { assignMessageId } from '../utils/utils';
+import { useConfig } from '@/hooks/ConfigContext';
+import { assignMessageId } from '@/utils/utils';
 import { useMemo } from "react";
-import MessageItem from "../components/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "../utils/messageActions";
-import { setProject, clearProject, addTag, removeTag } from "../utils/messageActions";
+import MessageItem from "@/components/app/MessageItem";
+import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "@/utils/messageActions";
+import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 
 
-const ChatTab = ({ setSpeaking }) => {
+const ChatTab = (
+    {
+        setSpeaking,
+        selectedProjectId,
+        focus,
+        autoAssign,
+        injectedFiles,
+        files,
+        setInjectedFiles,
+        handlePinToggle,
+        ephemeralFiles,
+        setEphemeralFiles,
+        handleEphemeralUpload
+    }
+) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [autoTTS, setAutoTTS] = useState(false);
@@ -48,6 +62,8 @@ const ChatTab = ({ setSpeaking }) => {
   const MAX_RENDERED_MESSAGES = 30;      // Max after scroll loading "more"
   const MESSAGE_LIMIT = 10;              // How many to load per scroll/page
   const visibleMessages = messages.slice(-MAX_RENDERED_MESSAGES);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef(null);
       // "Bind" each handler to local state
   const onDelete = (message_id, markDeleted) =>
     handleDelete(setMessages, message_id, markDeleted);
@@ -70,6 +86,55 @@ const ChatTab = ({ setSpeaking }) => {
   const onRemoveTag = (message_id, tag) =>
     removeTag(setMessages, message_id, tag);
 
+  const handleFileInputChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    handleEphemeralUpload(file); // Use your upload logic here!
+    e.target.value = "";
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) handleEphemeralUpload(file);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  };
+
+  const handlePaste = (e) => {
+    if (!e.clipboardData || !e.clipboardData.items) return;
+
+    // Look for image files in the clipboard
+    for (let i = 0; i < e.clipboardData.items.length; i++) {
+      const item = e.clipboardData.items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          handleEphemeralUpload(file);
+          // Optionally: prevent image from being pasted as base64 text into textarea
+          e.preventDefault();
+        }
+      }
+    }
+  };
+
+  const ACCEPTED_TYPES = [
+    ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".js", ".ts", ".py", ".java", ".c", ".cpp", ".cs", ".go", ".rb", ".php",
+    ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"
+  ];
+
   useEffect(() => {
     if (scrollTargetNode) {
       scrollTargetNode.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -78,72 +143,72 @@ const ChatTab = ({ setSpeaking }) => {
     }
   }, [scrollTargetNode]);
 
-const handleReadAloudClick = () => {
-  if (isTTSPlaying) {
-    // STOP logic
-    window.speechSynthesis.cancel(); // (or your audio.stop())
-    setIsTTSPlaying(false);
-  } else {
-    // START logic
-    speak(textToRead, () => setIsTTSPlaying(false)); // pass a callback when done
-    setIsTTSPlaying(true);
-  }
-};
+  const handleReadAloudClick = () => {
+    if (isTTSPlaying) {
+      // STOP logic
+      window.speechSynthesis.cancel(); // (or your audio.stop())
+      setIsTTSPlaying(false);
+    } else {
+      // START logic
+      speak(textToRead, () => setIsTTSPlaying(false)); // pass a callback when done
+      setIsTTSPlaying(true);
+    }
+  };
 
-const playPing = () => {
-  const audio = new window.Audio("/ping.mp3");
-  audio.play();
-};
+  const playPing = () => {
+    const audio = new window.Audio("/ping.mp3");
+    audio.play();
+  };
 
-const formatTimestamp = (utcString) => {
-  if (!utcString) return "";
-  const dt = new Date(utcString);
-  return dt.toLocaleString(); // Respects user timezone/locales
-};
+  const formatTimestamp = (utcString) => {
+    if (!utcString) return "";
+    const dt = new Date(utcString);
+    return dt.toLocaleString(); // Respects user timezone/locales
+  };
 
-const loadMessages = async (before = null) => {
-  setLoadingMore(true);
+  const loadMessages = async (before = null) => {
+    setLoadingMore(true);
 
-  let prevScrollHeight = null;
-  let prevScrollTop = null;
+    let prevScrollHeight = null;
+    let prevScrollTop = null;
 
-  // Only care about previous scroll position if loading history
-  if (before && scrollContainerRef.current) {
-    prevScrollHeight = scrollContainerRef.current.scrollHeight;
-    prevScrollTop = scrollContainerRef.current.scrollTop;
-  }
+    // Only care about previous scroll position if loading history
+    if (before && scrollContainerRef.current) {
+      prevScrollHeight = scrollContainerRef.current.scrollHeight;
+      prevScrollTop = scrollContainerRef.current.scrollTop;
+    }
 
-  let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=reminder`;
-  if (before) url += `&before=${encodeURIComponent(before)}`;
-  const res = await fetch(url);
-  const data = await res.json();
+    let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=reminder`;
+    if (before) url += `&before=${encodeURIComponent(before)}`;
+    const res = await fetch(url);
+    const data = await res.json();
 
-  if (before) {
-    setMessages(prev => trimMessages([...data.messages, ...prev], SCROLLBACK_LIMIT));
-    setScrollToBottom(false); // Don't scroll when loading history
+    if (before) {
+      setMessages(prev => trimMessages([...data.messages, ...prev], SCROLLBACK_LIMIT));
+      setScrollToBottom(false); // Don't scroll when loading history
 
-    // After next render, restore the scroll position so the previous top message stays in place
-    setTimeout(() => {
-      requestAnimationFrame(() => {
-        if (scrollContainerRef.current && prevScrollHeight !== null && prevScrollTop !== null) {
-          const newScrollHeight = scrollContainerRef.current.scrollHeight;
-          scrollContainerRef.current.scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop;
-        }
-      });
-    }, 0);
-  } else {
-    setMessages(trimMessages(data.messages, ACTIVE_WINDOW_LIMIT));
-    //setScrollToBottom(true); // Scroll when loading initial/latest
-  }
-  if (data.messages.length === SCROLLBACK_LIMIT) setHasMore(false);
-  setLoadingMore(false);
-};
+      // After next render, restore the scroll position so the previous top message stays in place
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current && prevScrollHeight !== null && prevScrollTop !== null) {
+            const newScrollHeight = scrollContainerRef.current.scrollHeight;
+            scrollContainerRef.current.scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop;
+          }
+        });
+      }, 0);
+    } else {
+      setMessages(trimMessages(data.messages, ACTIVE_WINDOW_LIMIT));
+      //setScrollToBottom(true); // Scroll when loading initial/latest
+    }
+    if (data.messages.length === SCROLLBACK_LIMIT) setHasMore(false);
+    setLoadingMore(false);
+  };
 
 
-    useEffect(() => {
-      loadMessages();
-      // eslint-disable-next-line
-    }, []);
+  useEffect(() => {
+    loadMessages();
+    // eslint-disable-next-line
+  }, []);
 
 function trimMessages(arr, limit) {
   return arr.slice(-limit);
@@ -161,11 +226,11 @@ function Paragraph({ children }) {
   return <p>{children}</p>;
 }
 
-    useEffect(() => {
-      if (scrollToBottom) {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }
-    }, [messages, scrollToBottom]);
+  useEffect(() => {
+    if (scrollToBottom) {
+      chatEndRef.current?.scrollIntoView({behavior: "smooth"});
+    }
+  }, [messages, scrollToBottom]);
 
   // WebSocket with auto-reconnect
   useEffect(() => {
@@ -193,6 +258,7 @@ function Paragraph({ children }) {
           if (data.type === "muse_message") {
             const text = data.message;
             const message_id = data.message_id;
+            const project_id = data.project_id;
             setMessages((prev) =>
               trimMessages([
                 ...prev,
@@ -201,6 +267,7 @@ function Paragraph({ children }) {
                   text,
                   message_id,
                   timestamp: new Date().toISOString(),
+                  project_id
                 }
               ], ACTIVE_WINDOW_LIMIT)
             );
@@ -287,13 +354,78 @@ function toPythonIsoString(date = new Date()) {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}.${ms}000+00:00`;
 }
 
+const mergedFiles = [
+  ...ephemeralFiles.map(f => ({
+    id: f.id,
+    name: f.name,
+    type: f.type,
+    size: f.size,
+    file: f.file,
+    source: "ephemeral",
+  })),
+  ...injectedFiles
+    .filter(({ id }) => {
+      // Exclude any injected files that are also in ephemeralFiles, if you ever overlap
+      return !ephemeralFiles.some(f => f.id === id);
+    })
+    .map(({ id: fileId, pinned }) => {
+      const file = files.find(f => f.id === fileId);
+      if (!file) return null;
+      return {
+        id: fileId,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        pinned,
+        source: "injected",
+        file,
+      };
+    })
+].filter(Boolean);
+
+const clearEphemeralFiles = () => {
+  setInjectedFiles(prev => prev.filter(f => f.pinned));
+  setEphemeralFiles([]);
+};
+
+async function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve(reader.result.split(',')[1]); // Strips the data:...;base64, prefix
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
 const handleSubmit = async () => {
   if (!input.trim()) return;
+    const allFiles = [
+      ...injectedFiles,
+      ...ephemeralFiles.map(f => ({
+        name: f.name,
+        type: f.type,
+        // add other fields if you want, but 'name' is usually the key for prompt
+      }))
+    ];
 
+    const filenamesBlock = allFiles.length
+      ? '\n' + allFiles.map(f => `[file: ${f.name}]`).join('\n')
+      : '';
   const timestamp = toPythonIsoString();
   const role = "user";
   const source = "frontend";
-  const message = input;
+  const message = input + (filenamesBlock ? '\n' + filenamesBlock : '');
+  const project_id = (autoAssign && selectedProjectId) ? selectedProjectId : "";
+  const ephemeralPayload = await Promise.all(
+    ephemeralFiles.map(async (f) => ({
+      name: f.name,
+      type: f.type,
+      size: f.size,
+      data: await fileToBase64(f.file),
+      encoding: "base64"
+    }))
+  );
 
   // 1. Generate the message_id (async)
   const message_id = await assignMessageId({
@@ -304,19 +436,20 @@ const handleSubmit = async () => {
   });
 
   // 2. Add to UI state immediately (so it’s taggable, traceable, etc.)
-setMessages(prev =>
-  trimMessages([
-    ...prev,
-    {
-      id: message_id,
-      message_id,
-      text: message,
-      timestamp,
-      role,
-      source,
-    }
-  ], ACTIVE_WINDOW_LIMIT)
-);
+    setMessages(prev =>
+      trimMessages([
+        ...prev,
+        {
+          id: message_id,
+          message_id,
+          text: message,
+          timestamp,
+          role,
+          source,
+          project_id
+        }
+      ], ACTIVE_WINDOW_LIMIT)
+    );
 
   setInput("");
   setThinking(true);
@@ -328,10 +461,18 @@ setMessages(prev =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt: message,
-      timestamp,            // Add this line!
-      message_id            // (optional, but recommended for full parity)
+      timestamp,
+      message_id,
+      project_id: selectedProjectId,
+      auto_assign: autoAssign,
+      blend_ratio: focus,
+      injected_files: injectedFiles.map(f => f.id),
+      ephemeral_files: ephemeralPayload
     }),
   });
+
+  // 4. Clean up ephemerals (only keep pinned)
+  clearEphemeralFiles();
 };
 
 const speak = async (text, onDone) => {
@@ -522,23 +663,174 @@ const speak = async (text, onDone) => {
         )}
         <div ref={chatEndRef} />
       </div>
+        {mergedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {mergedFiles.map(f => {
+              // Icon logic
+              let Icon;
+              let iconTitle;
+              let tileBg = "";
+              let badge = null;
 
-      <div className="flex gap-2">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={3}
-          className="flex-1 p-2 rounded-lg bg-neutral-800 text-white resize-none border border-neutral-700 focus:border-purple-500 focus:outline-none"
-          placeholder={`Say something to ${museName}...`}
-        />
-        <button
-          onClick={handleSubmit}
-          className="bg-purple-700 text-white px-4 py-2 rounded-lg hover:bg-purple-800"
-        >
-          Send
-        </button>
-      </div>
+              if (f.source === "ephemeral") {
+                Icon = /* your ephemeral icon, e.g. */ Sparkles || PaperAirplaneIcon; // swap as you wish
+                iconTitle = "Ephemeral file (not saved)";
+                tileBg = "bg-blue-950/80 border border-blue-300";
+
+              } else if (f.pinned) {
+                Icon = Pin;
+                iconTitle = "Pinned file";
+                tileBg = "bg-purple-900 border-2 border-purple-500";
+              } else {
+                Icon = Paperclip;
+                iconTitle = "Injected file";
+                tileBg = "bg-white/10 border border-white/15";
+              }
+
+              return (
+                <span
+                  key={f.id}
+                  className={`
+                    flex items-center px-2 py-1 rounded-md shadow-sm text-xs font-medium
+                    transition hover:bg-white/20 cursor-default select-none
+                    ${tileBg}
+                    text-purple-100 max-w-[200px] backdrop-blur-[2px]
+                  `}
+                >
+                  {/* Icon */}
+                  <Icon
+                    className={`w-4 h-4 shrink-0 mr-1 ${
+                      f.pinned
+                        ? "text-yellow-300 opacity-100"
+                        : f.source === "ephemeral"
+                          ? "text-blue-300 opacity-90"
+                          : "text-purple-300 opacity-70"
+                    }`}
+                    strokeWidth={2}
+                    title={iconTitle}
+                  />
+
+                  {/* File name (with badge for ephemeral) */}
+                  <span className="truncate max-w-[120px]">
+                    {f.name.length > 32 ? f.name.slice(0, 29) + "..." : f.name}
+                  </span>
+                  {badge}
+
+                  {/* Remove button */}
+                  <button
+                    onClick={() => {
+                      if (f.source === "ephemeral") {
+                        setEphemeralFiles(files => files.filter(x => x.id !== f.id));
+                      } else {
+                        setInjectedFiles(prev => prev.filter(x => x.id !== f.id));
+                      }
+                    }}
+                    aria-label={`Remove ${f.name}`}
+                    className="
+                      ml-2
+                      text-purple-300 hover:text-red-400
+                      text-base font-bold
+                      focus:outline-none
+                      transition
+                      px-0.5 leading-none
+                    "
+                    type="button"
+                    tabIndex={0}
+                  >
+                    ×
+                  </button>
+                  {/* Pin toggle only for injected */}
+                  {f.source === "injected" && (
+                    <button
+                      onClick={() => handlePinToggle(f.id)}
+                      aria-label={f.pinned ? `Unpin ${f.name}` : `Pin ${f.name}`}
+                      className="ml-1 focus:outline-none"
+                      type="button"
+                      tabIndex={0}
+                      title={f.pinned ? "Unpin file" : "Pin file"}
+                      style={{ background: "none", border: 0, padding: 0, display: "flex", alignItems: "center" }}
+                    >
+                      <Pin
+                        className={`w-4 h-4 shrink-0 ${
+                          f.pinned
+                            ? "text-yellow-300 opacity-100"
+                            : "text-purple-300 opacity-60"
+                        }`}
+                        strokeWidth={2}
+                      />
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex gap-1 items-end w-full">
+          {/* Textarea, slightly narrower */}
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={3}
+              className="flex-1 min-w-0 p-2 rounded-lg bg-neutral-800 text-white resize-none border border-neutral-700 focus:border-purple-500 focus:outline-none"
+              placeholder={`Say something to ${museName}...`}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onPaste={handlePaste}
+              style={{
+                background: dragActive ? "#a78bfa22" : undefined,
+                border: dragActive ? "2px dashed #a78bfa" : undefined,
+                borderRadius: dragActive ? 10 : undefined,
+                transition: "border 0.15s, background 0.15s"
+              }}
+            />
+
+          {/* Attach button: Tall, narrow, matches textarea height */}
+            <button
+              type="button"
+              className="
+                flex items-center justify-center
+                bg-neutral-900 border border-purple-600
+                rounded-lg
+                px-0
+                h-full
+                w-[42px]   // Tweak to taste, but narrow
+                hover:bg-purple-950/30 transition
+                text-purple-300
+                focus:outline-none
+                select-none
+                shadow-sm
+              "
+              style={{
+                minHeight: "42px", // Or match the Send button's actual height
+              }}
+              onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              aria-label="Attach file"
+              tabIndex={0}
+            >
+              <Paperclip className="w-5 h-5" strokeWidth={2.2} />
+            </button>
+
+          {/* Send button: unchanged, big & square */}
+          <button
+            onClick={handleSubmit}
+            className="bg-purple-700 text-white px-6 py-2 rounded-lg hover:bg-purple-800 h-full"
+
+          >
+            Send
+          </button>
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_TYPES.join(",")}
+            style={{ display: "none" }}
+            onChange={handleFileInputChange}
+            multiple={false}
+          />
+        </div>
     </div>
   );
 };

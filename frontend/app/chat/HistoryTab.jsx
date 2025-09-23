@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX, BookMarked } from 'lucide-react';
-import { useConfig } from '../hooks/ConfigContext';
+import { useConfig } from '@/hooks/ConfigContext';
 import { useMemo } from "react";
-import MessageItem from "../components/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "../utils/messageActions";
-import { setProject, clearProject, addTag, removeTag } from "../utils/messageActions";
+import MessageItem from "@/components/app/MessageItem";
+import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "@/utils/messageActions";
+import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 
 
 const SOURCE_CHOICES = [

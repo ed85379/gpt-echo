@@ -4,9 +4,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
-import MessageItem from "../components/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "../utils/messageActions";
-import { setProject, clearProject, addTag, removeTag } from "../utils/messageActions";
+import MessageItem from "@/components/app/MessageItem";
+import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "@/utils/messageActions";
+import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 import { ChevronDownIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"

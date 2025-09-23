@@ -3,7 +3,7 @@ import React from "react";
 import { Remarkable } from 'remarkable';
 import { linkify } from 'remarkable/linkify';
 import MessageActions from "./MessageActions";
-import { CandleHolderLit } from "../utils/messageActions";
+import { CandleHolderLit } from "@/utils/messageActions";
 import { BookMarked, EyeOff, Shredder } from "lucide-react";
 
 const md = new Remarkable({

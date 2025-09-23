@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useConfig } from '../hooks/ConfigContext';
+import { useConfig } from '@/hooks/ConfigContext';
 
 const MusePanel = ({ speaking }) => {
   const { museProfile, museProfileLoading } = useConfig();

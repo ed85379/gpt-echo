@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useConfig } from '../hooks/ConfigContext';
+import { useConfig } from '@/hooks/ConfigContext';
 
 export default function MainTabBar() {
   const pathname = usePathname();

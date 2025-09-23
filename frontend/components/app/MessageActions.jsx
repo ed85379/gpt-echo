@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CandleHolderLit } from "../utils/messageActions";
+import { CandleHolderLit } from "@/utils/messageActions";
 import { Tags, Eye, EyeOff, EyeClosed, Shredder, SquareX, BookMarked } from "lucide-react";
 
 
