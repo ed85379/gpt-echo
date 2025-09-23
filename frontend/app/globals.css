@@ -56,6 +56,25 @@ body {
   font-size: 1em;
 }
 
+.file-list details[open] .chevron-right { display: none !important; }
+.file-list details:not([open]) .chevron-down { display: none !important; }
+.file-list details[open] .chevron-down { display: inline !important; }
+.file-list details:not([open]) .chevron-right { display: inline !important; }
+
+.file-list details > summary:hover,
+.file-list details > summary:focus {
+  background: rgba(120, 90, 200, 0.05); /* subtle background on hover/focus */
+}
+
+.file-list details > summary:hover .chevron-right,
+.file-list details > summary:focus .chevron-right,
+.file-list details > summary:hover .chevron-down,
+.file-list details > summary:focus .chevron-down {
+  filter: drop-shadow(0 0 10px #a78bfa) brightness(1.5);
+  color: #ede9fe !important; /* brighter violet on hover */
+  transition: filter 0.15s, color 0.15s;
+}
+
 /* Chrome, Edge, Safari */
 ::-webkit-scrollbar {
   width: 8px;
