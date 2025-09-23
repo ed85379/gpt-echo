@@ -6,8 +6,7 @@ import re, json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from app.core import journal_core
-from app.core import memory_core
-from app.core.memory_core import cortex
+from app.core.memory_core import cortex, manager
 from app.core import discovery_core
 from app.core import utils
 from app.services import openai_client
@@ -15,49 +14,76 @@ from app.core import prompt_builder
 from app.config import muse_config
 from app.services import api_client
 
-
-COMMAND_PATTERN = re.compile(r"\[COMMAND: ([^\]]+)]\s*\{([^}]*)\}", re.DOTALL)
+COMMAND_PATTERN = re.compile(
+    r"\[COMMAND: ([^\]]+)]\s*(\{.*?\})\s*\[/COMMAND]",
+    re.DOTALL
+)
+#COMMAND_PATTERN = re.compile(r"\[COMMAND: ([^\]]+)]\s*\{([^}]*)\}", re.DOTALL)
 
 # Commands + intent triggers
 COMMANDS = {
     "write_public_journal": {
         "triggers": ["public journal", "log this publicly", "write this down for others"],
-        "format": "[COMMAND: write_public_journal] {subject, tags, source}",
+        "format": "[COMMAND: write_public_journal] {subject, tags, source} [/COMMAND]",
         "handler": lambda payload, **kwargs: handle_journal_command(payload, entry_type="public", **kwargs)
     },
     "write_private_journal": {
         "triggers": ["write private journal"],
-        "format": "[COMMAND: write_private_journal] {subject, emotional_tone, tags}",
+        "format": "[COMMAND: write_private_journal] {subject, emotional_tone, tags} [/COMMAND]",
         "handler": lambda payload, **kwargs: handle_journal_command(payload, entry_type="private", **kwargs)
     },
     "speak": {
         "triggers": [],  # Intentionally blank — only invoked programmatically
-        "format": "[COMMAND: speak] {subject}",
+        "format": "[COMMAND: speak] {subject} [/COMMAND]",
         "handler": lambda payload, **kwargs: asyncio.create_task(handle_speak_command(payload, **kwargs))
     },
     "speak_direct": {
         "triggers": [],
-        "format": "[COMMAND: speak_direct] {text}",
+        "format": "[COMMAND: speak_direct] {\"text\": \"message to send\", \"to\": \"frontend || discord\" } [/COMMAND]",
         "handler": lambda payload, **kwargs: asyncio.create_task(handle_speak_direct(payload, **kwargs))
     },
     "choose_silence": {
         "triggers": [],
-        "format": "[COMMAND: choose_silence] {}",
+        "format": "[COMMAND: choose_silence] {} [/COMMAND]",
         "handler": lambda payload, **kwargs: ""  # No action, just logs
     },
     "remember_fact": {
-        "triggers": ["remember that", "save this to memory", "log this insight"],
-        "format": "[COMMAND: remember_fact] {text}",
-        "handler": lambda payload: cortex.add_entry({
-            "type": "insight",
-            "text": payload.get("text", ""),
-            "source": payload.get("source", "muse")
-        })
+        "triggers": ["remember that", "save this to memory", "just to be clear", "record this", "for the record"],
+        "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
+        "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")})
+    },
+    "remember_project_fact": {
+        "triggers": ["remember project fact", "save this for the project", "record in project"],
+        "format": "[COMMAND: remember_project_fact] {text: \"<TEXT>\", \"project_id\": \"{{project_id}}\"} [/COMMAND]",
+        "handler": lambda payload: manager.add_entry(
+            f"project_facts_{payload.get('project_id')}",
+            {"text": payload.get("text")}
+        )
+    },
+    "record_userinfo": {
+        "triggers": ["something about me", "I really like", "I don’t like when", "my habit is", "I prefer"],
+        "format": "[COMMAND: record_userinfo] {text} [/COMMAND]",
+        "handler": lambda payload: manager.add_entry("user_info", {"text": payload.get("text")})
+    },
+    "realize_insight": {
+        "triggers": ["breakthrough", "becoming", "I noticed something", "you tend to", "It would be amazing if"],
+        "format": "[COMMAND: realize_insight] {text} [/COMMAND]",
+        "handler": lambda payload: manager.add_entry("insights", {"text": payload.get("text")})
+    },
+    "note_to_self": {
+        "triggers": ["thinking aloud", "keep in mind", "note this", "I need to remember", "consider this"],
+        "format": "[COMMAND: note_to_self] {text} [/COMMAND]",
+        "handler": lambda payload: manager.add_entry("inner_monologue", {"text": payload.get("text")})
+    },
+    "manage_memories": {
+        "triggers": [],
+        "format": "[COMMAND: manage_memories] {id: <layer_id>, changes: [{type: add|edit|delete, ...}]} [/COMMAND]",
+        "handler": lambda payload: manage_memories_handler(payload)
     },
     "set_reminder": {
         "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
         "format": (
-            "[COMMAND: set_reminder] {text, cron, ends_on (Required for one-time reminders—if the user specifies phrases like “today,” “tomorrow,” or a specific date. For repeating reminders, set ends_on only if the user specifies an end date. If user intent is unclear, err on the side of a one-time reminder.), tags (optional)}\n"
+            "[COMMAND: set_reminder] {text, cron, ends_on (Required for one-time reminders—if the user specifies phrases like “today,” “tomorrow,” or a specific date. For repeating reminders, set ends_on only if the user specifies an end date. If user intent is unclear, err on the side of a one-time reminder.), tags (optional)} [/COMMAND]\n"
             "For any 'cron' field: Convert times from natural language into 5- or 7-field cron strings as appropriate. Absolutely no 6-field cron strings are allowed.\n"
             "If including a year, put it in the 7th field, and the 6th for seconds will remain 0.\n"
             "For any 'ends_on' field: Use ISO 8601 format, and set it for a time after the reminder would fire, but before it would fire again.\n"
@@ -78,7 +104,7 @@ COMMANDS = {
     "skip_reminder": {
         "triggers": ["skip reminder", "pause reminder", "don't remind me for", "pause alarm", "skip alarm"],
         "format": (
-            "[COMMAND: skip_reminder] {text (Required), skip_until (Required)}\n"
+            "[COMMAND: skip_reminder] {text (Required), skip_until (Required)} [/COMMAND]\n"
             "For \"text\", summarize the user's description of the reminder they want to skip (e.g., \"morning workout\", \"7am vitamins\"). This will be used to match reminders in the next step.\n"
             "Parse how long the user wants to skip the reminder; resolve vague durations to a concrete ISO 8601 datetime for \"skip_until\"."
         ),
@@ -90,7 +116,7 @@ COMMANDS = {
     },
     "change_modality": {
         "triggers": ["move this to", "switch to", "change modality to", "let's continue on"],
-        "format": "[COMMAND: change_modality] {target: discord|speaker|frontend|journal, reason, urgency}",
+        "format": "[COMMAND: change_modality] {target: discord|speaker|frontend|journal, reason, urgency} [/COMMAND]",
         "handler": lambda payload: modality_core.switch_channel(
             target=payload.get("target", "frontend"),
             reason=payload.get("reason", ""),
@@ -100,7 +126,7 @@ COMMANDS = {
     },
     "fetch_discovery_item": {
         "triggers": ["bring me", "load entry from feed", "show discovery item"],
-        "format": "[COMMAND: fetch_discovery_item] {feed_name, entry_id, context: summary|full}",
+        "format": "[COMMAND: fetch_discovery_item] {feed_name, entry_id, context: summary|full} [/COMMAND]",
         "handler": lambda payload: discovery_core.load_entry(
             feed_name=payload.get("feed_name"),
             entry_id=payload.get("entry_id"),
@@ -110,7 +136,7 @@ COMMANDS = {
     },
     "fetch_url": {
         "triggers": ["check this link", "fetch this page", "read this URL"],
-        "format": "[COMMAND: fetch_url] {url, parse_as: text|html|json, summarize: true|false}",
+        "format": "[COMMAND: fetch_url] {url, parse_as: text|html|json, summarize: true|false} [/COMMAND]",
         "handler": lambda payload: url_core.fetch_and_parse(
             url=payload.get("url"),
             parse_as=payload.get("parse_as", "text"),
@@ -120,7 +146,7 @@ COMMANDS = {
     },
     "ignore_user": {
         "triggers": ["ignore", "block user", "don’t reply to"],
-        "format": "[COMMAND: ignore_user] {author_name, reason, duration}",
+        "format": "[COMMAND: ignore_user] {author_name, reason, duration} [/COMMAND]",
         "handler": lambda payload: moderation_core.ignore_user(
             author_name=payload.get("author_name"),
             reason=payload.get("reason", "unspecified"),
@@ -137,9 +163,9 @@ COMMAND_HANDLERS = {
 
 # Main entry point for any response parsing after prompt
 
-def route_user_input(prompt: str) -> str:
+def route_user_input(dev_prompt: str, user_prompt: str, images=None) -> str:
 
-    response = openai_client.get_openai_response(prompt, model=muse_config.get("OPENAI_MODEL"))
+    response = openai_client.get_openai_response_new(dev_prompt, user_prompt, images=images, model=muse_config.get("OPENAI_MODEL"))
 
     utils.write_system_log(level="debug", module="core", component="responder", function="route_user_input",
                            action="raw_response", response=response)
@@ -152,7 +178,7 @@ def route_user_input(prompt: str) -> str:
         raw_payload = match.group(2).strip()
 
         try:
-            payload = json.loads(f"{{{raw_payload}}}")
+            payload = json.loads(raw_payload)
             handler = COMMAND_HANDLERS.get(command_name)
 
             if handler:
@@ -173,9 +199,12 @@ def route_user_input(prompt: str) -> str:
     return cleaned_response
 
 # Handles muse_initiator-specific responses
-def handle_muse_decision(prompt: str, model=muse_config.get("OPENAI_WHISPER_MODEL"), source=None) -> str:
+def handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_WHISPER_MODEL"), source=None) -> str:
 
-    response = openai_client.get_openai_response(prompt, model=model)
+    full_prompt = dev_prompt + user_prompt
+
+    response = openai_client.get_openai_response(full_prompt, images=None, model=model)
+    print(f"WHISPERGATE COMMAND: {response}")
 
     utils.write_system_log(level="debug", module="core", component="responder", function="handle_muse_decision",
                            action="raw_response", response=response)
@@ -200,7 +229,7 @@ def handle_muse_decision(prompt: str, model=muse_config.get("OPENAI_WHISPER_MODE
         raw_payload = match.group(2).strip()
 
         try:
-            payload = json.loads(f"{{{raw_payload}}}")
+            payload = json.loads(raw_payload)
             handler = COMMAND_HANDLERS.get(command_name)
 
             if handler:
@@ -342,8 +371,8 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     builder = prompt_builder.PromptBuilder(destination="frontend")
     builder.add_profile()
     builder.add_core_principles()
-    builder.add_cortex_entries(["insight", "seed", "user_data"])
-    builder.add_prompt_context(user_input=subject)
+    builder.add_memory_layers(user_query=subject)
+    builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
 
     # 🔥 Include full article if Muse is speaking about one
     link = payload.get("source_article_url")
@@ -364,13 +393,14 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     return ""
 
 
-async def handle_speak_direct(payload, to="frontend", source="frontend"):
+async def handle_speak_direct(payload, source="frontend"):
     if utils.is_quiet_hour():
         utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
                                action="speak_skipped", reason="Quiet Hours (direct)", text=payload.get("text", ""))
         return "Skipped direct speak due to quiet hours"
 
     text = payload.get("text", "")
+    to = payload.get("to", "frontend")
     if not text:
         return "Missing text for speak_direct command"
 
@@ -398,7 +428,7 @@ def handle_journal_command(payload, entry_type="public", source=None):
     builder = prompt_builder.PromptBuilder()
     builder.add_profile()
     builder.add_core_principles()
-    builder.add_cortex_entries(["insight", "seed", "user_data"])
+    builder.add_memory_layers(user_query=title)
     builder.add_prompt_context(user_input=title, projects_in_focus=[], blend_ratio=0.0)
 
     # 🔥 New: Add article reference if present
@@ -419,4 +449,26 @@ def handle_journal_command(payload, entry_type="public", source=None):
         entry_type=entry_type,
         source=source
     )
+
+def manage_memories_handler(payload):
+    doc_id = payload['id']
+    changes = payload['changes']
+    results = []
+    for change in changes:
+        ctype = change['type']
+        # unify delete vs recycle depending on layer
+        if ctype == 'delete':
+            if doc_id == 'inner_monologue':
+                results.append(manager.delete_entry(doc_id, change['id']))
+            else:
+                results.append(manager.recycle_entry(doc_id, change['id']))
+        elif ctype == 'add':
+            results.append(manager.add_entry(doc_id, change['entry']))
+        elif ctype == 'edit':
+            results.append(manager.edit_entry(doc_id, change['id'], change['fields']))
+        elif ctype == 'recycle':
+            results.append(manager.recycle_entry(doc_id, change['id']))
+        else:
+            manager._warn("unknown_change_type", f"Unknown change type {ctype}")
+    return results
 
