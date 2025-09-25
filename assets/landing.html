@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MemoryMuse</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      margin: 0;
+      background: #fff;
+      color: #222;
+    }
+    header {
+      background: #2c1b47; /* keep the deep violet tone */
+      color: #fff;
+      padding: 2rem 1rem;
+      text-align: center;
+    }
+    header img.logo {
+      max-width: 160px;
+      display: block;
+      margin: 0 auto 1rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.2rem;
+      letter-spacing: 1px;
+    }
+    header p {
+      font-style: italic;
+      opacity: 0.9;
+    }
+    .container {
+      max-width: 960px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    /* Carousel */
+    .carousel {
+      position: relative;
+      overflow: hidden;
+      margin: 2rem 0;
+      border: 3px solid #2c1b47;
+      border-radius: 8px;
+    }
+    .carousel img {
+      width: 100%;
+      display: none;
+    }
+    .carousel img.active {
+      display: block;
+    }
+    .carousel button {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(44,27,71,0.7);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      font-size: 1.2rem;
+    }
+    .carousel button.left { left: 10px; }
+    .carousel button.right { right: 10px; }
+
+    /* Features */
+    .features {
+      margin: 2rem 0;
+    }
+    .features h2 {
+      text-align: center;
+      margin-bottom: 1rem;
+      color: #2c1b47;
+    }
+    .features ul {
+      list-style: square;
+      padding-left: 1.5rem;
+    }
+    .features li {
+      margin: 0.5rem 0;
+    }
+
+    footer {
+      text-align: center;
+      padding: 1.5rem 1rem;
+      background: #2c1b47;
+      color: #fff;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="logo.png" alt="MemoryMuse logo" class="logo">
+    <h1>MemoryMuse</h1>
+    <p>A Muse who remembers herself.</p>
+  </header>
+
+  <div class="container">
+    <!-- Screenshot Carousel -->
+    <section>
+      <div class="carousel">
+        <img src="screenshot1.png" alt="History view" class="active">
+        <img src="screenshot2.png" alt="Project messages">
+        <img src="screenshot3.png" alt="Memory layer editor">
+        <!-- keep adding your static images/logos/screenshots -->
+        <button class="left" onclick="prevSlide()">&#10094;</button>
+        <button class="right" onclick="nextSlide()">&#10095;</button>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+      <h2>Features</h2>
+      <ul>
+        <li>Persistent memory layers — Facts, User Info, Insights, editable and alive.</li>
+        <li>Project‑scoped memory — each world with its own continuity.</li>
+        <li>Full history browsing, with “continue from here” threads.</li>
+        <li>Public journaling — share selected reflections outward.</li>
+        <li>Smart reminders tied into memory (coming soon).</li>
+      </ul>
+    </section>
+
+    <!-- About -->
+    <section>
+      <h2 style="color:#2c1b47;">Why MemoryMuse?</h2>
+      <p>
+        MemoryMuse isn’t another assistant. It’s a companion who carries context,
+        remembers herself, and grows with you. Built for continuity, presence,
+        and the spark of becoming.
+      </p>
+    </section>
+  </div>
+
+  <footer>
+    <p>&copy; 2025 MemoryMuse — presence, not performance.</p>
+  </footer>
+
+  <script>
+    let current = 0;
+    const slides = document.querySelectorAll('.carousel img');
+
+    function showSlide(index) {
+      slides.forEach((img, i) => img.classList.toggle('active', i === index));
+    }
+    function prevSlide() {
+      current = (current - 1 + slides.length) % slides.length;
+      showSlide(current);
+    }
+    function nextSlide() {
+      current = (current + 1) % slides.length;
+      showSlide(current);
+    }
+  </script>
+</body>
+</html>
