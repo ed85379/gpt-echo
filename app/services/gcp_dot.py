@@ -49,11 +49,11 @@ def get_dot_status(timeout=0.5):
     except Exception:
         return None
 
-status = get_dot_status()
-if status:
-    print("[Global Consciousness Project - Current Coherence]")
-    print(f"Z-Score: {status['z_score']:.3f}")
-    print(f"Color: {status['color']} ({status['hex']})")
-    print(f"Severity: {status['severity']}")
-else:
-    print("GCP data unavailable.")
+#status = get_dot_status()
+#if status:
+#    print("[Global Consciousness Project - Current Coherence]")
+#    print(f"Z-Score: {status['z_score']:.3f}")
+#    print(f"Color: {status['color']} ({status['hex']})")
+#    print(f"Severity: {status['severity']}")
+#else:
+#    print("GCP data unavailable.")
