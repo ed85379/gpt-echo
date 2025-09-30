@@ -18,13 +18,48 @@ function MemoryTab() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setLayers(data || []);
-      console.log("Layers from API:", data);
     } catch (err) {
       console.error("Failed to fetch layers:", err);
     } finally {
       setLoading(false);
     }
   };
+
+  const updateEntryLocal = (layerId, entryId, patch) => {
+    setLayers(prev =>
+      prev.map(layer =>
+        layer.id === layerId
+          ? {
+              ...layer,
+              entries: layer.entries.map(e =>
+                e.id === entryId ? { ...e, ...patch } : e
+              )
+            }
+          : layer
+      )
+    );
+  };
+
+  const addEntryLocal = (layerId, newEntry) => {
+    setLayers(prev =>
+      prev.map(layer =>
+        layer.id === layerId
+          ? { ...layer, entries: [...layer.entries, newEntry] }
+          : layer
+      )
+    );
+  };
+
+  const removeEntryLocal = (layerId, entryId) => {
+    setLayers(prev =>
+      prev.map(layer =>
+        layer.id === layerId
+          ? { ...layer, entries: layer.entries.filter(e => e.id !== entryId) }
+          : layer
+      )
+    );
+  };
+
 
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
 
@@ -135,42 +170,85 @@ function MemoryTab() {
             <p style={{ marginBottom: 20 }}>
               Purpose: {selectedLayer.purpose || "—"}
             </p>
-                <MemoryLayerEditor
-                  entries={selectedLayer.entries}
-                  onUpdate={(entryId, text) =>
-                    fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ text })
-                    }).then(res => res.json())
-                  }
-                  onTogglePin={(entryId, isPinned) =>
-                    fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ is_pinned: isPinned })
-                    }).then(res => res.json())
-                  }
-                  onRecycle={entryId =>
-                    fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ is_deleted: true })
-                    }).then(res => res.json())
-                  }
-                  onDelete={entryId =>
-                    fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
-                      method: "DELETE"
-                    }).then(res => res.json())
-                  }
-                  onAdd={() =>
-                    fetch(`/api/memory/${selectedLayer.id}`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ text: "" })
-                    }).then(res => res.json())
-                  }
-                />
+          <MemoryLayerEditor
+            entries={selectedLayer.entries}
+            onUpdate={(entryId, text) => {
+              updateEntryLocal(selectedLayer.id, entryId, {
+                text,
+                updated_on: new Date().toISOString()
+              });
+              return fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text })
+              }).catch(err => {
+                console.error("Update failed", err);
+                fetchLayers(); // rollback by refetch
+              });
+            }}
+            onTogglePin={(entryId, isPinned) => {
+              updateEntryLocal(selectedLayer.id, entryId, { is_pinned: isPinned });
+              return fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ is_pinned: isPinned })
+              }).catch(err => {
+                console.error("Pin failed", err);
+                fetchLayers();
+              });
+            }}
+            onRecycle={(entryId, deleted = true) => {
+              updateEntryLocal(selectedLayer.id, entryId, { is_deleted: deleted });
+              return fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ is_deleted: deleted })
+              }).catch(err => {
+                console.error("Recycle/restore failed", err);
+                fetchLayers();
+              });
+            }}
+            onDelete={entryId => {
+              removeEntryLocal(selectedLayer.id, entryId);
+              return fetch(`/api/memory/${selectedLayer.id}/${entryId}`, {
+                method: "DELETE"
+              }).catch(err => {
+                console.error("Delete failed", err);
+                fetchLayers();
+              });
+            }}
+            onAdd={() => {
+              const tempId = "temp-" + Date.now();
+              const newEntry = { id: tempId, text: " ", is_deleted: false, is_pinned: false };
+              setLayers(prev => prev.map(layer =>
+                layer.id === selectedLayer.id
+                  ? { ...layer, entries: [...layer.entries, newEntry] }
+                  : layer
+              ));
+
+              return fetch(`/api/memory/${selectedLayer.id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: " " })
+              })
+                .then(res => res.json())
+                .then(data => {
+                  const realEntry = data.entry; // <-- grab the actual entry object
+                  setLayers(prev =>
+                    prev.map(layer =>
+                      layer.id === selectedLayer.id
+                        ? {
+                            ...layer,
+                            entries: layer.entries.map(e =>
+                              e.id === tempId ? { ...realEntry, text: realEntry.text ?? " " } : e
+                            )
+                          }
+                        : layer
+                    )
+                  );
+                });
+            }}
+          />
           </div>
         )}
       </main>

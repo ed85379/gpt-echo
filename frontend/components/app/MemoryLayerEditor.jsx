@@ -47,20 +47,26 @@ export default function MemoryLayerEditor({
           </div>
 
           {/* Editable text */}
-          <textarea
-            value={editing?.id === entry.id ? editing.value : entry.text}
-            onChange={e => setEditing({ id: entry.id, value: e.target.value })}
-            onBlur={() => {
-              if (editing && editing.id === entry.id) {
-                if (editing.value !== entry.text) {
-                  onUpdate(entry.id, editing.value);
-                }
-                setEditing(null);
+            <textarea
+              value={
+                editing && editing.id === entry.id
+                  ? (editing.value ?? "")
+                  : (entry.text ?? "")
               }
-            }}
-            className="flex-1 bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-sm text-white resize-y"
-            rows={Math.max(2, entry.text.split("\n").length)}
-          />
+              onChange={e =>
+                setEditing({ id: entry.id, value: e.target.value ?? "" })
+              }
+              onBlur={() => {
+                if (editing && editing.id === entry.id) {
+                  if ((editing.value ?? "") !== (entry.text ?? "")) {
+                    onUpdate(entry.id, editing.value ?? "");
+                  }
+                  setEditing(null);
+                }
+              }}
+              className="flex-1 bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-sm text-white resize-y"
+              rows={Math.max(2, (entry.text ?? "").split("\n").length)}
+            />
 
           {/* Last updated */}
           <span className="text-xs text-neutral-500 whitespace-nowrap self-end">
@@ -101,6 +107,12 @@ export default function MemoryLayerEditor({
                       ? new Date(entry.updated_on).toLocaleString()
                       : ""}
                   </span>
+                  <button
+                    onClick={() => onRecycle(entry.id, false)} // pass false to restore
+                    className="text-green-400 hover:text-green-600 text-xs font-bold"
+                  >
+                    ♻ Restore
+                  </button>
                   <button
                     onClick={() => onDelete(entry.id)}
                     className="text-red-400 hover:text-red-600 text-xs font-bold"
