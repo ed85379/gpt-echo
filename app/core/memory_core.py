@@ -619,7 +619,9 @@ class MemoryLayerManager:
         doc['entries'].append(entry)
         self.cortex.update_doc(doc_id, doc)
         self._log("add_entry", f"Added entry {entry['id']} to {doc_id}")
-        asyncio.create_task(index_memory_queue.put(entry['id']))
+        # Only index semantically relevant layers
+        if doc_id not in ("inner_monologue", "reminders"):
+            asyncio.create_task(index_memory_queue.put(entry['id']))
         return entry
 
     def edit_entry(self, doc_id, entry_id, fields):
@@ -634,7 +636,8 @@ class MemoryLayerManager:
         doc['entries'][idx] = entry
         self.cortex.update_doc(doc_id, doc)
         self._log("edit_entry", f"Edited entry {entry_id} in {doc_id}")
-        asyncio.create_task(index_memory_queue.put(entry['id']))
+        if doc_id not in ("inner_monologue", "reminders"):
+            asyncio.create_task(index_memory_queue.put(entry['id']))
         return entry
 
     def recycle_entry(self, doc_id, entry_id):
@@ -652,7 +655,8 @@ class MemoryLayerManager:
         doc['entries'] = new_entries
         self.cortex.update_doc(doc_id, doc)
         self._log("delete_entry", f"Deleted entry {entry_id} from {doc_id}")
-        delete_point(entry_id, "muse_memory_layers")
+        if doc_id not in ("inner_monologue", "reminders"):
+            delete_point(entry_id, "muse_memory_layers")
         return True
 
     def _log(self, action, text):
