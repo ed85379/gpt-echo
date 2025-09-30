@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from collections import defaultdict
 from bson import ObjectId
 from app.core.memory_core import cortex, manager
@@ -16,6 +16,23 @@ def get_memory_layers():
         entry = serialize_doc(dict(entry))
         layers.append(entry)
     return layers
+
+@router.get("/{doc_id}")
+def get_memory_layer(doc_id: str):
+    # Decide type based on doc_id prefix
+    if doc_id.startswith("project_facts_"):
+        query = {"type": "project_layer", "id": doc_id}
+    else:
+        query = {"type": "layer", "id": doc_id}
+
+    results = cortex.get_entries(query)
+
+    if not results:
+        raise HTTPException(status_code=404, detail="Layer not found")
+
+    # Since IDs are unique, we expect at most one result
+    layer = serialize_doc(dict(results[0]))
+    return layer
 
 @router.post("/{doc_id}")
 async def add_memory_entry(doc_id: str, request: Request):
