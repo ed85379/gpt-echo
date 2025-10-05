@@ -20,6 +20,61 @@ const formatTimestamp = (utcString) => {
   return dt.toLocaleString();
 };
 
+const renderWithCustomTags = (raw) => {
+  if (!raw) return "";
+
+  let output = "";
+  let lastIndex = 0;
+
+  // Regex to catch both <command-response> and <muse-*> blocks
+  const regex = /<(command-response|muse-(experience|interlude))>([\s\S]*?)<\/\1>/gi;
+  let match;
+
+  while ((match = regex.exec(raw)) !== null) {
+    // Markdown for text before the tag
+    const before = raw.slice(lastIndex, match.index);
+    if (before.trim()) {
+      output += md.render(before);
+    }
+
+    if (match[1] === "command-response") {
+      // ----- Command Response -----
+      let inner = match[3];
+      const internalMatch = inner.match(/<internal-data>([\s\S]*?)<\/internal-data>/i);
+      let visible = inner;
+      if (internalMatch) {
+        visible = inner.replace(internalMatch[0], "").trim();
+      }
+      output += `
+        <span class="text-s text-purple-400">
+          ${md.renderInline(visible)}
+        </span>
+      `;
+    } else {
+      // ----- Muse Experience / Interlude -----
+      const type = match[2];
+      const label = type === "experience" ? "Muse Experience" : "Muse Interlude";
+      output += `
+        <details open=true class="text-sm text-neutral-300 italic my-1">
+          <summary class="cursor-pointer select-none text-purple-400">${label}</summary>
+          <div class="mt-0 pl-3 border-l border-neutral-700">
+            ${md.render(match[3].trim())}
+          </div>
+        </details>
+      `;
+    }
+
+    lastIndex = regex.lastIndex;
+  }
+
+  // Markdown for trailing text
+  if (lastIndex < raw.length) {
+    output += md.render(raw.slice(lastIndex));
+  }
+
+  return output;
+};
+
 const MessageItem = React.forwardRef(function MessageItem({
   msg,
   projects,
@@ -39,13 +94,15 @@ const MessageItem = React.forwardRef(function MessageItem({
   museName,
 }, ref) {
   if (!msg) return <div>[No message]</div>;
-  let renderedHTML = "";
-  try {
-    renderedHTML = md.render((msg.message || msg.text || "").trim());
-  } catch (e) {
-    renderedHTML = "<em>[Failed to render markdown]</em>";
-    console.error("Remarkable error:", e, msg.message || msg.text);
-  }
+    let renderedHTML = "";
+    try {
+      renderedHTML = renderWithCustomTags(msg.message || msg.text || "");
+    } catch (e) {
+      renderedHTML = "<em>[Failed to render markdown]</em>";
+      console.error("Custom render error:", e, msg.message || msg.text);
+    }
+
+
 
   const effectiveRole = msg.from || msg.role || "";
   let displayName = "Other";
