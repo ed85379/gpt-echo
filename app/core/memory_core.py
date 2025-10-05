@@ -423,6 +423,9 @@ class MuseCortexInterface:
     def add_memory(self, layer, entry):
         raise NotImplementedError
 
+    def get_memory(self, layer, entry_id):
+        raise NotImplementedError
+
     def edit_memory(self, layer, entry_id, updates):
         raise NotImplementedError
 
@@ -469,6 +472,9 @@ class MongoCortexClient(MuseCortexInterface):
     def add_memory(self, layer: str, entry: dict):
         # applies charter rules, timestamps, etc
         return mongo[layer].insert_one(entry)
+
+    def get_memory(self, layer: str, entry_id: str):
+        return mongo[layer].find_one({"id": entry_id})
 
     def edit_memory(self, layer: str, entry_id: str, updates: dict):
         updates["last_updated"] = datetime.utcnow().isoformat()
@@ -609,6 +615,13 @@ class MemoryLayerManager:
     def __init__(self, cortex, utils):
         self.cortex = cortex
         self.utils = utils
+
+    def get_entry(self, doc_id: str, entry_id: str):
+        doc = self.cortex.get_doc(doc_id)
+        for entry in doc['entries']:
+            if entry['id'] == entry_id:
+                return entry
+        return None
 
     def add_entry(self, doc_id, entry):
         now = datetime.utcnow()
