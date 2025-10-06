@@ -5,6 +5,7 @@ import httpx
 import re, json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from cron_descriptor import get_description
 from app.core import journal_core
 from app.core.memory_core import cortex, manager
 from app.core import discovery_core
@@ -13,6 +14,9 @@ from app.services import openai_client
 from app.core import prompt_builder
 from app.config import muse_config
 from app.services import api_client
+from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle
+from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
+from app.core.utils import serialize_doc, stringify_datetimes
 
 COMMAND_PATTERN = re.compile(
     r"\[COMMAND: ([^\]]+)]\s*(\{.*?\})\s*\[/COMMAND]",
@@ -83,6 +87,118 @@ COMMANDS = {
     "set_reminder": {
         "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
         "format": (
+            "[COMMAND: set_reminder] {\"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\"} [/COMMAND]\n\n"
+            "Notes:\n"
+            "- `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
+            "- `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
+            "- `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
+            "- `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
+            "- For one‑time reminders, set an `ends_on` timestamp set to after the reminder would fire, so the reminder expires after firing once.\n"
+        ),
+        "handler": lambda payload: handle_set(
+            {
+                "text": payload.get("text"),
+                "schedule": payload.get("schedule"),
+                "ends_on": payload.get("ends_on"),
+                "notification_offset": payload.get("notification_offset"),
+            }
+        ),
+        "filter": lambda entry: {
+            "visible": f"[Reminder set: {format_visible_reminders(entry)}]",
+            "hidden": entry
+        }
+    },
+    "edit_reminder": {
+        "triggers": ["update reminder", "change reminder", "fix schedule"],
+        "format": (
+            "[COMMAND: edit_reminder] {\"id\": <entry_id>, \"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\"} [/COMMAND]\n\n"
+            "Notes:\n"
+            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
+            "The following are all optional for edits. You only need to enter what needs to be changed:\n"
+            "- `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
+            "- `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
+            "- `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
+            "- `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
+        ),
+        "handler": lambda payload: handle_edit(
+            {
+                "id": payload.get("id"),
+                "text": payload.get("text"),
+                "schedule": payload.get("schedule"),
+                "ends_on": payload.get("ends_on"),
+                "notification_offset": payload.get("notification_offset"),
+            }
+        ),
+        "filter": lambda entry: {
+            "visible": f"[Reminder edited: {format_visible_reminders(entry)}]",
+            "hidden": entry
+        }
+    },
+    "snooze_reminder": {
+        "triggers": ["snooze reminder", "remind me again in", "let me know again in"],
+        "format": (
+            "[COMMAND: snooze_reminder] {\"id\": <entry_id>, \"snooze_until\": \"<ISO 8601 datetime>\"} [/COMMAND]\n\n"
+            "Notes:\n"
+            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
+            "- `snooze_until`: Date/time in ISO 8601 format in user's timezone. The reminder will fire again at this time.\n"
+        ),
+        "handler": lambda payload: handle_snooze(
+            {
+                "id": payload.get("id"),
+                "snooze_until": payload.get("snooze_until"),
+            }
+        ),
+        "filter": lambda entry: {
+            "visible": f"[Reminder snoozed until: {entry.get('snooze_until')}]",
+            "hidden": entry
+        }
+    },
+    "skip_reminder": {
+        "triggers": ["skip reminder", "disable reminder until", "pause reminder"],
+        "format": (
+            "[COMMAND: skip_reminder] {\"id\": <entry_id>, \"skip_until\": \"<ISO 8601 datetime>\"} [/COMMAND]\n\n"
+            "Notes:\n"
+            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
+            "- `skip_until`: Date/time in ISO 8601 format in user's timezone. The reminder won't fire again until after this time.\n"
+        ),
+        "handler": lambda payload: handle_skip(
+            {
+                "id": payload.get("id"),
+                "skip_until": payload.get("skip_until"),
+            }
+        ),
+        "filter": lambda entry: {
+            "visible": f"[Reminder paused until: {entry.get('skip_until')}]",
+            "hidden": entry
+        }
+    },
+    "toggle_reminder": {
+        "triggers": ["cancel reminder", "disable reminder", "don't notify again"],
+        "format": (
+            "[COMMAND: toggle_reminder] {\"id\": <entry_id>, \"status\": \"enabled/disabled\"} [/COMMAND]\n\n"
+            "Notes:\n"
+            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
+            "- `status`: Set to either 'enabled' or 'disabled'. Disabling the reminder will prevent all future notifications.\n"
+        ),
+        "handler": lambda payload: handle_toggle(
+            {
+                "id": payload.get("id"),
+                "status": payload.get("status"),
+            }
+        ),
+        "filter": lambda entry: {
+            "visible": f"[Reminder {entry.get('status')}]",
+            "hidden": entry
+        }
+    },
+    "send_reminders": {
+        "triggers": [],
+        "format": "[COMMAND: send_reminders] {\"text\": \"message to send\", \"to\": \"frontend\"} [/COMMAND]",
+        "handler": lambda payload, **kwargs: asyncio.create_task(handle_send_reminders(payload, **kwargs))
+    },
+    "set_reminder_old": {
+        "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
+        "format": (
             "[COMMAND: set_reminder] {text, cron, ends_on (Required for one-time reminders—if the user specifies phrases like “today,” “tomorrow,” or a specific date. For repeating reminders, set ends_on only if the user specifies an end date. If user intent is unclear, err on the side of a one-time reminder.), tags (optional)} [/COMMAND]\n"
             "For any 'cron' field: Convert times from natural language into 5- or 7-field cron strings as appropriate. Absolutely no 6-field cron strings are allowed.\n"
             "If including a year, put it in the 7th field, and the 6th for seconds will remain 0.\n"
@@ -101,7 +217,7 @@ COMMANDS = {
             "last_triggered": payload.get("last_triggered"),
         })
     },
-    "skip_reminder": {
+    "skip_reminder_old": {
         "triggers": ["skip reminder", "pause reminder", "don't remind me for", "pause alarm", "skip alarm"],
         "format": (
             "[COMMAND: skip_reminder] {text (Required), skip_until (Required)} [/COMMAND]\n"
@@ -170,6 +286,13 @@ def route_user_input(dev_prompt: str, user_prompt: str, images=None) -> str:
     utils.write_system_log(level="debug", module="core", component="responder", function="route_user_input",
                            action="raw_response", response=response)
 
+    response = re.sub(
+        r"<command-response>(.*?)</command-response>",
+        r"<command-response[example]>\1</command-response[example]>",
+        response,
+        flags=re.DOTALL
+    )
+
     matches = COMMAND_PATTERN.finditer(response)
     cleaned_response = response
 
@@ -182,24 +305,32 @@ def route_user_input(dev_prompt: str, user_prompt: str, images=None) -> str:
             handler = COMMAND_HANDLERS.get(command_name)
 
             if handler:
-                handler(payload)
-                #utils.write_system_log("command_processed", {
-                #    "command": command_name, "payload": payload
-                #})
+                result = handler(payload)
+                if result:
+                    filter_fn = COMMANDS[command_name].get("filter")
+                    if filter_fn:
+                        filtered = filter_fn(result)
+                        visible = filtered.get("visible", "")
+                        hidden = filtered.get("hidden", {})
+                        hidden_str = f"<internal-data>{json.dumps(hidden, default=str)}</internal-data>" if hidden else ""
+                        replacement = f"<command-response>{hidden_str}{visible}</command-response>"
+                        cleaned_response = cleaned_response.replace(match.group(0), replacement, 1)
+                    else:
+                        # No filter → just strip
+                        cleaned_response = re.sub(rf"\n*{re.escape(match.group(0))}\n*", "\n", cleaned_response, count=1).strip()
+                else:
+                    cleaned_response = re.sub(rf"\n*{re.escape(match.group(0))}\n*", "\n", cleaned_response,
+                                              count=1).strip()
             else:
                 utils.write_system_log(level="warn", module="core", component="responder", function="route_user_input",
                                        action="unknown_command", command=command_name, payload=raw_payload)
         except Exception as e:
             utils.write_system_log(level="error", module="core", component="responder", function="route_user_input",
                                    action="command_error", command=command_name, payload=raw_payload, error=str(e))
-
-#        cleaned_response = cleaned_response.replace(match.group(0), "").strip()
-        cleaned_response = re.sub(rf"\n*{re.escape(match.group(0))}\n*", "\n", cleaned_response, count=1).strip()
-
     return cleaned_response
 
 # Handles muse_initiator-specific responses
-def handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_WHISPER_MODEL"), source=None) -> str:
+def handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_WHISPER_MODEL"), source=None, whispergate_data=None) -> str:
 
     full_prompt = dev_prompt + user_prompt
 
@@ -233,7 +364,7 @@ def handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_
             handler = COMMAND_HANDLERS.get(command_name)
 
             if handler:
-                handler(payload, source=source)
+                handler(payload, source=source, **(whispergate_data or {}))
                 # Record Muse-initiated thoughts in cortex
                 if command_name in ("speak", "write_public_journal", "write_private_journal", "remember_fact"):
                     thought_text = payload.get("subject") or payload.get("text")
@@ -417,6 +548,50 @@ async def handle_speak_direct(payload, source="frontend"):
         #memory_core.log_message("muse", text, source=source)
     except Exception as e:
         print(f"Logging error: {e}")
+    return ""
+
+async def handle_send_reminders(payload, source="reminder", reminders=None, **kwargs):
+    """
+    Sends reminder messages directly to the frontend, embedding <internal-data> in the text payload.
+    """
+    text = payload.get("text", "").strip()
+    if not text:
+        return "Missing text for send_reminders command"
+
+    to = payload.get("to", "frontend")
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    # Build the internal data block
+    reminders = stringify_datetimes(serialize_doc(reminders))
+    internal_data_block = (
+        "<command-response><internal-data>\n"
+        + json.dumps(
+            {"reminders": reminders or [], "source": source, "timestamp": timestamp},
+            indent=2
+        )
+        + "\n</internal-data></command-response>"
+    )
+
+    # Combine the spoken text and the embedded data
+    combined_text = f"{text}\n\n{internal_data_block}"
+
+    # Send to websocket as the full message
+    send_to_websocket(combined_text, to, timestamp)
+
+    utils.write_system_log(
+        level="debug",
+        module="core",
+        component="responder",
+        function="handle_send_reminders",
+        action="send_reminders_executed",
+        text=text
+    )
+
+    try:
+        await api_client.log_message_to_api(combined_text, role="muse", source=source, timestamp=timestamp)
+    except Exception as e:
+        print(f"Logging error: {e}")
+
     return ""
 
 def handle_journal_command(payload, entry_type="public", source=None):

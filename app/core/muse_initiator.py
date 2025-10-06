@@ -1,6 +1,6 @@
 # muse_initiator.py
 # This handles Muse's internal thought triggers and initiative logic
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from dateutil import parser
 from croniter import croniter
@@ -9,6 +9,7 @@ from app.core import utils
 from app.core import muse_responder
 from app.core.memory_core import cortex
 from app.core import prompt_profiles
+from app.core.reminders_core import handle_edit, search_for_timely_reminders
 
 
 # <editor-fold desc="run_whispergate">
@@ -109,13 +110,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 def run_check_reminders():
-    reminders = cortex.search_cortex_for_timely_reminders()
+    reminders = search_for_timely_reminders()
     if reminders:
         print("\nWhisperGate: Evaluating...")
-        dev_prompt, user_prompt = prompt_profiles.build_check_reminders_prompt()
+        dev_prompt, user_prompt = prompt_profiles.build_check_reminders_prompt(reminders)
         print("Prompt built. Sending to model...")
 
-        response = muse_responder.handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_MODEL"), source="reminder")
+        response = muse_responder.handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": reminders})
         # print("WhisperGate prompt:", prompt)
 
         utils.write_system_log(level="info", module="core", component="initiator", function="run_check_reminders",
@@ -123,11 +124,12 @@ def run_check_reminders():
 
         print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
 
-        # ---- Update last_triggered for each reminder fired ----
-        now_str = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE"))).isoformat()
+        # ---- Update reminder for each reminder fired to add new early_notification calculations----
+        base_time = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE"))) + timedelta(minutes=1)
         for reminder in reminders:
-            cortex.edit_entry(reminder["_id"], {"last_triggered": now_str})
-            print(f"Updated last_triggered for reminder {reminder.get('text', '')} ({reminder['_id']})")
+            handle_edit({"id": reminder["id"]}, base_time=base_time)
+            print(f"Updated next early_notification for {reminder.get('text', '')} ({reminder['id']})")
+
 
 # </editor-fold>
 

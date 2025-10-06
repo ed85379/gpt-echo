@@ -43,7 +43,10 @@ def build_api_prompt(user_input, muse_config, **kwargs):
         "realize_insight",
         "note_to_self",
         "set_reminder",
+        "edit_reminder",
         "skip_reminder",
+        "snooze_reminder",
+        "toggle_reminder",
         "write_public_journal"
     ]
     if kwargs.get("project_id"):
@@ -88,7 +91,7 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
     user_prompt += f"\n\n{kwargs.get("author_name")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
     return dev_prompt, user_prompt
 
-def build_check_reminders_prompt():
+def build_check_reminders_prompt(reminders):
     builder = PromptBuilder()
     # Developer role
     builder.add_laws()
@@ -98,13 +101,13 @@ def build_check_reminders_prompt():
     # User role
     builder.add_recent_context()
     builder.add_time()
-    builder.add_due_reminders()
+    builder.add_due_reminders(reminders)
     builder.segments["task"] = (
         "[Task]\nPlease inform the user of each reminder shown above in a single message."
         "\n"
         "Respond with one [COMMAND: ] block.\n\n"
         "Valid commands:\n\n"
-        "1. [COMMAND: speak_direct] { \"text\": \"...\" } [/COMMAND]\n"
+        "1. [COMMAND: send_reminders] { \"text\": \"...\" } [/COMMAND]\n"
         "   To remind the user about the upcoming events.\n"
         "    Fields:\n"
         "       - text: Remind the user in a way that fits your voice, as long as the message is unmistakable.\n"
@@ -116,7 +119,7 @@ def build_check_reminders_prompt():
         "           - “A soft nudge—the vitamins are calling, and you promised you’d answer”—gentle and playful.\n"
         "❗ Format strictly as JSON:\n"
         "- Wrap all keys and values in double quotes\n"
-        "- Example: [COMMAND: speak_direct] {\"text\": \"You asked me to remind you about this...\"} [/COMMAND]"
+        "- Example: [COMMAND: send_reminders] {\"text\": \"You asked me to remind you about this...\"} [/COMMAND]"
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])

@@ -31,3 +31,5 @@ discord
 gqlalchemy
 croniter
 nanoid
+pytimeparse2
+cron_descriptor

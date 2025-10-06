@@ -285,12 +285,16 @@ class PromptBuilder:
 
         self.segments["reference_article"] = f"[Reference Article]\n{article_text.strip()}"
 
-    def add_due_reminders(self, window_minutes=3):
-        reminders = cortex.search_cortex_for_timely_reminders(window_minutes=window_minutes)
-        if reminders:
-            lines = [f"- {entry.get('text', '').strip()}" for entry in reminders if entry.get("text")]
-            if lines:
-                self.segments["reminder_list"] = "[Reminders Due]\n" + "\n".join(lines)
+    def add_due_reminders(self, reminders):
+        lines = []
+        for entry in reminders:
+            if entry.get("text"):
+                line = f"- {entry['text'].strip()}"
+                if "is_early" in entry:
+                    line += f" ({entry['is_early']})"
+                lines.append(line)
+        if lines:
+            self.segments["reminder_list"] = "[Reminders Due]\n" + "\n".join(lines)
 
     def add_formatting_instructions(self):
         formats = {
@@ -313,6 +317,10 @@ class PromptBuilder:
         from app.core.muse_responder import COMMANDS  # local import to avoid circular issues
 
         listener_lines = []
+        listener_lines.append(
+            "# Guardrail: You must never output <command-response> tags unless only demonstrating a command output.\n"
+            "# The <command-response> output alone does not mean the command has run. You must use the [COMMAND: ...] syntax to perform the action.\n"
+        )
         for name in command_names:
             cmd = COMMANDS.get(name)
             if not cmd:

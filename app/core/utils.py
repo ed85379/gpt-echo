@@ -141,6 +141,20 @@ def decrypt_text(token: str) -> str:
     fernet = Fernet(key.encode())
     return fernet.decrypt(token.encode()).decode()
 
+def strip_command_blocks(text):
+    # Extract both internal data and visible summary from each command-response block
+    def summarize(match):
+        internal = re.search(r"<internal-data>(.*?)</internal-data>", match.group(0), flags=re.DOTALL)
+        visible = re.sub(r"<.*?>", "", match.group(0))  # strip all tags for readability
+        if internal:
+            try:
+                data = json.loads(internal.group(1))
+                return f"(System note) {visible.strip()} | Data: {json.dumps(data, ensure_ascii=False)}"
+            except Exception:
+                return f"(System note) {visible.strip()}"
+        return f"(System note) {visible.strip()}"
+
+    return re.sub(r"<command-response>.*?</command-response>", summarize, text, flags=re.DOTALL)
 
 def format_context_entry(e):
     role = e.get("role", "")
@@ -170,6 +184,8 @@ def format_context_entry(e):
         time_str = ""
 
     msg = e.get("message", "")
+    # Sanitize command-response blocks
+    msg = strip_command_blocks(msg)
     # Combine
     return f"[{time_str}] {name}: {msg}"
 
@@ -207,6 +223,15 @@ def serialize_doc(doc):
         return str(doc)
     else:
         return doc
+
+def stringify_datetimes(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: stringify_datetimes(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [stringify_datetimes(i) for i in obj]
+    return obj
 
 def ensure_list(val):
     if val is None:
