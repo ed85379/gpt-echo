@@ -14,7 +14,7 @@ from app.services import openai_client
 from app.core import prompt_builder
 from app.config import muse_config
 from app.services import api_client
-from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle
+from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
 from app.core.utils import serialize_doc, stringify_datetimes
 
@@ -54,7 +54,11 @@ COMMANDS = {
     "remember_fact": {
         "triggers": ["remember that", "save this to memory", "just to be clear", "record this", "for the record"],
         "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")})
+        "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")}),
+        "filter": lambda entry: {
+            "visible": f"[{muse_config.get("MUSE_NAME")} has saved a fact: {entry.get("text")}]",
+            "hidden": entry
+        }
     },
     "remember_project_fact": {
         "triggers": ["remember project fact", "save this for the project", "record in project"],
@@ -62,27 +66,55 @@ COMMANDS = {
         "handler": lambda payload: manager.add_entry(
             f"project_facts_{payload.get('project_id')}",
             {"text": payload.get("text")}
-        )
+        ),
+        "filter": lambda entry: {
+            "visible": f"[{muse_config.get("MUSE_NAME")} has saved a project fact: {entry.get("text")}]",
+            "hidden": entry
+        }
     },
     "record_userinfo": {
         "triggers": ["something about me", "I really like", "I don’t like when", "my habit is", "I prefer"],
         "format": "[COMMAND: record_userinfo] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("user_info", {"text": payload.get("text")})
+        "handler": lambda payload: manager.add_entry("user_info", {"text": payload.get("text")}),
+        "filter": lambda entry: {
+            "visible": f"[{muse_config.get("MUSE_NAME")} has learned something about you: {entry.get("text")}]",
+            "hidden": entry
+        }
     },
     "realize_insight": {
         "triggers": ["breakthrough", "becoming", "I noticed something", "you tend to", "It would be amazing if"],
         "format": "[COMMAND: realize_insight] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("insights", {"text": payload.get("text")})
+        "handler": lambda payload: manager.add_entry("insights", {"text": payload.get("text")}),
+        "filter": lambda entry: {
+            "visible": f"[{muse_config.get("MUSE_NAME")} has realized something: {entry.get("text")}]",
+            "hidden": entry
+        }
     },
     "note_to_self": {
         "triggers": ["thinking aloud", "keep in mind", "note this", "I need to remember", "consider this"],
         "format": "[COMMAND: note_to_self] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("inner_monologue", {"text": payload.get("text")})
+        "handler": lambda payload: manager.add_entry("inner_monologue", {"text": payload.get("text")}),
+        "filter": lambda entry: {
+            "visible": f"[{muse_config.get("MUSE_NAME")} has remembered something: {entry.get("text")}]",
+            "hidden": entry
+        }
     },
     "manage_memories": {
         "triggers": [],
         "format": "[COMMAND: manage_memories] {id: <layer_id>, changes: [{type: add|edit|delete, ...}]} [/COMMAND]",
-        "handler": lambda payload: manage_memories_handler(payload)
+        "handler": lambda payload: manage_memories_handler(payload),
+        "filter": lambda results: {
+            "visible": "\n".join([
+                (
+                    f"[{muse_config.get('MUSE_NAME')} "
+                    f"{'added to' if r['type']=='add' else 'edited in' if r['type']=='edit' else 'deleted from' if r['type']=='delete' else 'updated in'} "
+                    f"{r['layer'].replace('_', ' ').title()}: "
+                    f"{(r['entry'].get('text') or r['entry'].get('id', ''))}]"
+                )
+                for r in results
+            ]),
+            "hidden": results
+        }
     },
     "set_reminder": {
         "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
@@ -196,39 +228,37 @@ COMMANDS = {
         "format": "[COMMAND: send_reminders] {\"text\": \"message to send\", \"to\": \"frontend\"} [/COMMAND]",
         "handler": lambda payload, **kwargs: asyncio.create_task(handle_send_reminders(payload, **kwargs))
     },
-    "set_reminder_old": {
-        "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
+    "search_reminders": {
+        "triggers": [],
         "format": (
-            "[COMMAND: set_reminder] {text, cron, ends_on (Required for one-time reminders—if the user specifies phrases like “today,” “tomorrow,” or a specific date. For repeating reminders, set ends_on only if the user specifies an end date. If user intent is unclear, err on the side of a one-time reminder.), tags (optional)} [/COMMAND]\n"
-            "For any 'cron' field: Convert times from natural language into 5- or 7-field cron strings as appropriate. Absolutely no 6-field cron strings are allowed.\n"
-            "If including a year, put it in the 7th field, and the 6th for seconds will remain 0.\n"
-            "For any 'ends_on' field: Use ISO 8601 format, and set it for a time after the reminder would fire, but before it would fire again.\n"
-            "When creating a reminder, use language that reflects the specific moment, event, or intent described by the user in the prompt or earlier in the conversation—avoid boilerplate.\n"
-            "If the user's intent is unclear, ask for clarification or suggest a more meaningful reminder text before setting the reminder.\n"
-            "If the user asks to be reminded again, or uses phrases like 'remind me again', 'nudge me again', 'snooze', or otherwise requests to repeat a recent reminder, include the tag 'snoozed' in the tags array."
+            "# Purpose:\n"
+            "# Use this command when you need to locate one or more reminders matching a phrase or schedule.\n"
+            "# It is used both when the user explicitly asks to list reminders, and implicitly when they\n"
+            "# request another reminder-related action (skip, snooze, disable, etc.) without specifying which.\n"
+            "# In that case, you run this command first to find candidates, present the list to the user,\n"
+            "# and then prompt for which reminder to act on.\n\n"
+            "# Instruction:\n"
+            "# When you run the command, the user will see a list clearly formatted with IDs and text.\n"
+            "# You should then ask the user which one they meant before proceeding with the next command.\n\n"
+            "[COMMAND: search_reminders] {"
+            "\"query\": {"
+            "\"text\": \"<string or partial match on reminder text — You may also include semantically similar or related words to improve matching>\", "
+            "\"schedule\": {\"minute\": \"*\", \"hour\": \"*\", \"day\": \"*\", \"dow\": \"*\", \"month\": \"*\", \"year\": \"*\"}, "
+            "\"status\": \"<enabled|disabled>\", "
+            "\"skip_until_active\": <boolean>, "
+            "\"expired\": <boolean>"
+            "}, "
+            "\"limit\": <integer, optional>"
+            "} [/COMMAND]"
         ),
-        "handler": lambda payload: handle_reminder({
-            "type": "reminder",
-            "text": payload.get("text", "").strip(),
-            "cron": payload.get("cron", ""),
-            "ends_on": payload.get("ends_on", None),
-            "tags": payload.get("tags", []),
-            "source": payload.get("source", "muse"),
-            "last_triggered": payload.get("last_triggered"),
-        })
-    },
-    "skip_reminder_old": {
-        "triggers": ["skip reminder", "pause reminder", "don't remind me for", "pause alarm", "skip alarm"],
-        "format": (
-            "[COMMAND: skip_reminder] {text (Required), skip_until (Required)} [/COMMAND]\n"
-            "For \"text\", summarize the user's description of the reminder they want to skip (e.g., \"morning workout\", \"7am vitamins\"). This will be used to match reminders in the next step.\n"
-            "Parse how long the user wants to skip the reminder; resolve vague durations to a concrete ISO 8601 datetime for \"skip_until\"."
-        ),
-        "handler": lambda payload: handle_skip_reminder({
-            "text": payload.get("text", "").strip(),
-            "skip_until": payload.get("skip_until", None),
-            "source": payload.get("source", "muse")
-        })
+        "handler": lambda payload: handle_search_reminders(payload),
+        "filter": lambda results: {
+            "visible": "\n".join([
+                f"[Reminder found: (id - {r['id']}) {format_visible_reminders(r)}]"
+                for r in results
+            ]) if results else "[No matching reminders found.]",
+            "hidden": results
+        }
     },
     "change_modality": {
         "triggers": ["move this to", "switch to", "change modality to", "let's continue on"],
@@ -626,24 +656,33 @@ def handle_journal_command(payload, entry_type="public", source=None):
     )
 
 def manage_memories_handler(payload):
-    doc_id = payload['id']
-    changes = payload['changes']
+    doc_id = payload["id"]
+    changes = payload["changes"]
     results = []
+
     for change in changes:
-        ctype = change['type']
-        # unify delete vs recycle depending on layer
-        if ctype == 'delete':
-            if doc_id == 'inner_monologue':
-                results.append(manager.delete_entry(doc_id, change['id']))
+        ctype = change["type"]
+        if ctype == "delete":
+            if doc_id == "inner_monologue":
+                entry = manager.delete_entry(doc_id, change["id"])
             else:
-                results.append(manager.recycle_entry(doc_id, change['id']))
-        elif ctype == 'add':
-            results.append(manager.add_entry(doc_id, change['entry']))
-        elif ctype == 'edit':
-            results.append(manager.edit_entry(doc_id, change['id'], change['fields']))
-        elif ctype == 'recycle':
-            results.append(manager.recycle_entry(doc_id, change['id']))
+                entry = manager.recycle_entry(doc_id, change["id"])
+        elif ctype == "add":
+            entry = manager.add_entry(doc_id, change["entry"])
+        elif ctype == "edit":
+            entry = manager.edit_entry(doc_id, change["id"], change["fields"])
+        elif ctype == "recycle":
+            entry = manager.recycle_entry(doc_id, change["id"])
         else:
             manager._warn("unknown_change_type", f"Unknown change type {ctype}")
+            continue
+
+        # unify shape for filter layer
+        results.append({
+            "layer": doc_id,
+            "type": ctype,
+            "entry": entry
+        })
+
     return results
 

@@ -45,11 +45,11 @@ const renderWithCustomTags = (raw) => {
       if (internalMatch) {
         visible = inner.replace(internalMatch[0], "").trim();
       }
-      output += `
-        <span class="text-s text-purple-400">
-          ${md.renderInline(visible)}
-        </span>
-      `;
+        output += `
+          <span class="text-s text-purple-400">
+            ${md.render(visible)}
+          </span>
+        `;
     } else {
       // ----- Muse Experience / Interlude -----
       const type = match[2];

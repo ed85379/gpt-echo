@@ -47,6 +47,7 @@ def build_api_prompt(user_input, muse_config, **kwargs):
         "skip_reminder",
         "snooze_reminder",
         "toggle_reminder",
+        "search_reminders",
         "write_public_journal"
     ]
     if kwargs.get("project_id"):

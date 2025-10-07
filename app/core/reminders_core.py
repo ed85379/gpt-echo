@@ -269,3 +269,47 @@ def search_for_timely_reminders(window_minutes=0.5):
     print(f"✅ Found {len(triggered)} reminders ready to fire.")
     return triggered
 
+def handle_search_reminders(payload):
+    query = payload.get("query", {})
+    limit = payload.get("limit", 5)
+
+    mongo_query = {}
+
+    # Text search
+    text = query.get("text")
+    if text:
+        mongo_query["text"] = {"$regex": text, "$options": "i"}
+
+    # Schedule search (match any specific fields that aren’t '*')
+    schedule = query.get("schedule", {})
+    schedule_fields = {k: v for k, v in schedule.items() if v != "*"}
+    if schedule_fields:
+        mongo_query.update({f"schedule.{k}": v for k, v in schedule_fields.items()})
+
+    # Status filters
+    if "status" in query:
+        mongo_query["status"] = query["status"]
+
+    # Skip filters
+    if "skip_until_active" in query and query["skip_until_active"]:
+        mongo_query["skip_until"] = {"$gte": datetime.utcnow()}
+
+    # Ends_on check (e.g., looking for expired reminders)
+    if "expired" in query and query["expired"]:
+        mongo_query["ends_on"] = {"$lt": datetime.utcnow()}
+
+    results = manager.search_entries("reminders", mongo_query, limit=limit)
+
+    # Shape results for the filter layer
+    return [
+        {
+            "id": r["id"],
+            "text": r.get("text", ""),
+            "cron": r.get("cron", ""),
+            "schedule": r.get("schedule", {}),
+            "status": r.get("status", "enabled"),
+            "skip_until": r.get("skip_until"),
+            "ends_on": r.get("ends_on")
+        }
+        for r in results
+    ]

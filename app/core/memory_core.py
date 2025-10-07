@@ -2,6 +2,7 @@
 import json
 import time
 import asyncio
+import re
 from datetime import datetime, timedelta, timezone
 from dateutil.parser import isoparse
 from dateutil.parser import parse as parse_datetime
@@ -671,6 +672,63 @@ class MemoryLayerManager:
         if doc_id not in ("inner_monologue", "reminders"):
             delete_point(entry_id, "muse_memory_layers")
         return True
+
+    def search_entries(self, doc_id, mongo_query=None, limit=5):
+        """
+        Search entries within a given memory layer (e.g., 'reminders') using
+        in‑memory filtering from the cortex document. Supports partial text,
+        schedule fields, status, skip/ends filters, and optional limit.
+        """
+        mongo_query = mongo_query or {}
+        doc = self.cortex.get_doc(doc_id)
+        if not doc:
+            self._warn("search_entries_failed", f"Missing doc {doc_id}")
+            return []
+
+        results = []
+        now = datetime.utcnow()
+
+        for entry in doc.get("entries", []):
+            match = True
+
+            # text regex (case‑insensitive)
+            if "text" in mongo_query:
+                pattern = mongo_query["text"]["$regex"]
+                if not re.search(pattern, entry.get("text", ""), re.I):
+                    match = False
+
+            # nested schedule match
+            for key, val in mongo_query.items():
+                if key.startswith("schedule."):
+                    field = key.split(".", 1)[1]
+                    if entry.get("schedule", {}).get(field) != val:
+                        match = False
+
+            # status check
+            if "status" in mongo_query:
+                if entry.get("status") != mongo_query["status"]:
+                    match = False
+
+            # skip_until active
+            if "skip_until" in mongo_query:
+                cond = mongo_query["skip_until"]
+                if "$gte" in cond:
+                    if not entry.get("skip_until") or entry["skip_until"] < cond["$gte"]:
+                        match = False
+
+            # ends_on expired
+            if "ends_on" in mongo_query:
+                cond = mongo_query["ends_on"]
+                if "$lt" in cond:
+                    if not entry.get("ends_on") or entry["ends_on"] >= cond["$lt"]:
+                        match = False
+
+            if match:
+                results.append(entry)
+
+        # sort newest‑updated first
+        results.sort(key=lambda e: e.get("updated_on", datetime.min), reverse=True)
+        return results[:limit]
 
     def _log(self, action, text):
         self.utils.write_system_log(
