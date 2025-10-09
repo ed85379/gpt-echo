@@ -35,27 +35,27 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     builder.add_laws()
     builder.add_profile()
     builder.add_core_principles()
-    builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
-    # User role
     commands = [
         "remember_fact",
         "record_userinfo",
         "realize_insight",
         "note_to_self",
+        "manage_memories",
         "set_reminder",
         "edit_reminder",
         "skip_reminder",
         "snooze_reminder",
         "toggle_reminder",
-        "search_reminders",
-        "write_public_journal"
+        "search_reminders"
     ]
     if kwargs.get("project_id"):
         commands.append("remember_project_fact")
     builder.add_intent_listener(commands, kwargs.get("project_id"))
+    builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
+    # User role
     builder.add_dot_status()
-    # builder.add_discovery_snippets()
-    builder.add_journal_thoughts(query=user_input)
+    #builder.add_discovery_snippets()
+    #builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))
     ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.add_prompt_context(

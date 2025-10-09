@@ -226,6 +226,7 @@ def search_for_timely_reminders(window_minutes=0.5):
             ends_on = entry.get("ends_on")
             status = entry.get("status", "enabled")
             early_notification = entry.get("early_notification")
+            early_only = entry.get("early_only")
             snooze_until = entry.get("snooze_until")
 
             if status == "disabled":
@@ -260,6 +261,11 @@ def search_for_timely_reminders(window_minutes=0.5):
                 next_trigger = itr.get_next(datetime)
                 next_trigger = normalize_dt(next_trigger)
                 if lower_bound <= next_trigger <= upper_bound and entry not in triggered:
+                    if early_only:
+                        print(f"Early Only found. {entry}")
+                        edit_results = handle_edit({"id": entry["id"]}, base_time=base_time + timedelta(minutes=6))
+                        print(f"Edit Results: {edit_results}")
+                        continue  # skip adding, just update schedule
                     triggered.append(entry)
 
         except Exception as e:

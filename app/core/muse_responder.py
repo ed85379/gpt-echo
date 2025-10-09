@@ -3,6 +3,7 @@
 import asyncio
 import httpx
 import re, json
+from typing import Iterator, NamedTuple, Optional
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from cron_descriptor import get_description
@@ -18,11 +19,85 @@ from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
 from app.core.utils import serialize_doc, stringify_datetimes
 
-COMMAND_PATTERN = re.compile(
-    r"\[COMMAND: ([^\]]+)]\s*(\{.*?\})\s*\[/COMMAND]",
-    re.DOTALL
-)
-#COMMAND_PATTERN = re.compile(r"\[COMMAND: ([^\]]+)]\s*\{([^}]*)\}", re.DOTALL)
+CMD_OPEN = re.compile(r"\[COMMAND:\s*([^\]]+)\]\s*", re.DOTALL)
+CMD_CLOSE = "[/COMMAND]"
+
+class CommandMatch(NamedTuple):
+    name: str
+    json_text: str
+    span: tuple[int, int]     # (start, end) in the original text
+    had_close: bool
+
+def _balanced_object_end(text: str, start: int) -> Optional[int]:
+    """
+    Given text and index at the first '{', return index just after
+    the matching closing '}' that balances the object. Handles strings and escapes.
+    Returns None if unbalanced.
+    """
+    n = len(text)
+    depth = 0
+    i = start
+    in_str = False
+    esc = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return i + 1  # just after the closing brace
+        i += 1
+    return None
+
+def extract_commands(text: str) -> Iterator[CommandMatch]:
+    """
+    Yields all command blocks in order. Each block:
+      - [COMMAND: name] { ...balanced JSON... } [/COMMAND]?   (closing optional)
+    Multiple commands per response are handled safely.
+    """
+    i, n = 0, len(text)
+    while True:
+        m = CMD_OPEN.search(text, i)
+        if not m:
+            break
+        name = m.group(1).strip()
+        pos = m.end()
+
+        lbrace = text.find("{", pos)
+        if lbrace == -1:
+            # No JSON payload after header — skip this header and continue
+            i = pos
+            continue
+
+        rbr_end = _balanced_object_end(text, lbrace)
+        if rbr_end is None:
+            # Unbalanced JSON; skip this header safely
+            i = pos
+            continue
+
+        json_text = text[lbrace:rbr_end]
+
+        # Optional closing tag
+        k = rbr_end
+        # skip whitespace
+        while k < n and text[k].isspace():
+            k += 1
+        had_close = text.startswith(CMD_CLOSE, k)
+        end = k + len(CMD_CLOSE) if had_close else rbr_end
+
+        yield CommandMatch(name=name, json_text=json_text, span=(m.start(), end), had_close=had_close)
+        i = end
 
 # Commands + intent triggers
 COMMANDS = {
@@ -119,12 +194,13 @@ COMMANDS = {
     "set_reminder": {
         "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
         "format": (
-            "[COMMAND: set_reminder] {\"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\"} [/COMMAND]\n\n"
+            "[COMMAND: set_reminder] {\"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\", \"early_only\": <Boolean - optional>} [/COMMAND]\n\n"
             "Notes:\n"
             "- `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
             "- `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
             "- `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
             "- `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
+            "- `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
             "- For one‑time reminders, set an `ends_on` timestamp set to after the reminder would fire, so the reminder expires after firing once.\n"
         ),
         "handler": lambda payload: handle_set(
@@ -133,6 +209,7 @@ COMMANDS = {
                 "schedule": payload.get("schedule"),
                 "ends_on": payload.get("ends_on"),
                 "notification_offset": payload.get("notification_offset"),
+                "early_only": payload.get("early_only")
             }
         ),
         "filter": lambda entry: {
@@ -143,7 +220,7 @@ COMMANDS = {
     "edit_reminder": {
         "triggers": ["update reminder", "change reminder", "fix schedule"],
         "format": (
-            "[COMMAND: edit_reminder] {\"id\": <entry_id>, \"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\"} [/COMMAND]\n\n"
+            "[COMMAND: edit_reminder] {\"id\": <entry_id>, \"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\", \"early_only\": <Boolean - optional>} [/COMMAND]\n\n"
             "Notes:\n"
             "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
             "The following are all optional for edits. You only need to enter what needs to be changed:\n"
@@ -151,6 +228,7 @@ COMMANDS = {
             "- `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
             "- `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
             "- `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
+            "- `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
         ),
         "handler": lambda payload: handle_edit(
             {
@@ -159,6 +237,7 @@ COMMANDS = {
                 "schedule": payload.get("schedule"),
                 "ends_on": payload.get("ends_on"),
                 "notification_offset": payload.get("notification_offset"),
+                "early_only": payload.get("early_only")
             }
         ),
         "filter": lambda entry: {
@@ -269,36 +348,6 @@ COMMANDS = {
             urgency=payload.get("urgency", "normal"),
             source=payload.get("source", "muse")
         )
-    },
-    "fetch_discovery_item": {
-        "triggers": ["bring me", "load entry from feed", "show discovery item"],
-        "format": "[COMMAND: fetch_discovery_item] {feed_name, entry_id, context: summary|full} [/COMMAND]",
-        "handler": lambda payload: discovery_core.load_entry(
-            feed_name=payload.get("feed_name"),
-            entry_id=payload.get("entry_id"),
-            context=payload.get("context", "summary"),
-            source=payload.get("source", "muse")
-        )
-    },
-    "fetch_url": {
-        "triggers": ["check this link", "fetch this page", "read this URL"],
-        "format": "[COMMAND: fetch_url] {url, parse_as: text|html|json, summarize: true|false} [/COMMAND]",
-        "handler": lambda payload: url_core.fetch_and_parse(
-            url=payload.get("url"),
-            parse_as=payload.get("parse_as", "text"),
-            summarize=payload.get("summarize", False),
-            source=payload.get("source", "muse")
-        )
-    },
-    "ignore_user": {
-        "triggers": ["ignore", "block user", "don’t reply to"],
-        "format": "[COMMAND: ignore_user] {author_name, reason, duration} [/COMMAND]",
-        "handler": lambda payload: moderation_core.ignore_user(
-            author_name=payload.get("author_name"),
-            reason=payload.get("reason", "unspecified"),
-            duration=payload.get("duration", "indefinite"),
-            source=payload.get("source", "muse")
-        )
     }
 }
 
@@ -309,13 +358,15 @@ COMMAND_HANDLERS = {
 
 # Main entry point for any response parsing after prompt
 
-def route_user_input(dev_prompt: str, user_prompt: str, images=None) -> str:
+def route_user_input(dev_prompt: str, user_prompt: str, images=None, client=None) -> str:
+    response = openai_client.get_openai_response(
+        dev_prompt, user_prompt, client=client, images=images, model=muse_config.get("OPENAI_MODEL")
+    )
 
-    response = openai_client.get_openai_response_new(dev_prompt, user_prompt, images=images, model=muse_config.get("OPENAI_MODEL"))
+    utils.write_system_log(level="debug", module="core", component="responder",
+                           function="route_user_input", action="raw_response", response=response)
 
-    utils.write_system_log(level="debug", module="core", component="responder", function="route_user_input",
-                           action="raw_response", response=response)
-
+    # Neutralize visible examples
     response = re.sub(
         r"<command-response>(.*?)</command-response>",
         r"<command-response[example]>\1</command-response[example]>",
@@ -323,12 +374,16 @@ def route_user_input(dev_prompt: str, user_prompt: str, images=None) -> str:
         flags=re.DOTALL
     )
 
-    matches = COMMAND_PATTERN.finditer(response)
-    cleaned_response = response
+    cleaned = []
+    cursor = 0
 
-    for match in matches:
-        command_name = match.group(1).strip()
-        raw_payload = match.group(2).strip()
+    for cm in extract_commands(response):
+        start, end = cm.span
+        command_name = cm.name
+        raw_payload = cm.json_text.strip()
+
+        # Append text before this command
+        cleaned.append(response[cursor:start])
 
         try:
             payload = json.loads(raw_payload)
@@ -344,104 +399,212 @@ def route_user_input(dev_prompt: str, user_prompt: str, images=None) -> str:
                         hidden = filtered.get("hidden", {})
                         hidden_str = f"<internal-data>{json.dumps(hidden, default=str)}</internal-data>" if hidden else ""
                         replacement = f"<command-response>{hidden_str}{visible}</command-response>"
-                        cleaned_response = cleaned_response.replace(match.group(0), replacement, 1)
+                        cleaned.append(replacement)
                     else:
-                        # No filter → just strip
-                        cleaned_response = re.sub(rf"\n*{re.escape(match.group(0))}\n*", "\n", cleaned_response, count=1).strip()
+                        # No filter → strip block entirely
+                        # Replace with a single newline to keep layout sane
+                        cleaned.append("\n")
                 else:
-                    cleaned_response = re.sub(rf"\n*{re.escape(match.group(0))}\n*", "\n", cleaned_response,
-                                              count=1).strip()
+                    # Handler returned nothing — strip the block
+                    cleaned.append("\n")
             else:
-                utils.write_system_log(level="warn", module="core", component="responder", function="route_user_input",
-                                       action="unknown_command", command=command_name, payload=raw_payload)
+                utils.write_system_log(level="warn", module="core", component="responder",
+                                       function="route_user_input", action="unknown_command",
+                                       command=command_name, payload=raw_payload)
+                # Leave the original block as-is (or strip — your call). Here we strip.
+                cleaned.append("\n")
         except Exception as e:
-            utils.write_system_log(level="error", module="core", component="responder", function="route_user_input",
-                                   action="command_error", command=command_name, payload=raw_payload, error=str(e))
+            utils.write_system_log(level="error", module="core", component="responder",
+                                   function="route_user_input", action="command_error",
+                                   command=command_name, payload=raw_payload, error=str(e))
+            # On error, strip the block (prevents leaking broken commands to UI)
+            cleaned.append("\n")
+
+        cursor = end
+
+    # Append any trailing text after the last command
+    cleaned.append(response[cursor:])
+    cleaned_response = "".join(cleaned)
+
     return cleaned_response
 
 # Handles muse_initiator-specific responses
-def handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_WHISPER_MODEL"), source=None, whispergate_data=None) -> str:
+def handle_muse_decision(
+    dev_prompt,
+    user_prompt,
+    client,
+    model=muse_config.get("OPENAI_WHISPER_MODEL"),
+    source=None,
+    whispergate_data=None
+) -> str:
+    """
+    Processes WhisperGate (muse) backend decisions using the unified command extraction pipeline.
+    Returns a terse summary string of processing results (e.g., 'Processed: speak; Processed: remember_fact').
+    """
 
     full_prompt = dev_prompt + user_prompt
 
-    response = openai_client.get_openai_response(full_prompt, images=None, model=model)
+    response = openai_client.get_openai_response(
+        dev_prompt,
+        user_prompt,
+        client,
+        images=None,
+        model=model
+    )
     print(f"WHISPERGATE COMMAND: {response}")
 
-    utils.write_system_log(level="debug", module="core", component="responder", function="handle_muse_decision",
-                           action="raw_response", response=response)
+    utils.write_system_log(
+        level="debug",
+        module="core",
+        component="responder",
+        function="handle_muse_decision",
+        action="raw_response",
+        response=response
+    )
 
-    matches = list(COMMAND_PATTERN.finditer(response))
-    if not matches:
-        if "[CHOOSES SILENCE]" in response:
-            utils.write_system_log(level="debug", module="core", component="responder", function="handle_muse_decision",
-                                   action="wispergate_decision", result="silent")
+    # Silence handling — returns early without attempting command parse.
+    if "[CHOOSES SILENCE]" in response:
+        utils.write_system_log(
+            level="debug",
+            module="core",
+            component="responder",
+            function="handle_muse_decision",
+            action="wispergate_decision",
+            result="silent"
+        )
+        return "WhisperGate chose silence."
 
-            return "WhisperGate chose silence."
-        else:
-            utils.write_system_log(level="warn", module="core", component="responder", function="handle_muse_decision",
-                                   action="wispergate_decision", result="No command block found in WhisperGate response.")
-            return "No command block found in WhisperGate response."
-
-    cleaned_response = response
     command_results = []
 
-    for match in matches:
-        command_name = match.group(1).strip()
-        raw_payload = match.group(2).strip()
+    # Use the unified extractor to find all command blocks.
+    commands = list(extract_commands(response))
+    if not commands:
+        utils.write_system_log(
+            level="warn",
+            module="core",
+            component="responder",
+            function="handle_muse_decision",
+            action="wispergate_decision",
+            result="No command block found in WhisperGate response."
+        )
+        return "No command block found in WhisperGate response."
+
+    # We may want to remove the commands from the response even though we return a summary.
+    # Build a cleaned copy by slicing out spans.
+    cleaned_parts = []
+    cursor = 0
+
+    for cm in commands:
+        start, end = cm.span
+
+        # Accumulate non-command text (discarded from return; kept in case you later log/store it)
+        if start > cursor:
+            cleaned_parts.append(response[cursor:start])
+
+        command_name = cm.name.strip()
+        raw_payload = cm.json_text.strip()
 
         try:
             payload = json.loads(raw_payload)
-            handler = COMMAND_HANDLERS.get(command_name)
+        except Exception as e:
+            utils.write_system_log(
+                level="error",
+                module="core",
+                component="responder",
+                function="handle_muse_decision",
+                action="parse_payload_error",
+                command=command_name,
+                payload=raw_payload,
+                error=str(e)
+            )
+            command_results.append(f"Error in {command_name}: invalid JSON payload")
+            cursor = end
+            continue
 
-            if handler:
-                handler(payload, source=source, **(whispergate_data or {}))
-                # Record Muse-initiated thoughts in cortex
-                if command_name in ("speak", "write_public_journal", "write_private_journal", "remember_fact"):
-                    thought_text = payload.get("subject") or payload.get("text")
-                    if thought_text:
-                        if command_name == "write_private_journal":
-                            try:
-                                thought_text = utils.encrypt_text(thought_text)
-                                encrypted = True
-                            except Exception as e:
-                                utils.write_system_log(level="error", module="core", component="responder",
-                                                       function="handle_muse_decision",
-                                                       action="encrypt_journal",
-                                                       result="encryption_error", error=str(e))
-                                encrypted = False
-                        else:
+        handler = COMMAND_HANDLERS.get(command_name)
+        if not handler:
+            utils.write_system_log(
+                level="warn",
+                module="core",
+                component="responder",
+                function="handle_muse_decision",
+                action="unknown_command",
+                command=command_name,
+                payload=raw_payload
+            )
+            command_results.append(f"Unknown command: {command_name}")
+            cursor = end
+            continue
+
+        # Execute command (passes through source and any whispergate_data)
+        try:
+            handler(payload, source=source, **(whispergate_data or {}))
+
+            # Record Muse-initiated thoughts in cortex (same behavior as before)
+            if command_name in ("speak", "write_public_journal", "write_private_journal", "remember_fact"):
+                thought_text = payload.get("subject") or payload.get("text")
+                if thought_text:
+                    encrypted = False
+                    if command_name == "write_private_journal":
+                        try:
+                            thought_text = utils.encrypt_text(thought_text)
+                            encrypted = True
+                        except Exception as e:
+                            utils.write_system_log(
+                                level="error",
+                                module="core",
+                                component="responder",
+                                function="handle_muse_decision",
+                                action="encrypt_journal",
+                                result="encryption_error",
+                                error=str(e)
+                            )
                             encrypted = False
 
-                        cortex.add_entry({
-                            "text": thought_text,
-                            "type": "muse_thoughts",
-                            "tags": ["whispergate"],
-                            "metadata": {"source": command_name, "encrypted": encrypted}
-                        })
+                    cortex.add_entry({
+                        "text": thought_text,
+                        "type": "muse_thoughts",
+                        "tags": ["whispergate"],
+                        "metadata": {"source": command_name, "encrypted": encrypted}
+                    })
 
-                utils.write_system_log(level="info", module="core", component="responder",
-                                       function="handle_muse_decision",
-                                       action="command_processed",
-                                       command=command_name,
-                                       payload=payload)
+            utils.write_system_log(
+                level="info",
+                module="core",
+                component="responder",
+                function="handle_muse_decision",
+                action="command_processed",
+                command=command_name,
+                payload=payload
+            )
+            command_results.append(f"Processed: {command_name}")
 
-                command_results.append(f"Processed: {command_name}")
-            else:
-                utils.write_system_log(level="warn", module="core", component="responder",
-                                       function="handle_muse_decision",
-                                       action="unknown_command",
-                                       command=command_name,
-                                       payload=raw_payload)
-
-                command_results.append(f"Unknown command: {command_name}")
         except Exception as e:
-            utils.write_system_log(level="error", module="core", component="responder", function="handle_muse_decision",
-                                   action="command",result="command_error", command=command_name,
-                                   payload=raw_payload, error=str(e))
-
+            utils.write_system_log(
+                level="error",
+                module="core",
+                component="responder",
+                function="handle_muse_decision",
+                action="command_error",
+                command=command_name,
+                payload=payload,
+                error=str(e)
+            )
             command_results.append(f"Error in {command_name}: {e}")
 
-        cleaned_response = re.sub(rf"\n*{re.escape(match.group(0))}\n*", "\n", cleaned_response, count=1).strip()
+        # Advance cursor past this command’s span to remove it from cleaned output
+        cursor = end
+
+    # Append any trailing non-command text
+    if cursor < len(response):
+        cleaned_parts.append(response[cursor:])
+
+    cleaned_response = "".join(cleaned_parts).strip()
+
+    # If you ever want to keep a shadow log of the cleaned WG text:
+    # utils.write_system_log(level="debug", module="core", component="responder",
+    #                        function="handle_muse_decision", action="cleaned_response",
+    #                        response=cleaned_response)
 
     return "; ".join(command_results)
 
@@ -458,53 +621,6 @@ def handle_reminder(payload):
             target = max(recent, key=lambda r: r["last_triggered"])
             payload["text"] = target["text"]
     return cortex.add_entry(payload)
-
-def handle_skip_reminder(payload, model=muse_config.get("OPENAI_WHISPER_MODEL")):
-    """
-    Skips the best-matched active reminder by setting skip_until.
-    """
-    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
-
-    # Step 1: Fetch all active reminders
-    reminders = [
-        r for r in cortex.get_entries_by_type("reminder")
-        if not r.get("ends_on") or datetime.fromisoformat(r["ends_on"]).astimezone(ZoneInfo(muse_config.get("USER_TIMEZONE"))) > now
-    ]
-
-    if not reminders:
-        print("No active reminders found.")
-        return {"success": False, "message": "No active reminders found."}
-
-    # Step 2: Build prompt for OpenAI to match
-    reminders_text = [
-        f'ID: {r.get("_id")} | Text: "{r.get("text", "")}" | Cron: {r.get("cron", "")} | Tags: {", ".join(r.get("tags", []))}'
-        for r in reminders
-    ]
-    reminders_list_str = "\n".join(reminders_text)
-    prompt = (
-        "You are an assistant helping to match reminder skip requests to the actual reminders in the system.\n"
-        "Here are the currently active reminders:\n"
-        f"{reminders_list_str}\n\n"
-        f"The user requested to skip a reminder described as: \"{payload['text']}\"\n"
-        "Reply ONLY with the ID of the reminder that most likely matches. If none match, reply with 'NONE'."
-    )
-
-    # Step 3: Query OpenAI to get the best matching reminder ID
-    response = openai_client.get_openai_response(prompt, model=model)
-    match_id = response.strip()
-
-    if match_id == "NONE":
-        print("No matching reminder found to skip.")
-        return {"success": False, "message": "No matching reminder found to skip."}
-
-    # Step 4: Set skip_until on the matching reminder
-    updated = cortex.edit_entry(match_id, {"skip_until": payload["skip_until"]})
-    if updated:
-        print(f"Reminder {match_id} successfully skipped until {payload['skip_until']}.")
-        return {"success": True, "message": f"Reminder skipped until {payload['skip_until']}."}
-    else:
-        print("Failed to update reminder.")
-        return {"success": False, "message": "Failed to update reminder."}
 
 
 def send_to_websocket(text: str, to="frontend", timestamp=None):
@@ -543,7 +659,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     builder.segments["speech"] = f"[Task]\nYou were asked to speak aloud about the following subject:\n{subject}"
     prompt = builder.build_prompt()
 
-    response = openai_client.get_openai_response(prompt, model=muse_config.get("OPENAI_MODEL"))
+    response = openai_client.get_openai_response_4(prompt, model=muse_config.get("OPENAI_MODEL"))
     timestamp = datetime.now(timezone.utc).isoformat()
     send_to_websocket(response, to, timestamp)
 
@@ -644,7 +760,7 @@ def handle_journal_command(payload, entry_type="public", source=None):
     builder.segments["task"] = f"[Task]\nWrite a {'private' if entry_type == 'private' else 'public'} journal entry about this:\n{title}"
     prompt = builder.build_prompt()
 
-    body = openai_client.get_openai_response(prompt, model=muse_config.get("OPENAI_FULL_MODEL"))
+    body = openai_client.get_openai_response_4(prompt, model=muse_config.get("OPENAI_FULL_MODEL"))
 
     journal_core.create_journal_entry(
         title=title,
