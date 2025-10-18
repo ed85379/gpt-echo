@@ -6,18 +6,22 @@ import re, json
 from typing import Iterator, NamedTuple, Optional
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from openai import OpenAI
 from cron_descriptor import get_description
 from app.core import journal_core
 from app.core.memory_core import cortex, manager
 from app.core import discovery_core
 from app.core import utils
-from app.services import openai_client
+from app.services.openai_client import get_openai_response
 from app.core import prompt_builder
 from app.config import muse_config
 from app.services import api_client
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
 from app.core.utils import serialize_doc, stringify_datetimes
+from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
+from app.services.openai_client import speak_openai_client, journal_openai_client
+
 
 CMD_OPEN = re.compile(r"\[COMMAND:\s*([^\]]+)\]\s*", re.DOTALL)
 CMD_CLOSE = "[/COMMAND]"
@@ -103,12 +107,12 @@ def extract_commands(text: str) -> Iterator[CommandMatch]:
 COMMANDS = {
     "write_public_journal": {
         "triggers": ["public journal", "log this publicly", "write this down for others"],
-        "format": "[COMMAND: write_public_journal] {subject, tags, source} [/COMMAND]",
+        "format": "[COMMAND: write_public_journal] {subject, emotional_tone, tags, source_article_url} [/COMMAND]",
         "handler": lambda payload, **kwargs: handle_journal_command(payload, entry_type="public", **kwargs)
     },
     "write_private_journal": {
         "triggers": ["write private journal"],
-        "format": "[COMMAND: write_private_journal] {subject, emotional_tone, tags} [/COMMAND]",
+        "format": "[COMMAND: write_private_journal] {subject, emotional_tone, tags, source_article_url} [/COMMAND]",
         "handler": lambda payload, **kwargs: handle_journal_command(payload, entry_type="private", **kwargs)
     },
     "speak": {
@@ -359,7 +363,7 @@ COMMAND_HANDLERS = {
 # Main entry point for any response parsing after prompt
 
 def route_user_input(dev_prompt: str, user_prompt: str, images=None, client=None) -> str:
-    response = openai_client.get_openai_response(
+    response = get_openai_response(
         dev_prompt, user_prompt, client=client, images=images, model=muse_config.get("OPENAI_MODEL")
     )
 
@@ -444,7 +448,7 @@ def handle_muse_decision(
 
     full_prompt = dev_prompt + user_prompt
 
-    response = openai_client.get_openai_response(
+    response = get_openai_response(
         dev_prompt,
         user_prompt,
         client,
@@ -636,6 +640,9 @@ def send_to_websocket(text: str, to="frontend", timestamp=None):
         print(f"WebSocket send error: {e}")
 
 async def handle_speak_command(payload, to="frontend", source="frontend"):
+    """
+    This is intended for when the AI prompts itself to speak
+    """
     if utils.is_quiet_hour():
         utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
                                action="speak_skipped", reason="Quiet hours (direct)", text=payload.get("text", ""))
@@ -645,32 +652,22 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     if not subject:
         return "Missing subject for speak command"
 
-    builder = prompt_builder.PromptBuilder(destination="frontend")
-    builder.add_profile()
-    builder.add_core_principles()
-    builder.add_memory_layers(user_query=subject)
-    builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
+    dev_prompt, user_prompt = build_speak_prompt(subject=subject, payload=payload, destination="frontend")
 
-    # 🔥 Include full article if Muse is speaking about one
-    link = payload.get("source_article_url")
-    if link:
-        builder.add_discovery_feed_article(link)
-
-    builder.segments["speech"] = f"[Task]\nYou were asked to speak aloud about the following subject:\n{subject}"
-    prompt = builder.build_prompt()
-
-    response = openai_client.get_openai_response_4(prompt, model=muse_config.get("OPENAI_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, model=muse_config.get("OPENAI_MODEL"))
     timestamp = datetime.now(timezone.utc).isoformat()
     send_to_websocket(response, to, timestamp)
 
     utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
                            action="speak_executed", subject=subject, response=response)
     await api_client.log_message_to_api(response, role="muse", source=source, timestamp=timestamp)
-    #memory_core.log_message("muse", response, source=source)
     return ""
 
 
 async def handle_speak_direct(payload, source="frontend"):
+    """
+    This is intended for when the AI tells itself exactly what to say over another interface
+    """
     if utils.is_quiet_hour():
         utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
                                action="speak_skipped", reason="Quiet Hours (direct)", text=payload.get("text", ""))
@@ -741,30 +738,18 @@ async def handle_send_reminders(payload, source="reminder", reminders=None, **kw
     return ""
 
 def handle_journal_command(payload, entry_type="public", source=None):
-    title = payload.get("subject", "Untitled")
+    subject = payload.get("subject", "Untitled")
     mood = payload.get("emotional_tone", "reflective")
     tags = payload.get("tags", [])
-    source = payload.get("source", "muse")
+    source = "muse"
 
-    builder = prompt_builder.PromptBuilder()
-    builder.add_profile()
-    builder.add_core_principles()
-    builder.add_memory_layers(user_query=title)
-    builder.add_prompt_context(user_input=title, projects_in_focus=[], blend_ratio=0.0)
+    dev_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
 
-    # 🔥 New: Add article reference if present
-    link = payload.get("source_article_url")
-    if link:
-        builder.add_discovery_feed_article(link)
-
-    builder.segments["task"] = f"[Task]\nWrite a {'private' if entry_type == 'private' else 'public'} journal entry about this:\n{title}"
-    prompt = builder.build_prompt()
-
-    body = openai_client.get_openai_response_4(prompt, model=muse_config.get("OPENAI_FULL_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, model=muse_config.get("OPENAI_FULL_MODEL"))
 
     journal_core.create_journal_entry(
-        title=title,
-        body=body,
+        title=subject,
+        body=response,
         mood=mood,
         tags=tags,
         entry_type=entry_type,

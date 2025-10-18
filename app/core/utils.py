@@ -177,7 +177,7 @@ def format_context_entry(e):
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=ZoneInfo('UTC'))
             dt = dt.astimezone(ZoneInfo(muse_config.get("USER_TIMEZONE")))
-            time_str = dt.strftime("%Y-%m-%d %H:%M")
+            time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             time_str = str(ts)
     else:

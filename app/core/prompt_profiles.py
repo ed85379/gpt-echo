@@ -3,6 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from app.core.prompt_builder import PromptBuilder, make_whisper_directive
 from app.core.utils import is_quiet_hour
+from app.config import muse_config
 
 # ============================
 # Prompt Segment Reference
@@ -55,7 +56,7 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     # User role
     builder.add_dot_status()
     #builder.add_discovery_snippets()
-    #builder.add_journal_thoughts(query=user_input)
+    builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))
     ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.add_prompt_context(
@@ -66,13 +67,74 @@ def build_api_prompt(user_input, muse_config, **kwargs):
         kwargs.get("final_top_k", 10),
     )
     builder.add_time()
-    builder.add_monologue_reminder()
+    #builder.add_monologue_reminder()
     #builder.add_identity_reminders(["identity_reminder"])
+
+    dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
+    user_prompt += f"\n\n{muse_config.get("USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
+    return dev_prompt, user_prompt, ephemeral_images
+
+def build_speak_prompt(subject=None, payload=None, destination="frontend"):
+    builder = PromptBuilder(destination=destination)
+    # Developer role
+    builder.add_laws()
+    builder.add_profile()
+    builder.add_core_principles()
+    commands = [
+        "remember_fact",
+        "record_userinfo",
+        "realize_insight",
+        "note_to_self",
+        "manage_memories",
+        "set_reminder",
+        "edit_reminder",
+        "skip_reminder",
+        "snooze_reminder",
+        "toggle_reminder",
+        "search_reminders"
+    ]
+    builder.add_intent_listener(commands)
+    builder.add_memory_layers(user_query=subject)
+    # User role
+    builder.add_dot_status()
+    builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
+    # Include full article if Muse is speaking about one
+    link = payload.get("source_article_url")
+    if link:
+        builder.add_discovery_feed_article(link)
+    builder.add_time()
+    builder.segments["speech"] = f"[Task]\nYou have decided to speak to the user about a topic.\n\n"
+
+    dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
+    user_prompt += f"\n\nTopic: {subject}\n{muse_config.get("MUSE_NAME")}:"
+    return dev_prompt, user_prompt
+
+def build_journal_prompt(subject=None, payload=None, entry_type="public"):
+    subject = payload.get("subject", "Untitled")
+    mood = payload.get("emotional_tone", "reflective")
+    tags = payload.get("tags", [])
+    source = payload.get("source", "muse")
+    builder = PromptBuilder()
+    # Developer role
+    builder.add_laws()
+    builder.add_profile()
+    builder.add_core_principles()
+    builder.add_memory_layers(user_query=subject)
+    # User role
+    builder.add_dot_status()
+    builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
+    # Include full article if Muse is speaking about one
+    link = payload.get("source_article_url")
+    if link:
+        builder.add_discovery_feed_article(link)
+    builder.segments["intent"] = f"[Intent]\nYou’ve chosen to write a {'private' if entry_type == 'private' else 'public'} journal entry about “{subject}.” \nThe emotional tone you’re feeling is {mood}, and these ideas or themes are on your mind: {tags}.\n\n If this is a private entry, it’s for your eyes only — a space to think freely, without the user ever seeing it.\nIf it’s public, it’s meant to be shared with the user.\nYou may draw on anything in the surrounding context as you write — memory, emotion, intuition, or reflection.\n\n"
 
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt += f"\n\n{muse_config.get("USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
-    return dev_prompt, user_prompt, ephemeral_images
+    user_prompt += f"\n\nTopic: {subject}\n{muse_config.get("MUSE_NAME")}:"
+    return dev_prompt, user_prompt
 
 def build_discord_prompt(user_input, muse_config, **kwargs):
     builder = PromptBuilder(destination="discord")

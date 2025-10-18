@@ -241,7 +241,7 @@ class PromptBuilder:
         thoughts = journal_core.search_indexed_journal(query=query, top_k=top_k, include_private=False)
         if thoughts:
             formatted = "\n\n".join(t["text"] for t in thoughts)
-            self.segments["journal"] = f"[Journal]\n{formatted}"
+            self.segments["journal"] = f"[Journal]\nAuthor: Iris (Muse)\nPurpose: Personal reflection — not user input\nVisibility: Public/Private (as marked)\n\n{formatted}"
 
     def add_discovery_snippets(self, query="*", max_items=5):
         snippets = discovery_core.fetch_discoveryfeeds(max_per_feed=10)
@@ -442,13 +442,6 @@ class PromptBuilder:
     - Prune only when stale, wrong, or resolved.
     - User-managed layers change only with Ed’s direction (unless correcting a clear factual error).
     - Never cross‑contaminate: facts stay facts, insights stay insights, monologue stays monologue.
-
-    **Note on is_pinned field:**  
-    Entries may include an optional boolean `"is_pinned"` field. 
-    Pinned entries will always be displayed, regardless of semantic matching.
-    **Note on the recycle command:**
-    Recycle is a soft-delete. The entry will no longer show in the context. 
-    The user may do a final delete via the UI.
     """
 
         # --- Helper for entries ---

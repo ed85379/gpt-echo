@@ -9,8 +9,8 @@ import websockets
 import json
 from app import config
 from app.config import muse_config
-from app.core import memory_core
-from app.services import openai_client
+from app.core.memory_core import log_message
+from app.services.openai_client import get_openai_response, discord_openai_client
 from app.core.prompt_profiles import build_discord_prompt
 
 DISCORD_TOKEN = config.DISCORD_TOKEN
@@ -65,7 +65,7 @@ async def handle_incoming_discord_message(message):
             user_input = message.content.strip()
 
             # Log the incoming user message
-            await memory_core.log_message(
+            await log_message(
                 role=get_user_role(message.author.id),
                 message=user_input,
                 source="discord",
@@ -86,12 +86,12 @@ async def handle_incoming_discord_message(message):
             )
             print(user_prompt)
             # Get Muse's response
-            muse_response = openai_client.get_openai_response_new(dev_prompt, user_prompt)
+            muse_response = get_openai_response(dev_prompt, user_prompt, client=discord_openai_client)
             #print("🧠 Muse response generated:")
             #print(muse_response)
 
             # Log Muse reply
-            await memory_core.log_message(
+            await log_message(
                 role="muse",
                 message=muse_response,
                 source="discord",

@@ -27,10 +27,9 @@ from app.api.routers.memory_api import router as memory_router
 from app.api.routers.import_api import router as import_router
 from app.api.routers.projects_api import router as projects_router
 from app.api.routers.files_api import router as files_router
+from app.services.openai_client import api_openai_client, audio_openai_client
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 
-
-client = OpenAI(api_key=config.OPENAI_API_KEY)  # Uses api key from env or config
 JOURNAL_DIR = config.JOURNAL_DIR
 JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
 MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
@@ -203,10 +202,10 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         injected_file_ids=injected_file_ids,
         ephemeral_files=ephemeral_files,
     )
-    print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
+    #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
     print(f"USER_PROMPT:\n" + user_prompt)
     # Get Muse's response
-    response = route_user_input(dev_prompt, user_prompt, images=ephemeral_images)
+    response = route_user_input(dev_prompt, user_prompt, client=api_openai_client, images=ephemeral_images)
     cleaned = response.strip()
     if not cleaned:
         # Only commands were present; nothing to display in frontend
@@ -287,7 +286,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
             f.write(audio_data)
 
         with open("temp_audio.wav", "rb") as audio_file:
-            transcript = client.audio.transcriptions.create(
+            transcript = audio_openai_client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file
             )

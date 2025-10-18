@@ -1,15 +1,15 @@
 import asyncio
 import random
-from app.core import muse_initiator
+from app.core.muse_initiator import run_whispergate, run_discoveryfeeds_lookup, run_check_reminders
 from app.core import utils
 
 
 # --- Scheduled Tasks ---
 scheduled_tasks = [
-    {"name": "whispergate", "interval": 3600, "function": muse_initiator.run_whispergate},
+    {"name": "whispergate", "interval": 3600, "function": run_whispergate},
 #    {"name": "check_dropped_threads", "interval": 3600, "function": muse_initiator.run_dropped_threads_check},
-    {"name": "discovery_feed", "interval": 3600, "function": muse_initiator.run_discoveryfeeds_lookup},
-    {"name": "reminder_checker", "interval": 60, "function": muse_initiator.run_check_reminders},
+    {"name": "discovery_feed", "interval": 3600, "function": run_discoveryfeeds_lookup},
+    {"name": "reminder_checker", "interval": 60, "function": run_check_reminders},
 #    {"name": "inactivity_checker", "interval": 1800, "function": muse_initiator.run_inactivity_check},
 #    {"name": "dreamtime", "interval": 86400, "function": muse_initiator.run_dream_gate},
 #    {"name": "introspection_engine", "interval": 86400, "function": muse_initiator.run_introspection_engine},

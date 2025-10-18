@@ -17,7 +17,7 @@ from app.config import muse_config
 from app.core.utils import write_system_log, align_cron_for_croniter
 from app.core import utils
 from app.databases.mongo_connector import mongo
-from app.services import openai_client
+from app.services.openai_client import get_openai_autotags
 from app.databases import memory_indexer
 from app.api.queues import index_memory_queue
 from app.databases.qdrant_connector import delete_point, query as qdrant_query
@@ -66,7 +66,7 @@ async def log_message(role, message, source="frontend", metadata=None, flags=Non
 
     # Always auto-tag the message
     try:
-        auto_tags = openai_client.get_openai_autotags(message)
+        auto_tags = get_openai_autotags(message)
     except Exception as e:
         auto_tags = []
         print(f"[auto-tag error]: {e}")
