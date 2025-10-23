@@ -75,7 +75,7 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     user_prompt += f"\n\n{muse_config.get("USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
     return dev_prompt, user_prompt, ephemeral_images
 
-def build_speak_prompt(subject=None, payload=None, destination="frontend"):
+def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwargs):
     builder = PromptBuilder(destination=destination)
     # Developer role
     builder.add_laws()
@@ -94,7 +94,7 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend"):
         "toggle_reminder",
         "search_reminders"
     ]
-    builder.add_intent_listener(commands)
+    builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers(user_query=subject)
     # User role
     builder.add_dot_status()
@@ -144,14 +144,14 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
     builder.add_core_principles()
     builder.add_memory_layers(user_query=user_input)
     # User role
-    builder.add_dot_status()
+    #builder.add_dot_status()
     builder.add_prompt_context(user_input, [], 0.0)
-    builder.add_monologue_reminder()
+    #builder.add_monologue_reminder()
     builder.add_formatting_instructions()
 
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt += f"\n\n{kwargs.get("author_name")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\n[Discord] {kwargs.get("author_name")}: {user_input}\n\n[Discord] {muse_config.get("MUSE_NAME")}:"
     return dev_prompt, user_prompt
 
 def build_check_reminders_prompt(reminders):
