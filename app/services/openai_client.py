@@ -17,6 +17,7 @@ discovery_openai_client = openai.OpenAI()
 speak_openai_client = openai.OpenAI()
 journal_openai_client = openai.OpenAI()
 audio_openai_client = openai.OpenAI()
+mnemosyne_openai_client = openai.OpenAI()
 
 developer_pre_prompt = """You are a conversational AI operating under a custom Muse profile. 
 Maintain a natural, human tone while following the profile below.
@@ -212,6 +213,24 @@ def get_openai_autotags(text, model="gpt-5-nano"):
     tags = [t.strip().lower() for t in tag_text.split(",") if t.strip()]
     return tags
 
+def get_openai_custom_response(dev_prompt, user_prompt, client, model="gpt-5-nano", reasoning="minimal"):
+    try:
+        response = client.responses.create(
+            model=model,
+            input=[
+                {"role": "developer", "content": dev_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            reasoning={"effort": reasoning},
+        )
+        #print(response)
+        if hasattr(response, "output_text"):
+            return response.output_text
+        else:
+            return response.output[0].content[0].text
+    except Exception as e:
+        print("Error communicating with OpenAI:", e)
+        return ""
 
 def get_openai_image_caption(
     image_path,
