@@ -35,7 +35,7 @@ def assign_message_id(msg, filename=None, index=None):
 
 async def build_index(dryrun=False, message_id=None):
     """
-    Indexes messages from Mongo to Qdrant and GraphDB.
+    Indexes messages from Mongo to Qdrant.
     - If message_id is given, only update that message.
     - If not, updates all messages that are new or changed.
     """
@@ -79,16 +79,6 @@ async def build_index(dryrun=False, message_id=None):
             ).encode([text])[0]  # Generate the embedding vector
             qdrant_connector.upsert_single(qdrant_entry, vector)  # Upsert to Qdrant
         updated_qdrant += 1
-
-        # ---- GraphDB update ----
-        graphdb_success = True
-        if not dryrun:
-            try:
-                graphdb_connector.create_message_and_user(mg, doc)
-            except Exception as e:
-                print(f"[GraphDB ERROR] message_id={msg_id} - {e}")
-                graphdb_success = False
-        updated_graphdb += 1 if graphdb_success else 0
 
         # ---- Mark as indexed ----
         if not dryrun:
