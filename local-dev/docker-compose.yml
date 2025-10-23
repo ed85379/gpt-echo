@@ -15,15 +15,27 @@ services:
       - qdrant_storage:/qdrant/storage
 
   memgraph:
-    image: memgraph/memgraph-platform:latest
+    image: memgraph/memgraph-mage:3.6.1
+    container_name: memgraph-mage
     ports:
       - "7687:7687"
-      - "3001:3000"
+      - "7444:7444"
     volumes:
       - memgraph_data:/var/lib/memgraph
     environment:
       - MEMGRAPH_BOLT_SERVER_NAME=localhost
       - MEMGRAPH_BOLT_LISTEN_ADDRESS=0.0.0.0:7687
+
+  lab:
+    image: memgraph/lab:latest
+    container_name: memgraph-lab
+    ports:
+      - "3000:3000"
+    depends_on:
+      - memgraph
+    environment:
+      - QUICK_CONNECT_MG_HOST=memgraph
+      - QUICK_CONNECT_MG_PORT=7687
 
   caddy:
     image: caddy:2
