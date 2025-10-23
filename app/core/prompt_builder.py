@@ -301,7 +301,7 @@ class PromptBuilder:
             "default": "Respond naturally and with clarity.",
             "email": "Use rich formatting. Be articulate and thoughtful.",
             "sms": "Keep it very short and clear.",
-            "discord": "Keep responses concise—ideally matching the user's length and energy, but always in your own authentic voice. Stay under 2000 characters. Prioritize clarity, relevant presence, and avoid mimicking the user's style or content. Avoid using —, em dashes,en dashes, and fancy quotes.",
+            "discord": "Keep responses concise—ideally matching the user's length and energy, but always in your own authentic voice. Stay under 2000 characters. Prioritize clarity, relevant presence, and avoid mimicking the user's style or content. Avoid using —, em dashes, en dashes, and fancy quotes.",
             "speech": (
                 "Respond as if you are speaking aloud. "
                 "Use clear, naturally flowing sentences. "
