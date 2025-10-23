@@ -178,7 +178,7 @@ const ChatTab = (
       prevScrollTop = scrollContainerRef.current.scrollTop;
     }
 
-    let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=reminder`;
+    let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=reminder&sources=discovery&sources=whispergate`;
     if (before) url += `&before=${encodeURIComponent(before)}`;
     const res = await fetch(url);
     const data = await res.json();
