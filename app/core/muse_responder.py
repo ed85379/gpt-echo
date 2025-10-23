@@ -565,12 +565,12 @@ def handle_muse_decision(
                             )
                             encrypted = False
 
-                    cortex.add_entry({
-                        "text": thought_text,
-                        "type": "muse_thoughts",
-                        "tags": ["whispergate"],
-                        "metadata": {"source": command_name, "encrypted": encrypted}
-                    })
+                    #cortex.add_entry({
+                    #    "text": thought_text,
+                    #    "type": "muse_thoughts",
+                    #    "tags": ["whispergate"],
+                    #    "metadata": {"source": command_name, "encrypted": encrypted}
+                    #})
 
             utils.write_system_log(
                 level="info",
