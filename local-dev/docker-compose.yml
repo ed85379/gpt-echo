@@ -30,7 +30,7 @@ services:
     image: memgraph/lab:latest
     container_name: memgraph-lab
     ports:
-      - "3000:3000"
+      - "3001:3000"
     depends_on:
       - memgraph
     environment:
