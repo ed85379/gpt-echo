@@ -21,6 +21,9 @@ def format_visible_reminders(entry: dict) -> str:
     if entry.get("ends_on"):
         parts.append(f"(ends: {entry['ends_on']})")
 
+    if entry.get("status"):
+        parts.append(f"(status: {entry['status']})")
+
     return " ".join(parts)
 
 def humanize_time(desc: str) -> str:
@@ -307,7 +310,7 @@ def handle_search_reminders(payload):
     results = manager.search_entries("reminders", mongo_query, limit=limit)
 
     # Shape results for the filter layer
-    return [
+    results_list = [
         {
             "id": r["id"],
             "text": r.get("text", ""),
@@ -315,7 +318,11 @@ def handle_search_reminders(payload):
             "schedule": r.get("schedule", {}),
             "status": r.get("status", "enabled"),
             "skip_until": r.get("skip_until"),
-            "ends_on": r.get("ends_on")
+            "ends_on": r.get("ends_on"),
         }
         for r in results
     ]
+    return {
+        "query": query,  # ← include the original search parameters here
+        "results": results_list  # ← the actual reminder data
+    }

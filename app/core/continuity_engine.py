@@ -2,7 +2,10 @@ import asyncio
 import random
 from app.core.muse_initiator import run_whispergate, run_discoveryfeeds_lookup, run_check_reminders
 from app.core import utils
-
+from app.api.queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
+from app.interfaces.websocket_server import broadcast_message
+from app.core.memory_core import log_message
+from app.databases.memory_indexer import build_index
 
 # --- Scheduled Tasks ---
 scheduled_tasks = [
@@ -50,6 +53,11 @@ async def task_runner(task):
 
 # --- Main Event Loop ---
 async def main():
+    # launch queue consumers
+    asyncio.create_task(run_log_queue(log_queue, log_message))
+    asyncio.create_task(run_index_queue(index_queue, build_index))
+
+    # launch your scheduled tasks
     await asyncio.gather(
         *(task_runner(task) for task in scheduled_tasks),
     )

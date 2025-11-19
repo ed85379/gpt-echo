@@ -1,26 +1,23 @@
 # muse_responder.py
 # This module handles all model response routing and command execution
 import asyncio
-import httpx
+import httpx, time
 import re, json
 from typing import Iterator, NamedTuple, Optional
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from openai import OpenAI
-from cron_descriptor import get_description
 from app.core import journal_core
 from app.core.memory_core import cortex, manager
-from app.core import discovery_core
 from app.core import utils
 from app.services.openai_client import get_openai_response
-from app.core import prompt_builder
 from app.config import muse_config
-from app.services import api_client
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
 from app.core.utils import serialize_doc, stringify_datetimes
 from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
 from app.services.openai_client import speak_openai_client, journal_openai_client
+from app.api.queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
+
 
 
 CMD_OPEN = re.compile(r"\[COMMAND:\s*([^\]]+)\]\s*", re.DOTALL)
@@ -335,12 +332,17 @@ COMMANDS = {
             "} [/COMMAND]"
         ),
         "handler": lambda payload: handle_search_reminders(payload),
-        "filter": lambda results: {
-            "visible": "\n".join([
-                f"[Reminder found: (id - {r['id']}) {format_visible_reminders(r)}]"
-                for r in results
-            ]) if results else "[No matching reminders found.]",
-            "hidden": results
+        "filter": lambda data: {
+            "visible": (
+                f"[Search query] {data['query']}\n"
+                + "\n".join([
+                    f"[Reminder found: (id - {r['id']}) {format_visible_reminders(r)}]"
+                    for r in data["results"]
+                ])
+                if data["results"]
+                else f"[Search query] {data['query']}\n[No matching reminders found.]"
+            ),
+            "hidden": data["results"]
         }
     },
     "change_modality": {
@@ -627,17 +629,25 @@ def handle_reminder(payload):
     return cortex.add_entry(payload)
 
 
-def send_to_websocket(text: str, to="frontend", timestamp=None):
-    try:
-        response = httpx.post(
-            f"{muse_config.get("API_URL")}/internal/broadcast",
-            json={"message": text, "to": to, "timestamp": timestamp},
-            timeout=5  # optional: fail fast if something goes wrong
-        )
-        if response.status_code != 200:
-            print(f"WebSocket send failed: {response.status_code} - {response.text}")
-    except Exception as e:
-        print(f"WebSocket send error: {e}")
+def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay=0.3):
+    payload = {"message": text, "to": to, "timestamp": timestamp}
+    for attempt in range(1, retries + 1):
+        try:
+            response = httpx.post(
+                f"{muse_config.get('API_URL')}/internal/broadcast",
+                json=payload,
+                timeout=5
+            )
+            if response.status_code == 200:
+                return True
+            else:
+                print(f"WebSocket send failed ({response.status_code}): {response.text}")
+        except Exception as e:
+            print(f"WebSocket send attempt {attempt} error: {e}")
+        if attempt < retries:
+            time.sleep(delay * attempt)
+    print("WebSocket send gave up after retries.")
+    return False
 
 async def handle_speak_command(payload, to="frontend", source="frontend"):
     """
@@ -660,7 +670,12 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
 
     utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
                            action="speak_executed", subject=subject, response=response)
-    await api_client.log_message_to_api(response, role="muse", source=source, timestamp=timestamp)
+    await log_queue.put({
+        "role": "muse",
+        "message": response,
+        "source": source,
+        "timestamp": timestamp
+    })
     return ""
 
 
@@ -683,12 +698,16 @@ async def handle_speak_direct(payload, source="frontend"):
     # Dispatch it directly
     send_to_websocket(text, to, timestamp)
 
-
     utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
                            action="speak_direct_executed", text=text)
     try:
-        await api_client.log_message_to_api(text, role="muse", source=source, timestamp=timestamp)
-        #memory_core.log_message("muse", text, source=source)
+        await log_queue.put({
+            "role": "muse",
+            "message": text,
+            "source": source,
+            "timestamp": timestamp,
+        })
+
     except Exception as e:
         print(f"Logging error: {e}")
     return ""
@@ -721,6 +740,7 @@ async def handle_send_reminders(payload, source="reminder", reminders=None, **kw
     # Send to websocket as the full message
     send_to_websocket(combined_text, to, timestamp)
 
+
     utils.write_system_log(
         level="debug",
         module="core",
@@ -731,7 +751,13 @@ async def handle_send_reminders(payload, source="reminder", reminders=None, **kw
     )
 
     try:
-        await api_client.log_message_to_api(combined_text, role="muse", source=source, timestamp=timestamp)
+        await log_queue.put({
+            "role": "muse",
+            "message": combined_text,
+            "source": source,
+            "timestamp": timestamp,
+            "skip_index": True
+        })
     except Exception as e:
         print(f"Logging error: {e}")
 

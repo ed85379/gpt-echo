@@ -8,7 +8,7 @@ import asyncio
 from app.core.memory_core import log_message
 from app.databases.mongo_connector import mongo
 from app.config import muse_config
-from app.api.queues import index_queue
+from app.api.queues import index_queue, log_queue
 
 
 router = APIRouter(prefix="/api/messages", tags=["messages"])
@@ -87,8 +87,8 @@ def get_messages(
 async def log_message_endpoint(payload: dict = Body(...)):
     # Validate message fields if needed
     try:
-        result = await log_message(**payload)
-        return {"status": "ok", "message_id": result.get("message_id")}
+        await log_queue.put(payload)
+        return {"status": "queued"}
     except Exception as e:
         import traceback
         print("Logging error in /api/messages/log:")

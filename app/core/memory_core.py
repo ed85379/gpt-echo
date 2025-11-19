@@ -40,7 +40,18 @@ model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
 # Chronicle Logging
 # --------------------------
 # <editor-fold desc="📝 Logging Functions">
-async def log_message(role, message, source="frontend", metadata=None, flags=None, user_tags=None, timestamp=None, project_id=None, project_ids=None):
+async def log_message(
+        role,
+        message,
+        source="frontend",
+        metadata=None,
+        flags=None,
+        user_tags=None,
+        timestamp=None,
+        project_id=None,
+        project_ids=None,
+        skip_index: bool = False
+):
     """
     Log a message from any source into the Muse system.
     If timestamp is provided (as str or datetime), use/normalize it; otherwise, use now().
@@ -91,7 +102,8 @@ async def log_message(role, message, source="frontend", metadata=None, flags=Non
     try:
         log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
         mongo.insert_log(muse_config.get("MONGO_CONVERSATION_COLLECTION"), log_entry)
-        await memory_indexer.build_index(message_id=log_entry["message_id"])
+        if not skip_index:
+            await memory_indexer.build_index(message_id=log_entry["message_id"])
     except Exception as e:
         write_system_log(
             level="error",

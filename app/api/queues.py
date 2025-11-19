@@ -53,7 +53,8 @@ async def run_log_queue(
                 role=msg.get("role", "muse"),
                 message=msg["message"],
                 timestamp=msg.get("timestamp"),
-                project_id=msg.get("project_id")
+                project_id=msg.get("project_id"),
+                skip_index=msg.get("skip_index", False)
                 # Add any other fields your log_message expects
             )
         except Exception as e:
