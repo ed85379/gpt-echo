@@ -3,7 +3,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 from dateutil.parser import isoparse
-import re, json
+import re, json, humanize
 from bson import ObjectId
 from charset_normalizer import from_bytes
 from cryptography.fernet import Fernet
@@ -178,16 +178,18 @@ def format_context_entry(e):
                 dt = dt.replace(tzinfo=ZoneInfo('UTC'))
             dt = dt.astimezone(ZoneInfo(muse_config.get("USER_TIMEZONE")))
             time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+            htime = humanize.naturaltime(dt)
         except Exception:
             time_str = str(ts)
     else:
         time_str = ""
+        htime = ""
 
     msg = e.get("message", "")
     # Sanitize command-response blocks
     msg = strip_command_blocks(msg)
     # Combine
-    return f"[{time_str}] {name}: {msg}"
+    return f"[{time_str}] ({htime}) {name} said:\n{msg}"
 
 
 def get_local_time():
