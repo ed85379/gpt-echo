@@ -158,7 +158,7 @@ def get_hidden_project_ids():
     return set(p["_id"] for p in hidden_projects)
 
 
-def get_immediate_context(n=10, hours=2):
+def get_immediate_context(n=10, hours=4):
     now = datetime.utcnow()
     since = now - timedelta(hours=hours)
     hidden_project_ids = get_hidden_project_ids()
@@ -274,11 +274,11 @@ def search_indexed_memory(
     #)
     search_result = qdrant_query(QDRANT_COLLECTION, query, overfetch_k, query_filter)
 
-    print("\n[Raw Search Results]")
-    for i, hit in enumerate(search_result[:50]):
-        pid = hit.payload.get("project_id")
-        pids = hit.payload.get("project_ids")
-        print(f"  Result[{i}] id={hit.payload.get('message_id')[:6]}, proj_id={pid}, proj_ids={pids}")
+    #print("\n[Raw Search Results]")
+    #for i, hit in enumerate(search_result[:50]):
+    #    pid = hit.payload.get("project_id")
+    #    pids = hit.payload.get("project_ids")
+    #    print(f"  Result[{i}] id={hit.payload.get('message_id')[:6]}, proj_id={pid}, proj_ids={pids}")
 
     results = []
     now = time.time()
@@ -327,7 +327,7 @@ def search_indexed_memory(
     # Project focus blending: only if 10-99% (not hard filter)
     if projects_in_focus and 0.0 < blend_ratio < 1.0:
         # Optional: print blend context
-        print(f"\n[Project Focus Blend] projects_in_focus={projects_in_focus}, blend_ratio={blend_ratio}")
+        #print(f"\n[Project Focus Blend] projects_in_focus={projects_in_focus}, blend_ratio={blend_ratio}")
         for i, entry in enumerate(filtered_results):
             project_ids = entry.get("project_ids") or []
             in_focus = (
@@ -350,7 +350,7 @@ def search_indexed_memory(
                     f"proj_ids={project_ids}, "
                     f"pre={pre_score:.3f}, post={post_score:.3f}"
                 )
-        print(f"[Project Focus Blend] Sampled {min(len(filtered_results), 5)} of {len(filtered_results)} entries.")
+        #print(f"[Project Focus Blend] Sampled {min(len(filtered_results), 5)} of {len(filtered_results)} entries.")
 
     # At 100% focus, optionally post-filter any stragglers (such as project_ids files) for complete purity:
     if projects_in_focus and blend_ratio == 1.0:
@@ -368,14 +368,14 @@ def search_indexed_memory(
         print("  IDs:", [entry.get("message_id")[:6] for entry in filtered_results[:5]])
 
     sorted_results = sorted(filtered_results, key=lambda x: x["score"], reverse=True)
-    print("[Final Results] Top entries after blending/filtering:")
-    for i, entry in enumerate(sorted_results[:5]):
-        print(
-            f"  Rank {i + 1}: id={entry.get('message_id')[:6]}..., "
-            f"score={entry['score']:.3f}, "
-            f"proj_id={entry.get('project_id')}, "
-            f"proj_ids={entry.get('project_ids')}"
-        )
+    #print("[Final Results] Top entries after blending/filtering:")
+    #for i, entry in enumerate(sorted_results[:5]):
+    #    print(
+    #        f"  Rank {i + 1}: id={entry.get('message_id')[:6]}..., "
+    #        f"score={entry['score']:.3f}, "
+    #        f"proj_id={entry.get('project_id')}, "
+    #        f"proj_ids={entry.get('project_ids')}"
+    #    )
     return sorted_results[:top_k]
 
 def search_indexed_memories(
