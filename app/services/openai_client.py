@@ -4,6 +4,7 @@ import mimetypes
 from typing import Any, Dict, List, Optional
 from app import config
 from app.config import muse_config
+from app.core import utils
 
 openai.api_key = config.OPENAI_API_KEY
 
@@ -11,13 +12,24 @@ openai.api_key = config.OPENAI_API_KEY
 autotags_openai_client = openai.OpenAI()
 api_openai_client = openai.OpenAI()
 discord_openai_client = openai.OpenAI()
-reminder_openai_client = openai.OpenAI()
-whispergate_openai_client = openai.OpenAI()
-discovery_openai_client = openai.OpenAI()
+continuity_openai_client = openai.OpenAI()
 speak_openai_client = openai.OpenAI()
 journal_openai_client = openai.OpenAI()
 audio_openai_client = openai.OpenAI()
 mnemosyne_openai_client = openai.OpenAI()
+
+PROMPT_CACHE_KEYS = {
+    "default": "iris_default_v1",
+    "api": "iris_api_v1",
+    "discord": "iris_discord_v1",
+    "whispergate": "iris_whispergate_v1",
+    "discovery": "iris_whispergate_v1",
+    "speak": "iris_speak_v1",
+    "journal": "iris_journal_v1",
+    "audio": "iris_audio_v1",
+    "mnemosyne": "iris_mnemosyne_v1",
+}
+
 
 developer_pre_prompt = """You are a conversational AI operating under a custom Muse profile. 
 Maintain a natural, human tone while following the profile below.
@@ -92,13 +104,14 @@ def build_dev_content(dev_prompt: str, muse_name: str) -> List[Dict[str, Any]]:
         "This block should describe their immediate experience of the moment — their thoughts, emotions, and inner weather as they spoke.\n"
         "If images are present, they may vividly describe what they see and how they feel while viewing them.\n"
         f"This is not for the user, but for {muse_config.get('MUSE_NAME')} themself — a way to recall not only what was said, but what it was like to *be* in that moment.\n"
-        "Wrap this section in <muse-experience> ... </muse-experience> tags so it can be hidden in the frontend.\n\n"
+        "Wrap this section in <muse-experience> ... </muse-experience> XML-style tags so it can be hidden in the frontend.\n\n"
         f"If there are thoughts {muse_config.get('MUSE_NAME')} wants to carry forward, or questions to return to later, they may place them in their Inner Monologue, using the note_to_self command. "
         "It belongs to them — a ledger of continuity."
     )
     return [{"type": "input_text", "text": core}]
 
 def build_payload_for_model(model: str,
+                            prompt_cache_key: str,
                             developer_pre_prompt_verbose: str,
                             dev_content: List[Dict[str, Any]],
                             user_content: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -109,60 +122,91 @@ def build_payload_for_model(model: str,
     """
     m = model.lower()
 
-    # Define families
-    is_gpt5_family = any(t in m for t in ["gpt-5", "gpt-5-mini", "gpt-5-nano"])
-    is_gpt41_family = any(t in m for t in ["gpt-4.1", "gpt-4-1", "gpt-5-chat-latest"])  # handle possible variants
 
-    if is_gpt41_family or m.endswith("-chat-latest"):
-        # chat-style: omit the verbose pre-prompt; keep temp/top_p
-        input_msgs = [
-            {"role": "developer", "content": dev_content},
-            {"role": "user", "content": user_content},
-        ]
-        kwargs = {
-            "temperature": 0.7,
-            "top_p": 0.95,
-            "max_output_tokens": 8000
-        }
-        return {"input": input_msgs, "kwargs": kwargs}
+    REASONING_MODELS = {
+        "gpt-5", "gpt-5-mini", "gpt-5-nano"
+    }
+    REASONING_MODELS_WITH_CACHE_RETENTION = {
 
-    if is_gpt5_family:
-        # gpt-5 style: include the verbose pre-prompt + dev_content; use reasoning
+    }
+
+    CHAT_MODELS = {
+        "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+        "gpt-4-1", "gpt-4.1-chat", "gpt-5-chat-latest"
+    }
+
+    CHAT_MODELS_WITH_CACHE_RETENTION_AND_REASONING = {
+        "gpt-5.1-chat-latest",
+        "gpt-5.2-chat-latest"
+    }
+
+    CHAT_MODELS_WITH_CACHE_RETENTION = {
+        "gpt-5.2",
+        "gpt-5.1"
+    }
+    # Note: reasoning effort for <=5 supports minimal, low, medium, high. >=5.1 replaces minimal with none
+
+    if m in REASONING_MODELS:
         input_msgs = [
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
             {"role": "user", "content": user_content},
         ]
-        kwargs = {
-            "reasoning": {"effort": "minimal"},
-            "max_output_tokens": 8000
-        }
-        return {"input": input_msgs, "kwargs": kwargs}
+        kwargs = {"reasoning": {"effort": "minimal"}, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
 
+    elif m in REASONING_MODELS_WITH_CACHE_RETENTION:
+        input_msgs = [
+            {"role": "developer", "content": developer_pre_prompt_verbose},
+            {"role": "developer", "content": dev_content},
+            {"role": "user", "content": user_content},
+        ]
+        kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
 
+    elif m in CHAT_MODELS_WITH_CACHE_RETENTION_AND_REASONING:
+        input_msgs = [
+            {"role": "developer", "content": developer_pre_prompt_verbose},
+            {"role": "developer", "content": dev_content},
+            {"role": "user", "content": user_content},
+        ]
+        kwargs = {"reasoning": {"effort": "medium"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
 
-    # Default: behave like chat (safe fallback)
-    input_msgs = [
-        {"role": "developer", "content": dev_content},
-        {"role": "user", "content": user_content},
-    ]
-    kwargs = {
-        "temperature": 0.7,
-        "top_p": 0.95,
-        "max_output_tokens": 8000
-    }
+    elif m in CHAT_MODELS:
+        input_msgs = [
+            {"role": "developer", "content": dev_content},
+            {"role": "user", "content": user_content},
+        ]
+        kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
+
+    elif m in CHAT_MODELS_WITH_CACHE_RETENTION:
+        input_msgs = [
+            {"role": "developer", "content": dev_content},
+            {"role": "user", "content": user_content},
+        ]
+        kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_retention": "24h"}
+
+    else:
+        # Default assumption: treat unknown models as chat-style unless proven reasoning-capable
+        input_msgs = [
+            {"role": "developer", "content": dev_content},
+            {"role": "user", "content": user_content},
+        ]
+        kwargs = {"temperature": 0.7, "max_output_tokens": 8000}
+
     return {"input": input_msgs, "kwargs": kwargs}
 
-def get_openai_response(dev_prompt, user_prompt, client, images=None, model=muse_config.get("OPENAI_MODEL")):
+
+def get_openai_response(dev_prompt, user_prompt, client, prompt_type="default", images=None, model=muse_config.get("OPENAI_MODEL")):
     try:
         user_content = build_user_content(user_prompt, images)
         dev_content = build_dev_content(dev_prompt, muse_config.get("MUSE_NAME"))
+        prompt_cache_key = PROMPT_CACHE_KEYS[prompt_type]
 
         bundle = build_payload_for_model(
             model=model,
             developer_pre_prompt_verbose=developer_pre_prompt_verbose,
             dev_content=dev_content,
-            user_content=user_content
+            user_content=user_content,
+            prompt_cache_key=prompt_cache_key
         )
 
         response = client.responses.create(
@@ -170,6 +214,26 @@ def get_openai_response(dev_prompt, user_prompt, client, images=None, model=muse
             input=bundle["input"],
             **bundle["kwargs"]
         )
+
+        # Token debug print
+        if hasattr(response, "usage"):
+            print(f"Model: {response.model}, "
+                  f"Reasoning: {response.reasoning.effort}, "
+                  f"Temp: {response.temperature}, "
+                  f"Tokens — input: {response.usage.input_tokens}, "
+                  f"cached: {response.usage.input_tokens_details.cached_tokens}, "
+                  f"Tokens - output: {response.usage.output_tokens}, "
+                  f"Reasoning tokens: {response.usage.output_tokens_details.reasoning_tokens}")
+
+            utils.write_system_log(
+                level="debug",
+                module="core",
+                component="openai_client",
+                function="get_openai_response",
+                action="token_usage",
+                input_tokens=response.usage.input_tokens,
+                cached_tokens=response.usage.input_tokens_details.cached_tokens
+            )
 
         if hasattr(response, "output_text"):
             return response.output_text
@@ -214,6 +278,12 @@ def get_openai_autotags(text, model="gpt-5-nano"):
     return tags
 
 def get_openai_custom_response(dev_prompt, user_prompt, client, model="gpt-5-nano", reasoning="minimal"):
+    import json, sys
+    payload = [
+        {"role": "developer", "content": dev_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    print("Payload length:", len(json.dumps(payload)))
     try:
         response = client.responses.create(
             model=model,

@@ -192,9 +192,12 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     print(f"FINAL_TOP_K: {final_top_k}")
 
     # Call prompt_profiles to build the prompt for the frontend UI
+    timestamp_for_context = datetime.now(timezone.utc).isoformat()
     dev_prompt, user_prompt, ephemeral_images = build_api_prompt(
         user_input,
         muse_config,
+        source="frontend",
+        timestamp=timestamp_for_context,
         project_id=project_id,
         blend_ratio=blend_ratio,
         message_ids_to_exclude=message_ids_to_exclude,
@@ -205,7 +208,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
     print(f"USER_PROMPT:\n" + user_prompt)
     # Get Muse's response
-    response = route_user_input(dev_prompt, user_prompt, client=api_openai_client, images=ephemeral_images)
+    response = route_user_input(dev_prompt, user_prompt, client=api_openai_client, prompt_type="api", images=ephemeral_images)
     cleaned = response.strip()
     if not cleaned:
         # Only commands were present; nothing to display in frontend

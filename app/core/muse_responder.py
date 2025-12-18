@@ -364,9 +364,9 @@ COMMAND_HANDLERS = {
 
 # Main entry point for any response parsing after prompt
 
-def route_user_input(dev_prompt: str, user_prompt: str, images=None, client=None) -> str:
+def route_user_input(dev_prompt: str, user_prompt: str, images=None, client=None, prompt_type="api") -> str:
     response = get_openai_response(
-        dev_prompt, user_prompt, client=client, images=images, model=muse_config.get("OPENAI_MODEL")
+        dev_prompt, user_prompt, client=client, prompt_type=prompt_type, images=images, model=muse_config.get("OPENAI_MODEL")
     )
 
     utils.write_system_log(level="debug", module="core", component="responder",
@@ -454,6 +454,7 @@ def handle_muse_decision(
         dev_prompt,
         user_prompt,
         client,
+        prompt_type="whispergate",
         images=None,
         model=model
     )
@@ -664,7 +665,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
 
     dev_prompt, user_prompt = build_speak_prompt(subject=subject, payload=payload, destination="frontend")
 
-    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, model=muse_config.get("OPENAI_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_config.get("OPENAI_MODEL"))
     timestamp = datetime.now(timezone.utc).isoformat()
     send_to_websocket(response, to, timestamp)
 
@@ -771,7 +772,7 @@ def handle_journal_command(payload, entry_type="public", source=None):
 
     dev_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
 
-    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, model=muse_config.get("OPENAI_FULL_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, prompt_type="journal", model=muse_config.get("OPENAI_FULL_MODEL"))
 
     journal_core.create_journal_entry(
         title=subject,

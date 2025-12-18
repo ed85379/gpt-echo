@@ -1,4 +1,4 @@
-openai~=1.75.0
+openai
 dotenv~=0.9.9
 requests~=2.32.3
 sentence_transformers~=4.1.0

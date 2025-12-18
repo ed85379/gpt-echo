@@ -1,5 +1,6 @@
 # app/core/discord_client.py
 
+from datetime import datetime, timezone
 import discord
 import traceback
 import asyncio
@@ -78,15 +79,18 @@ async def handle_incoming_discord_message(message):
                     "modality_hint": "text"
                 }
             )
+            timestamp_for_context = datetime.now(timezone.utc).isoformat()
             # Call prompt_profiles to build the prompt for the frontend UI
             dev_prompt, user_prompt = build_discord_prompt(
                 user_input,
                 muse_config,
-                author_name=message.author.name
+                author_name=message.author.name,
+                source="discord",
+                timestamp=timestamp_for_context
             )
             print(user_prompt)
             # Get Muse's response
-            muse_response = get_openai_response(dev_prompt, user_prompt, client=discord_openai_client)
+            muse_response = get_openai_response(dev_prompt, user_prompt, client=discord_openai_client, prompt_type="discord")
             #print("🧠 Muse response generated:")
             #print(muse_response)
 

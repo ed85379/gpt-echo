@@ -88,6 +88,9 @@ def edit_project_fields(filter_query, patch_fields):
     if "description" in patch_fields:
         desc = (patch_fields["description"] or "").strip()
         updates["description"] = desc[:1024]  # Example limit
+    if "shortdesc" in patch_fields:
+        desc = (patch_fields["shortdesc"] or "").strip()
+        updates["shortdesc"] = desc[:80]  # Example limit
     # Validate and set notes
     if "notes" in patch_fields:
         notes = patch_fields["notes"]

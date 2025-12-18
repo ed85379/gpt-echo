@@ -22,6 +22,12 @@ LOG_LEVELS = {
     "error": 40,
 }
 
+LOCATIONS = {
+    "frontend": "UI / Frontend",
+    "discord": "Discord",
+    "smartspeaker": "Smart-Speaker",
+}
+
 def write_system_log(level, module=None, component=None, function=None, **fields):
     # Lookup global level (from config or db)
     if LOG_LEVELS[level] < LOG_LEVELS[muse_config.get("LOG_VERBOSITY")]:
@@ -156,7 +162,32 @@ def strip_command_blocks(text):
 
     return re.sub(r"<command-response>.*?</command-response>", summarize, text, flags=re.DOTALL)
 
-def format_context_entry(e):
+def format_journal_entry(t):
+    ts = t.get("timestamp")
+    if ts:
+        try:
+            if isinstance(ts, datetime):
+                dt = ts
+            else:
+                dt = datetime.fromisoformat(ts)
+            date_str = dt.strftime("%Y-%m-%d")
+        except Exception:
+            date_str = str(ts)
+    else:
+        date_str = "Unknown date"
+
+    body = t.get("text", "")
+    return f"Date: {date_str}\n{body}"
+
+def build_project_lookup():
+    projects = mongo.find_documents(
+        "muse_projects",
+        query={},
+        projection={"_id": 1, "name": 1}
+    )
+    return {p["_id"]: p.get("name", "Unnamed Project") for p in projects}
+
+def format_context_entry(e, project_lookup=None):
     role = e.get("role", "")
     if role == "user":
         name = muse_config.get("USER_NAME") or "User"
@@ -165,31 +196,85 @@ def format_context_entry(e):
     else:
         name = role.capitalize() if role else "Unknown"
 
-    # Format timestamp
+    # --- Timestamp handling ---
     ts = e.get("timestamp")
+    dt = None
+    time_str = ""
+    htime = ""
+
     if ts:
         try:
             if isinstance(ts, datetime):
                 dt = ts
             else:
                 dt = datetime.fromisoformat(ts)
-            # Convert to user timezone if not naive
+
+            # Assume UTC if naive, then convert to user TZ
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=ZoneInfo('UTC'))
+                dt = dt.replace(tzinfo=ZoneInfo("UTC"))
             dt = dt.astimezone(ZoneInfo(muse_config.get("USER_TIMEZONE")))
+
             time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
             htime = humanize.naturaltime(dt)
         except Exception:
+            # Fallback: keep raw
             time_str = str(ts)
-    else:
-        time_str = ""
-        htime = ""
+            htime = ""
+    # If no timestamp, both stay empty
 
+    # --- Project label (keyed by ObjectId) ---
+    project_meta = ""
+    project_id = e.get("project_id")
+    if project_id and project_lookup:
+        proj_name = project_lookup.get(project_id)
+        if proj_name:
+            project_meta = f"[Project: {proj_name}]"
+
+    # --- Source ---
+    source_name = ""
+    source = e.get("source") or ""
+    if source:
+        source_name = f"[Source: {LOCATIONS.get(source)}]"
+
+    # --- Tags ---
+    tags = e.get("user_tags") or []
+    tag_meta = ""
+    if tags:
+        tag_list = ", ".join(tags)
+        tag_meta = f"[Tags: {tag_list}]"
+
+    # --- Message text ---
     msg = e.get("message", "")
-    # Sanitize command-response blocks
     msg = strip_command_blocks(msg)
-    # Combine
-    return f"[{time_str}] ({htime}) {name} said:\n{msg}"
+
+    # --- Build lines ---
+    # Line 1: "5 minutes ago - Ed said:"  (or just "Ed said:" if no htime)
+    if htime:
+        header_line = f"{htime} - {name} said:"
+    else:
+        header_line = f"{name} said:"
+
+    # Line 2: the message itself
+    body_line = msg
+
+    # Line 3: "[2025-12-14 15:30:12] [Project: MemoryMuse]"
+    # If we have neither timestamp nor project, we can omit the line entirely
+    meta_parts = []
+    if time_str:
+        meta_parts.append(f"[{time_str}]")
+    if project_meta:
+        meta_parts.append(project_meta)
+    if source_name:
+        meta_parts.append(source_name)
+    if tag_meta:
+        meta_parts.append(tag_meta)
+
+    if meta_parts:
+        footer_line = " ".join(meta_parts)
+        return f"{header_line}\n{body_line}\n{footer_line}"
+    else:
+        # No timestamp / project — just header + body
+        return f"{header_line}\n{body_line}"
 
 
 def get_local_time():

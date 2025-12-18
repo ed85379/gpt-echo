@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from bson import ObjectId
 from app.core import memory_core, journal_core, discovery_core, utils
 from app.core.memory_core import cortex
 from app.databases import graphdb_connector
@@ -14,6 +15,7 @@ from app.core.muse_profile import muse_profile
 from app.services.gcp_dot import get_dot_status
 
 MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
+MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
 
 def format_profile_sections(sections):
     lines = []
@@ -161,6 +163,54 @@ class PromptBuilder:
         self.segments["ephemeral_files"] = "\n".join(file_blocks)
         return self.ephemeral_images
 
+    def build_conversation_context(self, source_name, author_name, timestamp, proj_name=""):
+        self.segments["conversation_context"] = f"[Conversation Context]\nCurrent Location: {source_name}\nActive Project: {proj_name}\nSpeaking With: {author_name}\nCurrent Time: {timestamp}\n"
+
+    def render_locations(self, current_location: str | None):
+        lines = []
+        for key, label in utils.LOCATIONS.items():
+            marker = "*" if key == current_location else " "
+            lines.append(f"[{marker}] {label}")
+        loc_list = "\n".join(lines)
+        self.segments["locations_list"] = f"[Locations List]\n{loc_list}\n"
+
+    def build_projects_menu(self, active_project_id=None):
+        # Normalize to a list of strings for membership checks
+        if isinstance(active_project_id, list):
+            active_ids = [str(x) for x in active_project_id]
+        elif active_project_id:
+            active_ids = [str(active_project_id)]
+        else:
+            active_ids = []
+
+        def format_project_display(_id, name, shortdesc=None):
+            name = name or "Untitled Project"
+            is_active = str(_id) in active_ids
+            active_marker = "*" if is_active else " "
+            shortdesc_disp = ""
+            if shortdesc:
+                shortdesc_disp = f"\n\t- {shortdesc}"
+            return f"[{active_marker}] {name} (id: {str(_id)}){shortdesc_disp}"
+
+        query = {
+            "hidden": {"$ne": True},
+            "archived": {"$ne": True},
+        }
+        projects = mongo.find_documents(
+            collection_name=MONGO_PROJECTS_COLLECTION,
+            query=query,
+        )
+
+        if projects:
+            proj_list = "\n".join(
+                format_project_display(p.get("_id"), p.get("name"), p.get("shortdesc"))
+                for p in projects
+            )
+        else:
+            proj_list = "(no active projects found)"
+
+        self.segments["project_list"] = f"[Projects List]\n{proj_list}\n"
+
     def add_prompt_context(self, user_input, projects_in_focus, blend_ratio, message_ids_to_exclude=[], final_top_k=15):
         # Pull recents as before
         recent_entries = memory_core.get_immediate_context(n=10, hours=24)
@@ -191,14 +241,16 @@ class PromptBuilder:
         deduped_semantic = [e for e in blended_semantic if e["message_id"] not in seen_ids]
         # Final assembly
         entries = deduped_semantic + recent_entries
+        project_lookup = utils.build_project_lookup()
         if entries:
-            formatted = "\n\n".join(utils.format_context_entry(e) for e in entries)
-            self.segments["conversation_context"] = f"[Conversation Context]\n\n{formatted}"
+            formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)
+            self.segments["conversation_log"] = f"[Conversation Log]\n\n{formatted}"
 
     def add_recent_context(self):
-        entries = memory_core.get_immediate_context()
+        entries = memory_core.get_immediate_context(mode="private")
+        project_lookup = utils.build_project_lookup()
         if entries:
-            formatted = "\n\n".join(utils.format_context_entry(e) for e in entries)
+            formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)
             self.segments["conversation_context"] = f"[Recent Context]\n\n{formatted}"
 
 
@@ -237,11 +289,18 @@ class PromptBuilder:
             )
             self.segments["discord_graphdb_memory"] = f"[Discord Memory]\n\n{formatted}"
 
+
     def add_journal_thoughts(self, query="*", top_k=5):
         thoughts = journal_core.search_indexed_journal(query=query, top_k=top_k, include_private=False)
         if thoughts:
-            formatted = "\n\n".join(t["text"] for t in thoughts)
-            self.segments["journal"] = f"[Journal]\nAuthor: Iris (Muse)\nPurpose: Personal reflection — not user input\nVisibility: Public/Private (as marked)\n\n{formatted}"
+            formatted_entries = "\n\n".join(utils.format_journal_entry(t) for t in thoughts)
+            self.segments["journal"] = (
+                "[Journal]\n"
+                "Author: Iris (Muse)\n"
+                "Purpose: Personal reflection — not user input\n"
+                "Visibility: Public/Private (as marked)\n\n"
+                f"{formatted_entries}"
+            )
 
     def add_discovery_snippets(self, query="*", max_items=5):
         snippets = discovery_core.fetch_discoveryfeeds(max_per_feed=10)
@@ -328,7 +387,7 @@ class PromptBuilder:
             triggers = cmd.get("triggers", [])
             format_str = cmd.get("format", "[COMMAND: ...]")
             # Replace placeholder if project_id is present
-            print(f"DEBUG project_id={project_id!r}")
+            #print(f"DEBUG project_id={project_id!r}")
             if project_id:
                 # handle if project_id is a list
                 if isinstance(project_id, list) and project_id:

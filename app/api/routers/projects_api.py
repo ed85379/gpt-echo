@@ -30,6 +30,7 @@ def get_projects():
             "_id": str(project["_id"]),
             "name": project.get("name") or "",
             "description": project.get("description") or "",
+            "shortdesc": project.get("shortdesc") or "",
             "tags": project.get("tags", []),
             "notes": project.get("notes", []),
             "hidden": project.get("hidden", False),

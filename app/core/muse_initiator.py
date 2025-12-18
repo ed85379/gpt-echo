@@ -11,7 +11,7 @@ from app.core.muse_responder import handle_muse_decision
 from app.core.memory_core import cortex
 from app.core import prompt_profiles
 from app.core.reminders_core import handle_edit, search_for_timely_reminders
-from app.services.openai_client import reminder_openai_client, whispergate_openai_client, discovery_openai_client
+from app.services.openai_client import continuity_openai_client
 
 
 # <editor-fold desc="run_whispergate">
@@ -21,7 +21,7 @@ def run_whispergate():
     dev_prompt, user_prompt = prompt_profiles.build_whispergate_prompt()
     print("Prompt built. Sending to model...")
 
-    response = handle_muse_decision(dev_prompt, user_prompt, client=whispergate_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="frontend")
+    response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="frontend")
     #print("WhisperGate prompt:", prompt)
     utils.write_system_log(level="info", module="core", component="initiator", function="run_whispergate",
                            action="whispergate_response", response=response)
@@ -97,7 +97,7 @@ def run_discoveryfeeds_lookup():
     dev_prompt, user_prompt = prompt_profiles.build_discoveryfeeds_lookup_prompt()
     print("Prompt built. Sending to model...")
 
-    response = handle_muse_decision(dev_prompt, user_prompt, client=discovery_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="discovery")
+    response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="discovery")
     #print("WhiserGate prompt:", prompt)
 
     utils.write_system_log(level="info", module="core", component="initiator", function="run_discoveryfeeds_lookup",
@@ -118,7 +118,7 @@ def run_check_reminders():
         dev_prompt, user_prompt = prompt_profiles.build_check_reminders_prompt(reminders)
         print("Prompt built. Sending to model...")
 
-        response = handle_muse_decision(dev_prompt, user_prompt, client=reminder_openai_client ,model=muse_config.get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": reminders})
+        response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": reminders})
         # print("WhisperGate prompt:", prompt)
 
         utils.write_system_log(level="info", module="core", component="initiator", function="run_check_reminders",

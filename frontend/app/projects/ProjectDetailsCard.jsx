@@ -3,6 +3,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { SquarePlus, SquarePen } from 'lucide-react';
 
 const MAX_LENGTH_DESC = 512;
+const MAX_LENGTH_SHORTDESC = 80;
 const MAX_LENGTH_NOTE = 256;
 const MAX_LENGTH_TAG = 24;
 
@@ -217,10 +218,11 @@ function TagEditor({
 
 // --- Details Card with Editable Fields ---
 function ProjectDetailsCard({ project, projectMap, projects, projectsLoading, onToggleVisibility, toggleLoading, onProjectChange }) {
-  const [editing, setEditing] = useState({name: false, description: false, tags: false, notes: false});
+  const [editing, setEditing] = useState({name: false, description: false, shortdesc: false, tags: false, notes: false});
   const [draft, setDraft] = useState({
     name: project.name,
-    description: project.description ?? ""
+    description: project.description ?? "",
+    shortdesc: project.shortdesc ?? ""
   });
   const [tagList, setTagList] = useState(project.tags || []);
   const [noteList, setNoteList] = useState(project.notes || []);
@@ -228,10 +230,11 @@ function ProjectDetailsCard({ project, projectMap, projects, projectsLoading, on
 
   // Only reset local state when switching projects (not on every save/edit)
   useEffect(() => {
-    setEditing({name: false, description: false, tags: false, notes: false});
+    setEditing({name: false, description: false, shortdesc: false, tags: false, notes: false});
     setDraft({
       name: project.name,
-      description: project.description ?? ""
+      description: project.description ?? "",
+      shortdesc: project.shortdesc ?? ""
     });
     setTagList(project.tags || []);
     setNoteList(project.notes || []);
@@ -339,6 +342,69 @@ const handleSaveTags = () => {
             {project.description || <span style={{ color: "#777" }}>none</span>}
           </span>
           <SquarePen size={18} strokeWidth={1.5} onClick={() => handleEdit("description")} style={{ cursor: "pointer" }} />
+        </div>
+      )}
+    </div>
+        <div style={{ marginBottom: 18 }}>
+          <span style={{ fontWeight: "bold", color: "#bbb" }}>Short Description: </span>
+      {editing.shortdesc ? (
+        <form
+          onSubmit={e => { e.preventDefault(); handleSave("shortdesc"); }}
+          style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}
+        >
+          <textarea
+            value={draft.shortdesc}
+            onChange={e => setDraft(d => ({ ...d, shortdesc: e.target.value }))}
+            maxLength={MAX_LENGTH_SHORTDESC}
+            autoFocus
+            rows={1}
+            style={{
+              fontWeight: "bold",
+              fontSize: 16,
+              background: "none",
+              color: "#fff",
+              border: draft.shortdesc.length > MAX_LENGTH_SHORTDESC ? "2px solid #f55" : "1px solid #666",
+              borderRadius: 6,
+              outline: "none",
+              width: "100%",
+              padding: "6px 12px",
+              marginBottom: 4,
+              minWidth: 280
+            }}
+            onBlur={() => handleSave("shortdesc")}
+          />
+          <div
+            style={{
+              textAlign: "right",
+              fontSize: 12,
+              color: draft.shortdesc.length > MAX_LENGTH_SHORTDESC ? "#f55" : "#bbb",
+              alignSelf: "flex-end",
+              marginBottom: 4,
+            }}
+          >
+            {draft.shortdesc.length}/{MAX_LENGTH_SHORTDESC}
+          </div>
+          {/* Optional: Save/Cancel buttons */}
+          {/* <div>
+            <button style={miniBtnStyle} type="submit">Save</button>
+            <button style={miniBtnStyle} type="button" onClick={() => setEditing(e => ({ ...e, shortdesc: false }))}>Cancel</button>
+          </div> */}
+        </form>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}>
+          <span style={{
+            background: "#16162a",
+            color: "#cbd5fa",
+            borderRadius: 6,
+            padding: "6px 12px",
+            display: "inline-block",
+            fontSize: 15,
+            minWidth: 280,
+            marginBottom: 4,
+          }}>
+            {project.shortdesc || <span style={{ color: "#777" }}>none</span>}
+          </span>
+          <SquarePen size={18} strokeWidth={1.5} onClick={() => handleEdit("shortdesc")} style={{ cursor: "pointer" }} />
         </div>
       )}
     </div>

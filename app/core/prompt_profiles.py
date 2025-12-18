@@ -1,8 +1,9 @@
 # prompt_profiles.py
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from bson import ObjectId
 from app.core.prompt_builder import PromptBuilder, make_whisper_directive
-from app.core.utils import is_quiet_hour
+from app.core.utils import is_quiet_hour, build_project_lookup, LOCATIONS
 from app.config import muse_config
 
 # ============================
@@ -32,7 +33,26 @@ SEGMENT_MANIFEST = [
 
 def build_api_prompt(user_input, muse_config, **kwargs):
     builder = PromptBuilder()
-    # Developer role
+    # Set variables for certain builder segments
+    timestamp = kwargs.get("timestamp", "")
+    source = kwargs.get("source", "")
+    project_lookup = build_project_lookup()
+    project_meta = ""
+    project_id_raw = kwargs.get("project_id")  # may be None or ""
+    project_id = None
+    proj_name = ""
+    if project_id_raw:
+        try:
+            project_id = ObjectId(project_id_raw)
+        except Exception:
+            project_id = None  # bad ID, just treat as no project
+    if project_id and project_lookup:
+        proj_name = project_lookup.get(project_id)
+        if proj_name:
+            project_meta = f"[Project: {proj_name}] "
+    source_name = LOCATIONS.get(source, source or "Unknown Source")
+    author_name = muse_config.get("USER_NAME", "Unknown Person")
+    # Developer role segments
     builder.add_laws()
     builder.add_profile()
     builder.add_core_principles()
@@ -53,12 +73,16 @@ def build_api_prompt(user_input, muse_config, **kwargs):
         commands.append("remember_project_fact")
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
-    # User role
+
+    # User role segments
     builder.add_dot_status()
     #builder.add_discovery_snippets()
     builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))
     ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
+    builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
+    builder.render_locations(current_location=source)
+    builder.build_conversation_context(source_name, author_name, timestamp, proj_name)
     builder.add_prompt_context(
         user_input,
         [kwargs.get("project_id")] if kwargs.get("project_id") else [],
@@ -69,10 +93,10 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     builder.add_time()
     #builder.add_monologue_reminder()
     #builder.add_identity_reminders(["identity_reminder"])
-
+    footer = f"[{timestamp}] {project_meta}[Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
-    user_prompt += f"\n\n{muse_config.get("USER_NAME")}: {user_input}\n{muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\nRight now - {muse_config.get("USER_NAME")} said: {user_input}\n{footer}\n\n{muse_config.get("MUSE_NAME")}:"
     return dev_prompt, user_prompt, ephemeral_images
 
 def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwargs):
@@ -138,20 +162,29 @@ def build_journal_prompt(subject=None, payload=None, entry_type="public"):
 
 def build_discord_prompt(user_input, muse_config, **kwargs):
     builder = PromptBuilder(destination="discord")
-    # Developer role
+    # Set variables for certain builder segments
+    timestamp = kwargs.get("timestamp", "")
+    source = kwargs.get("source", "discord")
+    source_name = LOCATIONS.get(source, source or "Unknown Source")
+    author_name = kwargs.get("author_name")
+    # Developer role segments
     builder.add_laws()
     builder.add_profile()
     builder.add_core_principles()
     builder.add_memory_layers(user_query=user_input)
-    # User role
+
+    # User role segments
     #builder.add_dot_status()
+    builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
+    builder.render_locations(current_location=source)
+    builder.build_conversation_context(source_name, author_name, timestamp)
     builder.add_prompt_context(user_input, [], 0.0)
     #builder.add_monologue_reminder()
     builder.add_formatting_instructions()
-
+    footer = f"[{timestamp}] [Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt += f"\n\n[Discord] {kwargs.get("author_name")}: {user_input}\n\n[Discord] {muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\n[Discord] {kwargs.get("author_name")} said: {user_input}\n{footer}\n\n[Discord] {muse_config.get("MUSE_NAME")}:"
     return dev_prompt, user_prompt
 
 def build_check_reminders_prompt(reminders):
