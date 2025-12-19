@@ -28,6 +28,10 @@ LOCATIONS = {
     "smartspeaker": "Smart-Speaker",
 }
 
+SOURCES_ALL = ["frontend", "discord", "chatgpt", "reminder", "system", "debug", "internal", "thoughts"]
+SOURCES_CHAT = ["frontend", "discord", "chatgpt"]
+SOURCES_CONTEXT = ["frontend", "discord", "chatgpt", "reminder", "system", "internal", "thoughts"]
+
 def write_system_log(level, module=None, component=None, function=None, **fields):
     # Lookup global level (from config or db)
     if LOG_LEVELS[level] < LOG_LEVELS[muse_config.get("LOG_VERBOSITY")]:

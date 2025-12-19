@@ -158,17 +158,23 @@ def get_hidden_project_ids():
     return set(p["_id"] for p in hidden_projects)
 
 
-def get_immediate_context(n=10, hours=4):
+def get_immediate_context(n=10, hours=4, sources=None):
     now = datetime.utcnow()
     since = now - timedelta(hours=hours)
     hidden_project_ids = get_hidden_project_ids()
-
+    convo_count = n
+    overfetch_limit = convo_count * 2
+    if sources is None:
+        sources = utils.SOURCES_CHAT
     query = {
         "timestamp": {"$gte": since},
-        "source": {"$ne": "file"},
-        "is_private": {"$ne": True},       # Exclude private messages
-        "is_deleted": {"$ne": True}        # Exclude deleted
+        "is_private": {"$ne": True},  # Exclude private messages
+        "is_deleted": {"$ne": True}  # Exclude deleted
+
     }
+
+    query["source"] = {"$in": list(sources)}
+
     if hidden_project_ids:
         query["$or"] = [
             {"project_id": {"$nin": list(hidden_project_ids)}},  # Single-linked
@@ -177,14 +183,26 @@ def get_immediate_context(n=10, hours=4):
         ]
         # This way, messages with *no* project_id are always included, unless otherwise filtered
 
-    logs = mongo.find_logs(
+    raw_messages = mongo.find_logs(
         collection_name="muse_conversations",
         query=query,
-        limit=n,
+        limit=overfetch_limit,
         sort_field="timestamp",
         ascending=False
     )
-    return list(reversed(logs))
+
+    selected = []
+    convo_seen = 0
+    for msg in raw_messages:
+        selected.append(msg)
+
+        if msg.get("source") in utils.SOURCES_CHAT:
+            convo_seen += 1
+            if convo_seen >= convo_count:
+                break
+
+    selected.reverse()
+    return selected
 
 def recency_weight(ts, now=None, half_life_hours=36):
     if not ts:

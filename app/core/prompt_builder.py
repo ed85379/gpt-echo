@@ -213,7 +213,7 @@ class PromptBuilder:
 
     def add_prompt_context(self, user_input, projects_in_focus, blend_ratio, message_ids_to_exclude=[], final_top_k=15):
         # Pull recents as before
-        recent_entries = memory_core.get_immediate_context(n=10, hours=24)
+        recent_entries = memory_core.get_immediate_context(n=10, hours=24, sources=utils.SOURCES_CONTEXT)
 
         # Build your blend dictionary for the search
         # Example: only main + one project, with UI slider ratio
@@ -222,7 +222,7 @@ class PromptBuilder:
             blend[proj] = blend_ratio / len(projects_in_focus)  # Split if multiple
 
         # Build context-bundled query
-        conversation_context = memory_core.get_immediate_context(n=6, hours=0.5)
+        conversation_context = memory_core.get_immediate_context(n=6, hours=0.5, sources=utils.SOURCES_CHAT)
         context_messages = [msg["message"] for msg in conversation_context]
         full_context_query = "\n".join(context_messages + [user_input])
 
@@ -240,14 +240,32 @@ class PromptBuilder:
 
         deduped_semantic = [e for e in blended_semantic if e["message_id"] not in seen_ids]
         # Final assembly
-        entries = deduped_semantic + recent_entries
-        project_lookup = utils.build_project_lookup()
-        if entries:
-            formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)
-            self.segments["conversation_log"] = f"[Conversation Log]\n\n{formatted}"
 
-    def add_recent_context(self):
-        entries = memory_core.get_immediate_context(mode="private")
+        project_lookup = utils.build_project_lookup()
+        #Format sections separately
+        relevant_block = ""
+        if deduped_semantic:
+            formatted_semantic = "\n\n".join(
+                utils.format_context_entry(e, project_lookup=project_lookup)
+                for e in deduped_semantic
+            )
+            relevant_block = f"[Relevant Memories]\n\n{formatted_semantic}"
+
+        convo_block = ""
+        if recent_entries:
+            formatted_recent = "\n\n".join(
+                utils.format_context_entry(e, project_lookup=project_lookup)
+                for e in recent_entries
+            )
+            convo_block = f"[Conversation Log]\n\n{formatted_recent}"
+
+        # Assemble in the order you want them to appear
+        blocks = [b for b in (relevant_block, convo_block) if b]
+        if blocks:
+            self.segments["conversation_log"] = "\n\n\n".join(blocks)
+
+    def add_recent_context(self, sources=None):
+        entries = memory_core.get_immediate_context(sources=sources)
         project_lookup = utils.build_project_lookup()
         if entries:
             formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)

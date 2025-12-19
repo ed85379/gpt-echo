@@ -3,7 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 from app.core.prompt_builder import PromptBuilder, make_whisper_directive
-from app.core.utils import is_quiet_hour, build_project_lookup, LOCATIONS
+from app.core.utils import is_quiet_hour, build_project_lookup, LOCATIONS, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
 from app.config import muse_config
 
 # ============================
@@ -195,7 +195,7 @@ def build_check_reminders_prompt(reminders):
     builder.add_core_principles()
     builder.add_memory_layers(user_query="remember reminder todo schedule")
     # User role
-    builder.add_recent_context()
+    builder.add_recent_context(sources=SOURCES_CONTEXT)
     builder.add_time()
     builder.add_due_reminders(reminders)
     builder.segments["task"] = (
@@ -229,7 +229,7 @@ def build_whispergate_prompt():
     builder.add_core_principles()
     builder.add_memory_layers(user_query="becoming relationship curiosity")
     # User role
-    builder.add_recent_context() # Pulls last 10 lines or upto 2 hours of recent context
+    builder.add_recent_context(sources=SOURCES_CONTEXT) # Pulls last 10 lines or upto 2 hours of recent context
     #builder.add_journal_thoughts()
     builder.add_discovery_articles(max_items=5)
 #    builder.add_cortex_thoughts()
@@ -267,7 +267,7 @@ def build_dropped_threads_check_prompt(muse_config):
     builder.add_core_principles()
     builder.add_memory_layers()
     # User Prompt
-    builder.add_recent_context() # Pulls last 10 lines or upto 2 hours of recent context
+    builder.add_recent_context(sources=SOURCES_CHAT) # Pulls last 10 lines or upto 2 hours of recent context
     builder.add_time()
     now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
