@@ -247,6 +247,12 @@ def format_context_entry(e, project_lookup=None):
         tag_list = ", ".join(tags)
         tag_meta = f"[Tags: {tag_list}]"
 
+    # --- Remembered ---
+    remembered = e.get("remembered") or ""
+    rem_note = ""
+    if remembered:
+        rem_note = f"[Anchor memory (high priority)]"
+
     # --- Message text ---
     msg = e.get("message", "")
     msg = strip_command_blocks(msg)
@@ -272,6 +278,8 @@ def format_context_entry(e, project_lookup=None):
         meta_parts.append(source_name)
     if tag_meta:
         meta_parts.append(tag_meta)
+    if remembered:
+        meta_parts.append(rem_note)
 
     if meta_parts:
         footer_line = " ".join(meta_parts)
