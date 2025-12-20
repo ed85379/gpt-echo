@@ -8,14 +8,32 @@ import ProjectCard from "./ProjectCard"
 const ArchiveIcon = () => <span title="Archived" style={{marginLeft: 4}}>⏸️</span>;
 const PinIcon = () => <span title="Pinned" style={{marginLeft: 4}}>📌</span>;
 
-const StatusDot = ({hidden}) => (
-  <span style={{
-    display: "inline-block",
-    background: hidden ? "#ef4444" : "#22c55e",
-    width: 10, height: 10, borderRadius: 5,
-    marginRight: 6, marginTop: 2
-  }} />
-);
+const StatusDot = ({ is_hidden, is_private }) => {
+  let color;
+
+  if (is_hidden) {
+    // Hidden always wins
+    color = "#ef4444"; // red
+  } else if (is_private) {
+    color = "#a855f7"; // purple (Iris-color)
+  } else {
+    color = "#22c55e"; // green
+  }
+
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        background: color,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        marginRight: 6,
+        marginTop: 2,
+      }}
+    />
+  );
+};
 
 
 // --- Main Tab ---
@@ -96,6 +114,23 @@ function ProjectsTab() {
     }
   };
 
+  const handleTogglePrivacy = async () => {
+    if (!selectedProject) return;
+    setToggleLoading(true);
+    try {
+      const res = await fetch(`/api/projects/${selectedProject._id}/privacy`, {
+        method: "PUT"
+      });
+      if (!res.ok) throw new Error(`Failed to toggle privacy (${res.status})`);
+      await fetchProjects();
+    } catch (e) {
+      alert("Failed to toggle privacy:\n" + e);
+    } finally {
+      setToggleLoading(false);
+    }
+  };
+
+
   const handleToggleArchived = async () => {
     if (!selectedProject) return;
     setToggleLoading(true);
@@ -111,6 +146,12 @@ function ProjectsTab() {
       setToggleLoading(false);
     }
   };
+
+    const getStatusTitle = (project) => {
+      if (project.is_hidden) return "Hidden project";
+      if (project.is_private) return "Private project";
+      return "Public project";
+    };
 
   return (
     <div style={{
@@ -187,11 +228,9 @@ function ProjectsTab() {
                 boxShadow: selectedProjectId === project._id ? "0 2px 8px #0002" : "none"
               }}
               onClick={() => setSelectedProjectId(project._id)}
-              title={project.hidden
-                ? "Project data is hidden from your muse and OpenAI’s systems."
-                : "Project data is accessible to your muse and may be processed by OpenAI."}
+              title={getStatusTitle(project)}
             >
-              <StatusDot hidden={project.hidden} />
+              <StatusDot is_hidden={project.is_hidden} is_private={project.is_private} />
               <span style={{
                 fontWeight: "bold", flex: 1
               }}>{project.name}</span>
@@ -241,6 +280,7 @@ function ProjectsTab() {
             projects={projects}
             projectsLoading={projectsLoading}
             onToggleVisibility={handleToggleVisibility}
+            onTogglePrivacy={handleTogglePrivacy}
             onToggleArchived={handleToggleArchived}
             toggleLoading={toggleLoading}
             onProjectChange={p => {

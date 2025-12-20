@@ -85,6 +85,7 @@ const MessageItem = React.forwardRef(function MessageItem({
   onAddTag,
   onRemoveTag,
   onTogglePrivate,
+  onToggleHidden,
   onToggleRemembered,
   onDelete,
   tagDialogOpen,
@@ -123,10 +124,11 @@ const MessageItem = React.forwardRef(function MessageItem({
 
   const rightAlign = effectiveRole === "user";
   const isPrivate = !!msg.is_private;
+  const isHidden = !!msg.is_hidden;
   const isRemembered = !!msg.remembered;
   const isDeleted = !!msg.is_deleted;
   const inProject = msg.project_id;
-  const userTags = msg.user_tags?.filter(t => t !== "private" && t !== "deleted" && t !== "remembered") || [];
+  const userTags = msg.user_tags?.filter(t => t !== "private" && t !== "hidden" && t !== "deleted" && t !== "remembered") || [];
   const bubbleWidth = "max-w-[80%]";
 
   return (
@@ -149,6 +151,7 @@ const MessageItem = React.forwardRef(function MessageItem({
             onAddTag={onAddTag}
             onRemoveTag={onRemoveTag}
             onTogglePrivate={onTogglePrivate}
+            onToggleHidden={onToggleHidden}
             onToggleRemembered={onToggleRemembered}
             onDelete={onDelete}
             tagDialogOpen={tagDialogOpen}
@@ -177,6 +180,11 @@ const MessageItem = React.forwardRef(function MessageItem({
           {isPrivate && (
             <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
               <EyeOff size={14} className="inline" /> Private
+            </span>
+          )}
+          {isHidden && (
+            <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <EyeOff size={14} className="inline" /> Hidden
             </span>
           )}
           {isDeleted && (

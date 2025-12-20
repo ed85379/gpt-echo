@@ -217,7 +217,7 @@ function TagEditor({
 }
 
 // --- Details Card with Editable Fields ---
-function ProjectDetailsCard({ project, projectMap, projects, projectsLoading, onToggleVisibility, toggleLoading, onProjectChange }) {
+function ProjectDetailsCard({ project, projectMap, projects, projectsLoading, onToggleVisibility, onTogglePrivacy, toggleLoading, onProjectChange }) {
   const [editing, setEditing] = useState({name: false, description: false, shortdesc: false, tags: false, notes: false});
   const [draft, setDraft] = useState({
     name: project.name,
@@ -488,9 +488,9 @@ const handleSaveTags = () => {
       </div>
 {/*       <div style={{
         marginTop: 10, fontSize: 14,
-        color: project.hidden ? "#ef4444" : "#22c55e"
+        color: project.is_hidden ? "#ef4444" : "#22c55e"
       }}>
-        {project.hidden
+        {project.is_hidden
           ? "Project data is hidden from your muse and OpenAI’s systems."
           : "Project data is accessible to your muse (and may be processed by OpenAI)."}
       </div>

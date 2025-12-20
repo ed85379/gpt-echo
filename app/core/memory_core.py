@@ -147,39 +147,50 @@ async def do_import(collection):
 # Memory Vector Indexing
 # --------------------------
 # <editor-fold desc="📚 Memory Vector Indexing">
-def get_hidden_project_ids():
-    query = {"hidden": True}
+def get_excluded_project_ids(public: bool = False) -> set:
+    query = {"is_hidden": True}
+
+    if public:
+        # In public mode, also exclude private projects
+        query = {
+            "$or": [
+                {"is_hidden": True},
+                {"is_private": True},
+            ]
+        }
+
     projection = {"_id": 1}
-    hidden_projects = mongo.find_documents(
+    projects = mongo.find_documents(
         collection_name="muse_projects",
         query=query,
-        projection=projection
+        projection=projection,
     )
-    return set(p["_id"] for p in hidden_projects)
+    return {p["_id"] for p in projects}
 
-
-def get_immediate_context(n=10, hours=4, sources=None):
+def get_immediate_context(n=10, hours=4, sources=None, public: bool = False):
     now = datetime.utcnow()
     since = now - timedelta(hours=hours)
-    hidden_project_ids = get_hidden_project_ids()
+    excluded_project_ids = get_excluded_project_ids(public=public)
     convo_count = n
     overfetch_limit = convo_count * 2
     if sources is None:
         sources = utils.SOURCES_CHAT
     query = {
         "timestamp": {"$gte": since},
-        "is_private": {"$ne": True},  # Exclude private messages
+        "is_hidden": {"$ne": True},  # Exclude hidden messages
         "is_deleted": {"$ne": True}  # Exclude deleted
 
     }
+    if public:
+        query["is_private"] = {"$ne": True}
 
     query["source"] = {"$in": list(sources)}
 
-    if hidden_project_ids:
+    if excluded_project_ids:
         query["$or"] = [
-            {"project_id": {"$nin": list(hidden_project_ids)}},  # Single-linked
+            {"project_id": {"$nin": list(excluded_project_ids)}},  # Single-linked
             {"project_id": {"$exists": False}},  # Unattached
-            {"project_ids": {"$exists": True, "$nin": list(hidden_project_ids)}}  # Multi-linked: at least one visible
+            {"project_ids": {"$exists": True, "$nin": list(excluded_project_ids)}}  # Multi-linked: at least one visible
         ]
         # This way, messages with *no* project_id are always included, unless otherwise filtered
 
@@ -249,7 +260,8 @@ def search_indexed_memory(
     penalize_muse=False,
     muse_penalty=0.05,
     recency_half_life=48,
-    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, project_boost=1.25, non_project_penalty=0.2
+    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, project_boost=1.25, non_project_penalty=0.2,
+    public: bool = False
 ):
     """
     Search indexed memory via Qdrant, with Project Focus support.
@@ -264,16 +276,20 @@ def search_indexed_memory(
     QDRANT_PORT = int(muse_config.get("QDRANT_PORT"))
     QDRANT_COLLECTION = collection_name
 
-    hidden_project_ids = [str(oid) for oid in get_hidden_project_ids()]
+    excluded_project_ids = [str(oid) for oid in get_excluded_project_ids(public=public)]
     query_filter = {
         "must_not": [
-            {"key": "is_private", "match": {"value": True}},
+            {"key": "is_hidden", "match": {"value": True}},
             {"key": "is_deleted", "match": {"value": True}},
         ]
     }
-    if hidden_project_ids:
+    if public:
         query_filter["must_not"].append(
-            {"key": "project_id", "match": {"any": hidden_project_ids}}
+            {"key": "is_private", "match": {"value": True}}
+        )
+    if excluded_project_ids:
+        query_filter["must_not"].append(
+            {"key": "project_id", "match": {"any": excluded_project_ids}}
         )
 
     # Project focus: hard filter for 100%
@@ -335,7 +351,7 @@ def search_indexed_memory(
         if pids is not None:
             if not pids:
                 filtered_results.append(entry)
-            elif all(pid in hidden_project_ids for pid in pids):
+            elif all(pid in excluded_project_ids for pid in pids):
                 continue
             else:
                 filtered_results.append(entry)

@@ -1,6 +1,6 @@
 "use client";
 import React, {useEffect, useState, useMemo} from "react";
-import {Eye, EyeOff, SquarePlus, SquarePen, Archive, ArchiveX} from 'lucide-react';
+import {Eye, EyeOff, DoorClosed, DoorClosedLocked, SquarePlus, SquarePen, Archive, ArchiveX} from 'lucide-react';
 import ProjectDetailsCard from "./ProjectDetailsCard";
 import ProjectMessages from "./ProjectMessages";
 import ProjectFacts from "./ProjectFacts";
@@ -18,12 +18,19 @@ const MAX_LENGTH_DESC = 512;
 const MAX_LENGTH_NOTE = 256;
 const MAX_LENGTH_TAG = 24;
 
-const EyeIcon = ({hidden}) => (
-    hidden
+const EyeIcon = ({is_hidden}) => (
+    is_hidden
         ? <span title="Hidden from muse" style={{color: "#ef4444", fontSize: 20, marginLeft: 6}}><EyeOff
             size={32}/></span>
         :
         <span title="Accessible to muse" style={{color: "#22c55e", fontSize: 20, marginLeft: 6}}><Eye size={32}/></span>
+);
+const DoorIcon = ({is_private}) => (
+    is_private
+        ? <span title="Will not show in public spaces" style={{color: "#ef4444", fontSize: 20, marginLeft: 6}}><DoorClosedLocked
+            size={32}/></span>
+        :
+        <span title="Available everywhere" style={{color: "#22c55e", fontSize: 20, marginLeft: 6}}><DoorClosed size={32}/></span>
 );
 const ArchiveIcon = ({archived}) => (
     archived
@@ -31,16 +38,16 @@ const ArchiveIcon = ({archived}) => (
         : <span title="Live" style={{color: "#22c55e", fontSize: 20, marginLeft: 6}}><Archive size={32}/></span>
 );
 
-const ToggleVisibilityButton = ({hidden, onToggle, loading}) => (
+const ToggleVisibilityButton = ({is_hidden, onToggle, loading}) => (
     <button
         className="toggle-btn"
         onClick={onToggle}
         disabled={loading}
         style={{
-            background: hidden ? "#ef444433" : "#22c55e33",
-            color: hidden ? "#ef4444" : "#22c55e",
+            background: is_hidden ? "#ef444433" : "#22c55e33",
+            color: is_hidden ? "#ef4444" : "#22c55e",
             border: "1px solid",
-            borderColor: hidden ? "#ef4444" : "#22c55e",
+            borderColor: is_hidden ? "#ef4444" : "#22c55e",
             borderRadius: 7,
             padding: "5px 14px",
             fontWeight: "bold",
@@ -48,13 +55,40 @@ const ToggleVisibilityButton = ({hidden, onToggle, loading}) => (
             fontSize: 12,
             cursor: loading ? "wait" : "pointer"
         }}
-        title={hidden
+        title={is_hidden
             ? "Show this project to your muse (and allow it to be processed by OpenAI)"
             : "Hide this project from your muse and OpenAI"}
     >
         {loading
             ? "…"
-            : hidden ? "Show Project" : "Hide Project"}
+            : is_hidden ? "Show Project" : "Hide Project"}
+    </button>
+);
+
+const TogglePrivacyButton = ({is_private, onToggle, loading}) => (
+    <button
+        className="toggle-btn"
+        onClick={onToggle}
+        disabled={loading}
+        style={{
+            background: is_private ? "#a855f733" : "#22c55e33",
+            color: is_private ? "#a855f7" : "#22c55e",
+            border: "1px solid",
+            borderColor: is_private ? "#a855f7" : "#22c55e",
+            borderRadius: 7,
+            padding: "5px 14px",
+            fontWeight: "bold",
+            marginLeft: 10,
+            fontSize: 12,
+            cursor: loading ? "wait" : "pointer"
+        }}
+        title={is_private
+            ? "Let these messages be available to your muse in public spaces"
+            : "Hide these memories from your muse in public spces"}
+    >
+        {loading
+            ? "…"
+            : is_private ? "Set Public" : "Set Private"}
     </button>
 );
 
@@ -85,9 +119,15 @@ const ToggleArchivedButton = ({archived, onToggle, loading}) => (
     </button>
 );
 
+const getBorderColor = (project) => {
+  if (project.is_hidden) return "#ef4444";
+  if (project.is_private) return "#a855f7";
+  return "#22c55e";
+};
+
 export default function ProjectCard(props) {
-    const {projects, project, onToggleVisibility, onToggleArchived, toggleLoading, onProjectChange, ...rest} = props;
-    const borderColor = project.hidden ? "#ef4444" : "#22c55e";
+    const {projects, project, onToggleVisibility, onTogglePrivacy, onToggleArchived, toggleLoading, onProjectChange, ...rest} = props;
+    const borderColor = getBorderColor(project);
     const [editing, setEditing] = useState({name: false});
     const [draft, setDraft] = useState({
         name: project.name
@@ -276,11 +316,17 @@ export default function ProjectCard(props) {
                     gap: 8,
                 }}>
                     <ToggleVisibilityButton
-                        hidden={project.hidden}
+                        is_hidden={project.is_hidden}
                         onToggle={onToggleVisibility}
                         loading={toggleLoading}
                     />
-                    <EyeIcon hidden={project.hidden}/>
+                    <EyeIcon is_hidden={project.is_hidden}/>
+                    <TogglePrivacyButton
+                        is_private={project.is_private}
+                        onToggle={onTogglePrivacy}
+                        loading={toggleLoading}
+                    />
+                    <DoorIcon is_private={project.is_private}/>
                 </div>
             </header>
 

@@ -66,7 +66,7 @@ const isPinned = fid => injectedFiles.some(f => f.id === fid && f.pinned);
           >
             <option value="">(Select...)</option>
             {projects
-              .filter(proj => !proj.hidden) // Only show non-hidden projects
+              .filter(proj => !proj.is_hidden) // Only show non-hidden projects
               .map(proj => (
                 <option key={proj._id} value={proj._id}>
                   {proj.name}
@@ -75,9 +75,9 @@ const isPinned = fid => injectedFiles.some(f => f.id === fid && f.pinned);
             }
           </select>
           {/* Note about hidden projects */}
-          {projects.filter(proj => proj.hidden).length > 0 && (
+          {projects.filter(proj => proj.is_hidden).length > 0 && (
             <span className="text-xs text-neutral-500">
-              ({projects.filter(proj => proj.hidden).length} hidden project{projects.filter(proj => proj.hidden).length > 1 ? 's' : ''})
+              ({projects.filter(proj => proj.is_hidden).length} hidden project{projects.filter(proj => proj.is_hidden).length > 1 ? 's' : ''})
             </span>
           )}
         </div>

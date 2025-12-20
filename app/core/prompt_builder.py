@@ -174,7 +174,7 @@ class PromptBuilder:
         loc_list = "\n".join(lines)
         self.segments["locations_list"] = f"[Locations List]\n{loc_list}\n"
 
-    def build_projects_menu(self, active_project_id=None):
+    def build_projects_menu(self, active_project_id=None, public: bool = False):
         # Normalize to a list of strings for membership checks
         if isinstance(active_project_id, list):
             active_ids = [str(x) for x in active_project_id]
@@ -193,9 +193,11 @@ class PromptBuilder:
             return f"[{active_marker}] {name} (id: {str(_id)}){shortdesc_disp}"
 
         query = {
-            "hidden": {"$ne": True},
+            "is_hidden": {"$ne": True},
             "archived": {"$ne": True},
         }
+        if public:
+            query["is_private"] = {"$ne": True}
         projects = mongo.find_documents(
             collection_name=MONGO_PROJECTS_COLLECTION,
             query=query,
@@ -211,9 +213,18 @@ class PromptBuilder:
 
         self.segments["project_list"] = f"[Projects List]\n{proj_list}\n"
 
-    def add_prompt_context(self, user_input, projects_in_focus, blend_ratio, message_ids_to_exclude=[], final_top_k=15):
+    def add_prompt_context(self,
+                           user_input,
+                           projects_in_focus,
+                           blend_ratio,
+                           message_ids_to_exclude=[],
+                           final_top_k=15,
+                           public: bool = False):
         # Pull recents as before
-        recent_entries = memory_core.get_immediate_context(n=10, hours=24, sources=utils.SOURCES_CONTEXT)
+        recent_entries = memory_core.get_immediate_context(n=10,
+                                                           hours=24,
+                                                           sources=utils.SOURCES_CONTEXT,
+                                                           public=public)
 
         # Build your blend dictionary for the search
         # Example: only main + one project, with UI slider ratio
@@ -222,7 +233,10 @@ class PromptBuilder:
             blend[proj] = blend_ratio / len(projects_in_focus)  # Split if multiple
 
         # Build context-bundled query
-        conversation_context = memory_core.get_immediate_context(n=6, hours=0.5, sources=utils.SOURCES_CHAT)
+        conversation_context = memory_core.get_immediate_context(n=6,
+                                                                 hours=0.5,
+                                                                 sources=utils.SOURCES_CHAT,
+                                                                 public=public)
         context_messages = [msg["message"] for msg in conversation_context]
         full_context_query = "\n".join(context_messages + [user_input])
 
@@ -231,7 +245,8 @@ class PromptBuilder:
             query=full_context_query,
             projects_in_focus=projects_in_focus,  # list of project ids, or None/[] for global
             blend_ratio=blend_ratio,  # 1.0 for hard, 0.1–0.99 for blend
-            top_k=final_top_k
+            top_k=final_top_k,
+            public=public
         )
 
         # Build exclusion set: recents + message_ids_to_exclude
@@ -264,8 +279,8 @@ class PromptBuilder:
         if blocks:
             self.segments["conversation_log"] = "\n\n\n".join(blocks)
 
-    def add_recent_context(self, sources=None):
-        entries = memory_core.get_immediate_context(sources=sources)
+    def add_recent_context(self, sources=None, public: bool = False):
+        entries = memory_core.get_immediate_context(sources=sources, public=public)
         project_lookup = utils.build_project_lookup()
         if entries:
             formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)

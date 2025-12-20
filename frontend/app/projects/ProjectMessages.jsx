@@ -5,7 +5,7 @@ import { Virtuoso } from "react-virtuoso";
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import MessageItem from "@/components/app/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "@/utils/messageActions";
+import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
 import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 import { ChevronDownIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -105,6 +105,7 @@ export default function ProjectMessages({ project, projectMap, projects, project
   // --- Message actions (reuse your existing ones) ---
   const onDelete = (message_id, markDeleted) => handleDelete(setMessages, message_id, markDeleted);
   const onTogglePrivate = (message_id, makePrivate) => handleTogglePrivate(setMessages, message_id, makePrivate);
+  const onToggleHidden = (message_id, makeHidden) => handleToggleHidden(setMessages, message_id, makeHidden);
   const onToggleRemembered = (message_id, makeRemembered) => handleToggleRemembered(setMessages, message_id, makeRemembered);
   const onSetProject = (message_id, project_id) => setProject(setMessages, message_id, project_id);
   const onClearProject = (message_id) => clearProject(setMessages, message_id);
@@ -285,6 +286,7 @@ export default function ProjectMessages({ project, projectMap, projects, project
                   setProjectDialogOpen={setProjectDialogOpen}
                   onDelete={onDelete}
                   onTogglePrivate={onTogglePrivate}
+                  onToggleHidden={onToggleHidden}
                   onToggleRemembered={onToggleRemembered}
                   onSetProject={onSetProject}
                   onClearProject={onClearProject}

@@ -175,10 +175,11 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
 
     # User role segments
     #builder.add_dot_status()
-    builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
+    builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
+                                public=True)
     builder.render_locations(current_location=source)
     builder.build_conversation_context(source_name, author_name, timestamp)
-    builder.add_prompt_context(user_input, [], 0.0)
+    builder.add_prompt_context(user_input, [], 0.0, public=True)
     #builder.add_monologue_reminder()
     builder.add_formatting_instructions()
     footer = f"[{timestamp}] [Source: {source_name}]"

@@ -13,8 +13,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PROJECTFILES_DIR = PROJECT_ROOT / "projectfiles"
 
 def toggle_visibility(filter_query):
-    # Assume filter_query is like {"_id": some_id} (string or ObjectId)
-
     # Convert string id to ObjectId if needed
     if "_id" in filter_query and not isinstance(filter_query["_id"], ObjectId):
         try:
@@ -27,14 +25,36 @@ def toggle_visibility(filter_query):
     if not project:
         raise ValueError("Project not found")
 
-    new_hidden = not project.get("hidden", False)
+    new_hidden = not project.get("is_hidden", False)
     updated = mongo.update_one_document(
         collection_name,
         filter_query,
-        {"hidden": new_hidden}
+        {"is_hidden": new_hidden}
     )
     # Return a minimal result object for the API
-    return type("ToggleResult", (), {"hidden": new_hidden, "project": updated})()
+    return type("ToggleResult", (), {"is_hidden": new_hidden, "project": updated})()
+
+def toggle_privacy(filter_query):
+    # Convert string id to ObjectId if needed
+    if "_id" in filter_query and not isinstance(filter_query["_id"], ObjectId):
+        try:
+            filter_query["_id"] = ObjectId(filter_query["_id"])
+        except Exception:
+            # Defensive: fallback to string if not a valid ObjectId
+            pass
+
+    project = mongo.find_one_document(collection_name, filter_query)
+    if not project:
+        raise ValueError("Project not found")
+
+    new_private = not project.get("is_private", False)
+    updated = mongo.update_one_document(
+        collection_name,
+        filter_query,
+        {"is_private": new_private}
+    )
+    # Return a minimal result object for the API
+    return type("ToggleResult", (), {"is_private": new_private, "project": updated})()
 
 def toggle_archived(filter_query):
     # Assume filter_query is like {"_id": some_id} (string or ObjectId)
@@ -55,7 +75,7 @@ def toggle_archived(filter_query):
     visibility = mongo.update_one_document(
         collection_name,
         filter_query,
-        {"hidden": new_archived}
+        {"is_hidden": new_archived}
     )
     updated = mongo.update_one_document(
         collection_name,

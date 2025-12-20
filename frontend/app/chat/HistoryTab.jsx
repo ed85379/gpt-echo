@@ -7,7 +7,7 @@ import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX, BookMarked } from 'luc
 import { useConfig } from '@/hooks/ConfigContext';
 import { useMemo } from "react";
 import MessageItem from "@/components/app/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "@/utils/messageActions";
+import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
 import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 
 
@@ -60,6 +60,9 @@ const HistoryTab = () => {
 
   const onTogglePrivate = (message_id, makePrivate) =>
     handleTogglePrivate(setMessages, message_id, makePrivate);
+
+  const onToggleHidden = (message_id, makeHidden) =>
+    handleToggleHidden(setMessages, message_id, makeHidden);
 
   const onToggleRemembered = (message_id, makeRemembered) =>
     handleToggleRemembered(setMessages, message_id, makeRemembered);
@@ -241,6 +244,7 @@ const HistoryTab = () => {
                         museName={museName}
                         onDelete={onDelete}
                           onTogglePrivate={onTogglePrivate}
+                          onToggleHidden={onToggleHidden}
                           onToggleRemembered={onToggleRemembered}
                           onSetProject={onSetProject}
                           onClearProject={onClearProject}

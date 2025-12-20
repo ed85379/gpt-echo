@@ -33,7 +33,8 @@ def get_projects():
             "shortdesc": project.get("shortdesc") or "",
             "tags": project.get("tags", []),
             "notes": project.get("notes", []),
-            "hidden": project.get("hidden", False),
+            "is_hidden": project.get("is_hidden", False),
+            "is_private": project.get("is_private", False),
             "archived": project.get("archived", False),
         }
         result.append(mapped)
@@ -48,7 +49,8 @@ def create_project():
         project = {
             "_id": project_id,
             "name": "New Project",
-            "hidden": False,
+            "is_hidden": False,
+            "is_private": False,
             "notes": [],
             "tags": [],
             "created_at": now,
@@ -79,7 +81,15 @@ def create_project():
 def toggle_project_visibility(key: str):
     try:
         result = projects_core.toggle_visibility({"_id": key})
-        return {"status": "ok", "key": key, "hidden": result.hidden}
+        return {"status": "ok", "key": key, "is_hidden": result.is_hidden}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{key}/privacy")
+def toggle_project_privacy(key: str):
+    try:
+        result = projects_core.toggle_privacy({"_id": key})
+        return {"status": "ok", "key": key, "is_private": result.is_private}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

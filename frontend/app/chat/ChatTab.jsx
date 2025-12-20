@@ -2,14 +2,14 @@
 import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { Remarkable } from 'remarkable';
-import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX } from 'lucide-react';
+import { Eye, EyeOff, EyeClosed, DoorClosed, DoorClosedLocked, Tags, Shredder, SquareX } from 'lucide-react';
 import { BookDashed, BookMarked, ArrowBigDownDash, Paperclip, Pin, Sparkles } from 'lucide-react';
 import { linkify } from 'remarkable/linkify';
 import { useConfig } from '@/hooks/ConfigContext';
 import { assignMessageId } from '@/utils/utils';
 import { useMemo } from "react";
 import MessageItem from "@/components/app/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleRemembered } from "@/utils/messageActions";
+import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
 import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 
 
@@ -70,6 +70,9 @@ const ChatTab = (
 
   const onTogglePrivate = (message_id, makePrivate) =>
     handleTogglePrivate(setMessages, message_id, makePrivate);
+
+  const onToggleHidden = (message_id, makeHidden) =>
+    handleToggleHidden(setMessages, message_id, makeHidden);
 
   const onToggleRemembered = (message_id, makeRemembered) =>
     handleToggleRemembered(setMessages, message_id, makeRemembered);
@@ -645,6 +648,7 @@ const speak = async (text, onDone) => {
                         museName={museName}
                         onDelete={onDelete}
                           onTogglePrivate={onTogglePrivate}
+                          onToggleHidden={onToggleHidden}
                           onToggleRemembered={onToggleRemembered}
                           onSetProject={onSetProject}
                           onClearProject={onClearProject}

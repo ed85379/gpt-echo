@@ -73,6 +73,7 @@ def get_messages(
             "source": msg.get("source", ""),
             "user_tags": msg.get("user_tags", []),
             "is_private": msg.get("is_private", False),
+            "is_hidden": msg.get("is_hidden", False),
             "remembered": msg.get("remembered", False),
             "is_deleted": msg.get("is_deleted", False),
             "project_id": str(msg["project_id"]) if msg.get("project_id") else None,
@@ -102,6 +103,7 @@ async def tag_message(
     add_user_tags: Optional[List[str]] = Body(None),
     remove_user_tags: Optional[List[str]] = Body(None),
     is_private: Optional[bool] = Body(None),
+    is_hidden: Optional[bool] = Body(None),
     remembered: Optional[bool] = Body(None),
     is_deleted: Optional[bool] = Body(None),
     set_project: Optional[Any] = Body(None),      # <-- NEW param
@@ -123,13 +125,19 @@ async def tag_message(
     set_fields = {}
     unset_fields = []
 
-    # Handle is_private, remembered, is_deleted (contentful)
+    # Handle is_private, is_hidden, remembered, is_deleted (contentful)
     if is_private is not None:
         contentful = True
         if is_private:
             set_fields["is_private"] = True
         else:
             unset_fields.append("is_private")
+    if is_hidden is not None:
+        contentful = True
+        if is_hidden:
+            set_fields["is_hidden"] = True
+        else:
+            unset_fields.append("is_hidden")
     if remembered is not None:
         contentful = True
         if remembered:
@@ -320,6 +328,7 @@ def get_messages_by_day(
             "message_id": msg.get("message_id") or "",
             "source": msg.get("source", ""),
             "is_private": msg.get("is_private", False),
+            "is_hidden": msg.get("is_hidden", False),
             "remembered": msg.get("remembered", False),
             "is_deleted": msg.get("is_deleted", False),
             "project_id": str(msg["project_id"]) if msg.get("project_id") else None,

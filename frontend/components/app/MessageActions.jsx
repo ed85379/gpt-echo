@@ -3,7 +3,7 @@
 
 import React, { useState } from "react";
 import { CandleHolderLit } from "@/utils/messageActions";
-import { Tags, Eye, EyeOff, EyeClosed, Shredder, SquareX, BookMarked } from "lucide-react";
+import { Tags, Eye, EyeOff, EyeClosed, DoorClosed, DoorClosedLocked, Shredder, SquareX, BookMarked } from "lucide-react";
 
 
 export default function MessageActions({
@@ -16,6 +16,7 @@ export default function MessageActions({
   onAddTag,
   onRemoveTag,
   onTogglePrivate,
+  onToggleHidden,
   onToggleRemembered,
   onDelete,
   tagDialogOpen,           // message_id or null
@@ -37,12 +38,13 @@ export default function MessageActions({
   }
 
   const isPrivate = !!msg.is_private;
+  const isHidden = !!msg.is_hidden;
   const isRemembered = !!msg.remembered;
   const isDeleted = !!msg.is_deleted;
   const inProject = msg.project_id;
   const userTags =
     (msg.user_tags || []).filter(
-      t => t !== "private" && t !== "deleted" && t !== "remembered" && t !== "project"
+      t => t !== "private" && t !== "hidden" && t !== "deleted" && t !== "remembered" && t !== "project"
     ) || [];
 
   // --- Render ---
@@ -86,7 +88,16 @@ export default function MessageActions({
           className={`transition-colors ${isPrivate ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
         >
-          {isPrivate ? <EyeClosed size={18} /> : <Eye size={18} />}
+          {isPrivate ? <DoorClosedLocked size={18} /> : <DoorClosed size={18} />}
+        </button>
+        {/* Hidden toggle */}
+        <button
+          onClick={() => onToggleHidden(msg.message_id, !isHidden)}
+          title={isHidden ? "Set as visible" : "Mark as hidden"}
+          className={`transition-colors ${isHidden ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
+          style={{ background: "none", border: "none", cursor: "pointer" }}
+        >
+          {isHidden ? <EyeClosed size={18} /> : <Eye size={18} />}
         </button>
         {/* Delete */}
         <button

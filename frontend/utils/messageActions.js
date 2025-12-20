@@ -49,6 +49,20 @@ export function handleTogglePrivate(setMessages, message_id, makePrivate) {
   });
 }
 
+export function handleToggleHidden(setMessages, message_id, makeHidden) {
+  fetch("/api/messages/tag", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message_ids: [message_id], is_hidden: makeHidden }),
+  }).then(() => {
+    setMessages(prev =>
+      prev.map(m =>
+        m.message_id === message_id ? { ...m, is_hidden: makeHidden } : m
+      )
+    );
+  });
+}
+
 export function handleToggleRemembered(setMessages, message_id, makeRemembered) {
   fetch("/api/messages/tag", {
     method: "POST",
