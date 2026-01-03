@@ -96,7 +96,7 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     footer = f"[{timestamp}] {project_meta}[Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
-    user_prompt += f"\n\nRight now - {muse_config.get("USER_NAME")} said: {user_input}\n{footer}\n\n{muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\nRight now - {muse_config.get("USER_NAME")} said:\n{user_input}\n{footer}\n\n{muse_config.get("MUSE_NAME")}:"
     return dev_prompt, user_prompt, ephemeral_images
 
 def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwargs):
@@ -185,7 +185,7 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
     footer = f"[{timestamp}] [Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt += f"\n\n[Discord] {kwargs.get("author_name")} said: {user_input}\n{footer}\n\n[Discord] {muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\n[Discord] {kwargs.get("author_name")} said:\n{user_input}\n{footer}\n\n[Discord] {muse_config.get("MUSE_NAME")}:"
     return dev_prompt, user_prompt
 
 def build_check_reminders_prompt(reminders):

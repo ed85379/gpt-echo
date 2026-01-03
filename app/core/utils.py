@@ -205,6 +205,7 @@ def format_context_entry(e, project_lookup=None):
     dt = None
     time_str = ""
     htime = ""
+    chtime = ""
 
     if ts:
         try:
@@ -220,6 +221,7 @@ def format_context_entry(e, project_lookup=None):
 
             time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
             htime = humanize.naturaltime(dt)
+            chtime = htime.capitalize()
         except Exception:
             # Fallback: keep raw
             time_str = str(ts)
@@ -259,8 +261,8 @@ def format_context_entry(e, project_lookup=None):
 
     # --- Build lines ---
     # Line 1: "5 minutes ago - Ed said:"  (or just "Ed said:" if no htime)
-    if htime:
-        header_line = f"{htime} - {name} said:"
+    if chtime:
+        header_line = f"{chtime} - {name} said:"
     else:
         header_line = f"{name} said:"
 
