@@ -21,15 +21,28 @@ QDRANT_COLLECTION = "muse_memory"
 def get_qdrant_client():
     return qdrant
 
-def query(collection_name, search_query, limit=10, query_filter=None, with_payload=True, with_vectors=False):
+def query(
+    collection_name,
+    search_query: str | None,
+    limit: int = 10,
+    query_filter=None,
+    with_payload: bool = True,
+    with_vectors: bool = False,
+):
     client = get_qdrant_client()
+
+    query_vector = None
+    if search_query is not None:
+        # semantic search
+        query_vector = model.encode([search_query])[0]
+
     response = client.query_points(
         collection_name=collection_name,
-        query=model.encode([search_query])[0],
+        query=query_vector,
         limit=limit,
         query_filter=query_filter,
         with_payload=with_payload,
-        with_vectors=with_vectors
+        with_vectors=with_vectors,
     )
     return response.points
 
