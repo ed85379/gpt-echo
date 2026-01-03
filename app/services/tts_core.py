@@ -42,11 +42,11 @@ def synthesize_speech(text: str, stability=0.5, similarity_boost=0.75) -> str:
         raise Exception(f"ElevenLabs TTS failed: {response.status_code} {response.text}")
 
 async def stream_speech(text):
-    response = client.text_to_speech.convert_as_stream(
+    response = client.text_to_speech.stream(
         text=text,
         voice_id=muse_config.get("TTS_VOICE_ID"),
         model_id="eleven_flash_v2_5",
-        voice_settings=VoiceSettings(stability=0.6, similarity_boost=0.75, speed=1.1)
+        voice_settings=VoiceSettings(stability=0.6, similarity_boost=0.75, speed=1.0)
     )
 
     for chunk in response:
