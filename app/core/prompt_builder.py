@@ -233,10 +233,16 @@ class PromptBuilder:
             blend[proj] = blend_ratio / len(projects_in_focus)  # Split if multiple
 
         # Build context-bundled query
-        conversation_context = memory_core.get_immediate_context(n=6,
-                                                                 hours=0.5,
-                                                                 sources=utils.SOURCES_CHAT,
-                                                                 public=public)
+        conversation_context  = memory_core.get_semantic_episode_context(collection_name="muse_memory",
+                                                                         n_recent=6,
+                                                                         hours=1,
+                                                                         similarity_threshold=0.50,
+                                                                         public=public)
+#        conversation_context = memory_core.get_immediate_context(n=6,
+#                                                                 hours=0.5,
+#                                                                 sources=utils.SOURCES_CHAT,
+#                                                                 public=public)
+
         context_messages = [msg["message"] for msg in conversation_context]
         full_context_query = "\n".join(context_messages + [user_input])
 

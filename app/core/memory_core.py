@@ -9,7 +9,7 @@ from dateutil.parser import parse as parse_datetime
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 from bson.errors import InvalidId
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, util
 from croniter import croniter
 from app import config
 #from app.api.api_main import QDRANT_COLLECTION
@@ -268,12 +268,9 @@ def search_indexed_memory(
     """
     if projects_in_focus is None:
         projects_in_focus = []
-    query_vector = model.encode([query])[0]
+    #query_vector = model.encode([query])[0]
     overfetch_k = top_k * 5
 
-    from qdrant_client import QdrantClient
-    QDRANT_HOST = muse_config.get("QDRANT_HOST")
-    QDRANT_PORT = int(muse_config.get("QDRANT_PORT"))
     QDRANT_COLLECTION = collection_name
 
     excluded_project_ids = [str(oid) for oid in get_excluded_project_ids(public=public)]
@@ -411,6 +408,104 @@ def search_indexed_memory(
     #        f"proj_ids={entry.get('project_ids')}"
     #    )
     return sorted_results[:top_k]
+
+def get_semantic_episode_context(
+    collection_name: str,
+    n_recent: int = 6,
+    hours: int | None = 0.5,
+    similarity_threshold: float = 0.75,
+    public=False
+):
+    """
+    Return a trimmed list of recent messages forming a 'semantic episode'.
+
+    Logic:
+    - Fetch last N recent messages from Mongo (existing helper).
+    - Fetch their vectors from Qdrant (by message_id).
+    - Sort messages by timestamp ascending.
+    - Walk from newest backwards, comparing each message's vector
+      to the one immediately before it (episode continuity).
+    - Stop when similarity drops below threshold.
+    - Return the contiguous tail slice that forms the episode.
+    """
+
+    # 1) Get recent messages from Mongo (your existing function)
+    recent = get_immediate_context(
+        n=n_recent,
+        hours=hours if hours is not None else 0.5,
+        sources=None,
+        public=public,
+    )
+
+    if not recent:
+        return []
+
+    # Ensure chronological order (oldest -> newest)
+    recent.sort(key=lambda m: m["timestamp"])
+
+    message_ids = [m["message_id"] for m in recent]
+
+    # 2) Fetch vectors from Qdrant
+    query_filter = {
+        "must": [
+    	    {"key": "message_id", "match": {"any": message_ids}}
+    	]
+    }
+
+    response = qdrant_query(collection_name="muse_memory",
+                 search_query=None,
+                 limit=len(message_ids),
+                 query_filter=query_filter,
+                 with_payload=True,
+                 with_vectors=True)
+
+    id_to_vec: dict[str, list[float]] = {}
+
+
+    for hit in response:
+        payload = hit.payload
+        mid = hit.payload.get("message_id")
+        vec = hit.vector
+        if mid is None or vec is None:
+            continue
+        id_to_vec[str(mid)] = vec
+
+
+    # If we somehow have no vectors, just fall back to the raw recent list
+    if not id_to_vec:
+        return recent
+
+    # 3) Walk backwards, find where the episode "breaks"
+
+    # Start from the newest message and walk backward until similarity breaks.
+    # We'll track an index where the contiguous episode starts.
+    episode_start_idx = len(recent) - 1  # default: just the last message
+
+    # Work with indices i and i-1
+    for i in range(len(recent) - 1, 0, -1):
+        curr = recent[i]
+        prev = recent[i - 1]
+
+        curr_vec = id_to_vec.get(curr["message_id"])
+        prev_vec = id_to_vec.get(prev["message_id"])
+
+        # If either vector is missing, treat it as a break
+        if curr_vec is None or prev_vec is None:
+            episode_start_idx = i
+            break
+
+        sim = util.cos_sim(prev_vec, curr_vec).item()
+
+        if sim < similarity_threshold:
+            # Episode starts at the current message (i)
+            episode_start_idx = i
+            break
+        else:
+            # Still in the same episode; move the start back one more
+            episode_start_idx = i - 1
+
+    # 4) Return the tail slice that forms the episode
+    return recent[episode_start_idx:]
 
 def search_indexed_memories(
     query,
