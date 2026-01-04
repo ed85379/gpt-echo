@@ -243,7 +243,6 @@ function ProjectDetailsCard({ project, projectMap, projects, projectsLoading, on
   // Save handlers
   const handleSave = (field) => {
     if (field === "tags") {
-            console.log("Saving tags, tagList is:", tagList);
       onProjectChange({ tags: tagList });
       setEditing(e => ({...e, tags: false}));
     } else if (field === "notes") {
@@ -265,7 +264,6 @@ useEffect(() => {
 }, [project]);
 
 const handleAddTag = (newTag) => {
-    console.log("handleAdd called!", input);
   setTagList(prev => (!prev.includes(newTag) ? [...prev, newTag] : prev));
 };
 
@@ -274,7 +272,6 @@ const handleRemoveTag = idx => {
 };
 
 const handleSaveTags = () => {
-  console.log("PATCHING tags:", tagList); // Debug here
   onProjectChange({ tags: tagList });
   setEditing(e => ({...e, tags: false}));
 };
