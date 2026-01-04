@@ -122,6 +122,9 @@ def edit_project_fields(filter_query, patch_fields):
         # Only keep non-empty, trimmed strings, limit length of each tag and total number
         cleaned_tags = [str(t)[:24].strip() for t in tags if str(t).strip()]
         updates["tags"] = cleaned_tags[:10]  # e.g., max 10 tags of max 24 chars each
+    if "code_intensity" in patch_fields:
+        code_intensity = patch_fields["code_intensity"] or "mixed"
+        updates["code_intensity"] = code_intensity
     if updates:
         updates["updated_at"] = datetime.utcnow()
     if not updates:

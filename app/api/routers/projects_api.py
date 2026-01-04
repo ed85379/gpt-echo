@@ -36,6 +36,7 @@ def get_projects():
             "is_hidden": project.get("is_hidden", False),
             "is_private": project.get("is_private", False),
             "archived": project.get("archived", False),
+            "code_intensity": project.get("code_intensity", "mixed")
         }
         result.append(mapped)
 

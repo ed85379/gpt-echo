@@ -1,5 +1,7 @@
 "use client";
 import React, {useEffect, useState, useMemo} from "react";
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {Eye, EyeOff, DoorClosed, DoorClosedLocked, SquarePlus, SquarePen, Archive, ArchiveX} from 'lucide-react';
 import ProjectDetailsCard from "./ProjectDetailsCard";
 import ProjectMessages from "./ProjectMessages";
@@ -37,6 +39,73 @@ const ArchiveIcon = ({archived}) => (
         ? <span title="Archived" style={{color: "#ef4444", fontSize: 20, marginLeft: 6}}><ArchiveX size={32}/></span>
         : <span title="Live" style={{color: "#22c55e", fontSize: 20, marginLeft: 6}}><Archive size={32}/></span>
 );
+
+const CodeIntensitySelector = ({ value, onChange }) => {
+  const current = value || "mixed";
+
+  const optionStyle = (opt) => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 2,
+    padding: "2px 4px",
+    borderRadius: 4,
+    background: current === opt ? "#1f2937" : "transparent",
+  });
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: "6px 10px",
+        borderRadius: 8,
+        background: "#111827",
+        border: "1px solid #374151",
+        minWidth: 140, // keeps it compact but readable
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: 0.08,
+          color: "#9ca3af",
+          fontWeight: 600,
+        }}
+      >
+        Code intensity
+      </span>
+
+      <RadioGroup
+        value={current}
+        onValueChange={onChange}
+        className="flex flex-col gap-1"
+      >
+        <div style={optionStyle("no_code")}>
+          <RadioGroupItem value="no_code" id="code-none" className="h-3 w-3" />
+          <Label htmlFor="code-none" style={{ fontSize: 11, color: "#e5e7eb" }}>
+            None
+          </Label>
+        </div>
+
+        <div style={optionStyle("mixed")}>
+          <RadioGroupItem value="mixed" id="code-mixed" className="h-3 w-3" />
+          <Label htmlFor="code-mixed" style={{ fontSize: 11, color: "#e5e7eb" }}>
+            Mixed
+          </Label>
+        </div>
+
+        <div style={optionStyle("heavy_code")}>
+          <RadioGroupItem value="heavy_code" id="code-heavy" className="h-3 w-3" />
+          <Label htmlFor="code-heavy" style={{ fontSize: 11, color: "#e5e7eb" }}>
+            Heavy
+          </Label>
+        </div>
+      </RadioGroup>
+    </div>
+  );
+};
 
 const ToggleVisibilityButton = ({is_hidden, onToggle, loading}) => (
     <button
@@ -190,7 +259,7 @@ export default function ProjectCard(props) {
         setIsProcessing(false);
         setUploadPercent(0);
     }
-
+console.log("Project code_intensity:", project.name, project.code_intensity);
     return (
         <div
             className="project-card-outer"
@@ -310,24 +379,45 @@ export default function ProjectCard(props) {
                     />
                     <ArchiveIcon archived={project.archived}/>
                 </div>
-                <div style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                }}>
-                    <ToggleVisibilityButton
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <ToggleVisibilityButton
                         is_hidden={project.is_hidden}
                         onToggle={onToggleVisibility}
                         loading={toggleLoading}
-                    />
-                    <EyeIcon is_hidden={project.is_hidden}/>
-                    <TogglePrivacyButton
+                      />
+                      <EyeIcon is_hidden={project.is_hidden} />
+
+                      <TogglePrivacyButton
                         is_private={project.is_private}
                         onToggle={onTogglePrivacy}
                         loading={toggleLoading}
+                      />
+                      <DoorIcon is_private={project.is_private} />
+                    </div>
+
+                    <CodeIntensitySelector
+                      value={project.code_intensity}
+                      onChange={(newValue) => {
+                        console.log("Code intensity change:", newValue);
+                        if (props.onProjectChange) {
+                          props.onProjectChange({ code_intensity: newValue });
+                        }
+                      }}
                     />
-                    <DoorIcon is_private={project.is_private}/>
-                </div>
+                  </div>
             </header>
 
             {/* --- Tabs --- */}
