@@ -187,7 +187,7 @@ def filter_code_blocks_by_lines(
             if not config.code_marker_text:
                 # Embedding mode: drop the whole block, no marker
                 return ""
-            marker = f"{config.code_marker_text} (original {line_count} lines)"
+            marker = f"{config.code_marker_text}"
             return f"```{lang}\n{marker}\n```"
 
         if mode == CodeBlockFilterMode.TRUNCATE:
@@ -198,7 +198,7 @@ def filter_code_blocks_by_lines(
                 # Embedding mode: keep only the first N lines, no marker
                 new_body = "\n".join(kept)
                 return f"```{lang}\n{new_body}\n```"
-            
+
             marker = (
                 f"{config.code_marker_text} "
                 f"(remaining {remaining} lines omitted)"
@@ -246,21 +246,16 @@ def filter_text(raw_text: str, config: TextFilterConfig) -> str:
 
     return text
 
-def config_for_purpose(purpose: TextFilterPurpose) -> TextFilterConfig:
-    if purpose == TextFilterPurpose.MNEMOSYNE_EMBEDDING:
-        return MNEMOSYNE_EMBEDDING_CFG
-    if purpose == TextFilterPurpose.MNEMOSYNE_PROMPT:
-        return MNEMOSYNE_PROMPT_CFG
-    if purpose == TextFilterPurpose.RECENT_CONTEXT:
-        return RECENT_CONTEXT_MIXED_CFG
-    if purpose == TextFilterPurpose.RELEVANT_MEMORIES:
-        return RELEVANT_MEMORIES_MIXED_CFG
-    # default fallback
-    return TextFilterConfig()
+
+def get_text_filter_config(system: str, purpose: str, detail: str) -> TextFilterConfig:
+    key = f"{system}_{purpose}_{detail}_CFG"
+    return globals().get(key, TextFilterConfig())
 
 # --- Presets ---
 
-MNEMOSYNE_EMBEDDING_CFG = TextFilterConfig(
+
+# Relational Memory uses this to determine episodic boundaries
+MNEMOSYNE_EMBEDDING_DEFAULT_CFG = TextFilterConfig(
     json_mode="remove",
     xml_block_mode=XmlBlockMode.REMOVE,
     xml_tag_strip_mode=XmlTagStripMode.STRIP,
@@ -270,7 +265,8 @@ MNEMOSYNE_EMBEDDING_CFG = TextFilterConfig(
     code_max_lines=0,
 )
 
-MNEMOSYNE_PROMPT_CFG = TextFilterConfig(
+# Relational memory uses this to filter for the prompt
+MNEMOSYNE_PROMPT_DEFAULT_CFG = TextFilterConfig(
     json_mode="replace",
     xml_block_mode=XmlBlockMode.REMOVE,
     xml_tag_strip_mode=XmlTagStripMode.STRIP,
@@ -280,7 +276,16 @@ MNEMOSYNE_PROMPT_CFG = TextFilterConfig(
     code_max_lines=3,
 )
 
-RECENT_CONTEXT_MIXED_CFG = TextFilterConfig(
+# (FUTURE USE) Used to filter full messages going into Qdrant
+MEMORY_EMBEDDING_DEFAULT_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=False,
+)
+
+# For the main Context of the current conversation
+CONTEXT_RECENT_MIXED_CFG = TextFilterConfig(
     json_mode="disabled",
     xml_block_mode=XmlBlockMode.KEEP,
     xml_tag_strip_mode=XmlTagStripMode.KEEP,
@@ -290,7 +295,19 @@ RECENT_CONTEXT_MIXED_CFG = TextFilterConfig(
     code_max_lines=12,
 )
 
-RELEVANT_MEMORIES_MIXED_CFG = TextFilterConfig(
+# For the Context of semantically recalled messages
+CONTEXT_RELEVANT_MIXED_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.TRUNCATE,
+    code_min_lines_for_filter=6,
+    code_max_lines=3,
+)
+
+# For the episodic matching for Qdrant recalling
+SEARCH_EMBEDDING_MIXED_CFG = TextFilterConfig(
     json_mode="disabled",
     xml_block_mode=XmlBlockMode.REMOVE,
     xml_tag_strip_mode=XmlTagStripMode.KEEP,
@@ -298,5 +315,71 @@ RELEVANT_MEMORIES_MIXED_CFG = TextFilterConfig(
     code_mode=CodeBlockFilterMode.TRUNCATE,
     code_min_lines_for_filter=6,
     code_max_lines=3,
+    code_marker_text="",
+)
+
+# For the main Context of the current conversation
+CONTEXT_RECENT_HEAVYCODE_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.KEEP,
+    xml_tag_strip_mode=XmlTagStripMode.KEEP,
+    code_enabled=False,
+)
+
+# For the Context of semantically recalled messages
+CONTEXT_RELEVANT_HEAVYCODE_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.TRUNCATE,
+    code_min_lines_for_filter=24,
+    code_max_lines=24,
+)
+
+# For the episodic matching for Qdrant recalling
+SEARCH_EMBEDDING_HEAVYCODE_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.TRUNCATE,
+    code_min_lines_for_filter=6,
+    code_max_lines=3,
+    code_marker_text="",
+)
+
+# For the main Context of the current conversation
+CONTEXT_RECENT_NOCODE_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.KEEP,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.REPLACE,
+    code_min_lines_for_filter=0,
+    code_max_lines=0,  # Not relevant for REPLACE, but required
+)
+
+# For the Context of semantically recalled messages
+CONTEXT_RELEVANT_NOCODE_CFG = TextFilterConfig(
+    json_mode="remove",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.REPLACE,
+    code_min_lines_for_filter=0,
+    code_max_lines=0,  # Not relevant for REPLACE, but required
+)
+
+# For the episodic matching for Qdrant recalling
+SEARCH_EMBEDDING_NOCODE_CFG = TextFilterConfig(
+    json_mode="remove",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.REPLACE,
+    code_min_lines_for_filter=0,
+    code_max_lines=0, # Not relevant for REPLACE, but required
+    code_marker_text="",
 )
 
