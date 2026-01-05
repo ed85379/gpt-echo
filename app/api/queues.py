@@ -54,6 +54,7 @@ async def run_log_queue(
                 message=msg["message"],
                 timestamp=msg.get("timestamp"),
                 project_id=msg.get("project_id"),
+                source=msg.get("source"),
                 skip_index=msg.get("skip_index", False)
                 # Add any other fields your log_message expects
             )
