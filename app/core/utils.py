@@ -191,6 +191,22 @@ def build_project_lookup():
     )
     return {p["_id"]: p.get("name", "Unnamed Project") for p in projects}
 
+def build_project_filter_lookup():
+    projects = mongo.find_documents(
+        "muse_projects",
+        query={},
+        projection={
+            "_id": 1,
+            "code_intensity": 1,
+        },
+    )
+    return {
+        p["_id"]: {
+            "code_intensity": p.get("code_intensity", "mixed"),
+        }
+        for p in projects
+    }
+
 def format_context_entry(e, project_lookup=None):
     role = e.get("role", "")
     if role == "user":
