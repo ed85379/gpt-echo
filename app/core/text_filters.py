@@ -1,29 +1,29 @@
 # text_filters.py
-import re
-from typing import Iterable
-from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
 
-# 1. Tags whose *entire blocks* we want to nuke (tag + inner content)
+from __future__ import annotations
+import re
+from typing import Iterable, Literal, Optional
+from dataclasses import dataclass, field
+from enum import Enum
+
+## CONFIGS
+# Tags whose *entire blocks* we want to nuke (tag + inner content)
 BLOCK_XML_TAGS = [
     "command-response",
     "internal-data",
 ]
 
-# 2. Tags where we only strip the tags, *keep* inner text
+# Tags where we only strip the tags, *keep* inner text
 #    Right now this list is intentionally empty, but we wire it for later.
 TAG_ONLY_STRIP_XML_TAGS: list[str] = [
     "remove-this-tag"
     # e.g. "some-future-wrapper",
 ]
 
-# 3. JSON blobs — we don’t want these in embeddings/prompts
 JSON_BLOCK_PATTERN = re.compile(
     r"\{(?:[^{}]|(?:\{[^{}]*\}))*\}",
     re.DOTALL,
 )
-
 
 BLOCK_XML_PATTERN = re.compile(
     r"<\s*(?P<tag>" + "|".join(re.escape(tag) for tag in BLOCK_XML_TAGS) + r")\b[^>]*>"
@@ -32,48 +32,74 @@ BLOCK_XML_PATTERN = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# Regex to capture ```lang?\n ... \n``` blocks, non-greedy
+_CODE_BLOCK_RE = re.compile(
+    r"```([^\n`]*)\n(.*?)```",
+    re.DOTALL
+)
+
+JsonMode = Literal["remove", "replace", "disabled"]
+
+class XmlBlockMode(str, Enum):
+    REMOVE = "remove"   # strip entire block + contents
+    KEEP   = "keep"     # leave as-is
+
+class XmlTagStripMode(str, Enum):
+    STRIP = "strip"     # remove tags, keep inner text
+    KEEP  = "keep"      # leave as-is
 
 
-def build_tag_only_pattern(extra_tags: Iterable[str] | None = None) -> re.Pattern | None:
-    tags = list(TAG_ONLY_STRIP_XML_TAGS)
-    if extra_tags:
-        tags.extend(extra_tags)
-
+def build_block_xml_pattern(tags: Iterable[str]) -> re.Pattern | None:
+    tags = [t.strip() for t in tags if t.strip()]
     if not tags:
         return None
 
-    return re.compile(
-        r"<\s*/?\s*(?:"
-        + "|".join(re.escape(tag) for tag in tags)
-        + r")\b[^>]*>",
+    # Named group so we can match the same tag in open/close
+    # e.g. <command-response[example]> ... </command-response[example]>
+    tag_alternation = "|".join(re.escape(tag) for tag in tags)
+    pattern = re.compile(
+        rf"<\s*(?P<tag>{tag_alternation})\b[^>]*>.*?</\s*(?P=tag)\s*>",
+        re.DOTALL | re.IGNORECASE,
+    )
+    return pattern
+
+def build_tag_only_pattern() -> re.Pattern | None:
+    tags = [t.strip() for t in TAG_ONLY_STRIP_XML_TAGS if t.strip()]
+    if not tags:
+        return None
+
+    inner = "|".join(re.escape(tag) for tag in tags)
+    pattern = re.compile(
+        rf"</?\s*(?:{inner})\b[^>]*>",
         re.IGNORECASE,
     )
+    return pattern
 
-def strip_block_xml(text: str) -> str:
+def strip_block_xml(text: str, tags: Iterable[str]) -> str:
     """
     Remove entire blocks like:
       <command-response> ... </command-response[example]>
       <internal-data> ... </internal-data>
     including their contents.
     """
-    return BLOCK_XML_PATTERN.sub("", text)
-
-
-def strip_tag_only_xml(text: str, extra_tags: Iterable[str] | None = None) -> str:
-    """
-    Strip only the opening/closing tags for a given set of XML-ish tags,
-    but leave their inner content untouched.
-    Currently unused (empty list), but ready for future tags.
-    """
-    pattern = build_tag_only_pattern(extra_tags)
+    pattern = build_block_xml_pattern(tags)
     if not pattern:
         return text
     return pattern.sub("", text)
 
 
-def strip_json(text: str, mode=None) -> str:
+def strip_tag_only_xml(text: str) -> str:
+    pattern = build_tag_only_pattern()
+    if not pattern:
+        return text
+    return pattern.sub("", text)
+
+def strip_json(text: str, mode: JsonMode, marker: str) -> str:
+    if mode == "disabled":
+        return text
     if mode == "replace":
-        return JSON_BLOCK_PATTERN.sub("/// JSON BLOCK REMOVED FOR BREVITY ///", text)
+        return JSON_BLOCK_PATTERN.sub(marker, text)
+    # mode == "remove"
     return JSON_BLOCK_PATTERN.sub("", text)
 
 # This one has limited usefulness, so it isn't used.
@@ -82,160 +108,104 @@ def normalize_whitespace(text: str) -> str:
     text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
     return text.strip()
 
-def clean_message_text(
-    raw_text: str,
-    *,
-    remove_json_mode=None,
-    extra_tag_only_xml: Iterable[str] | None = None,
-) -> str:
-    """
-    Shared cleaner for:
-      - embedding input
-      - prompt construction
-
-    Removes:
-      - <command-response[example]>...</command-response[example]> blocks
-      - <internal-data>...</internal-data> blocks
-      - (optionally) JSON blobs
-    Optionally:
-      - strips only the tags (not content) for a configurable set of XML-ish wrappers.
-
-    Leaves:
-      - <muse-experience>, <muse-interlude>, etc., untouched for now.
-    """
-    text = raw_text
-
-    # 1. Kill block-listed XML sections entirely
-    text = strip_block_xml(text)
-
-    # 2. Strip tag-only wrappers if/when we define any
-    text = strip_tag_only_xml(text, extra_tags=extra_tag_only_xml)
-
-    # 3. Strip JSON blobs (dev/infra, not story)
-    if remove_json_mode is None:
-        # default: remove
-        text = strip_json(text)
-    elif remove_json_mode == "replace":
-        text = strip_json(text, mode="replace")
-    elif remove_json_mode == "disabled":
-        pass  # leave JSON intact
-    else:
-        raise ValueError(f"Unknown remove_json_mode: {remove_json_mode!r}")
-
-    # 4. Normalize whitespace
-    #text = normalize_whitespace(text)
-
-    return text
-
 
 class CodeBlockFilterMode(str, Enum):
     REMOVE = "remove"      # remove entire block
     REPLACE = "replace"    # replace with marker
     TRUNCATE = "truncate"  # keep first N lines, then marker
 
-
 @dataclass
-class CodeBlockFilterConfig:
-    enabled: bool = True
-    # Any block with more than this many lines is considered "large"
-    max_lines: int = 40
-    # How to handle "large" blocks
-    mode: CodeBlockFilterMode = CodeBlockFilterMode.TRUNCATE
-    # Optional: minimum lines before we even consider a block "codey" enough
-    # to filter. E.g. ignore blocks with <= 5 lines.
-    min_lines_for_filter: int = 6
-    # Marker text used for REPLACE / TRUNCATE
-    marker_text: str = "/// Code block shortened for brevity ///"
-    # Note for Future Ed:
-    # - min_lines_for_filter: only treat blocks with >= this many lines as "big code".
-    #   Shorter blocks are left untouched, even if max_lines is smaller.
-    # - max_lines: how many lines to KEEP when truncating big blocks.
-    #   Anything over this gets shortened according to `mode`.
-    #
-    # Example for Mnemosyne prompt:
-    #   max_lines=3, min_lines_for_filter=6, mode=TRUNCATE
-    #   -> only blocks with 6+ lines are truncated to 3 lines + marker.
+class TextFilterConfig:
+    """
+    Single config object controlling all text filters:
+      - JSON
+      - block XML
+      - tag-only XML
+      - code blocks
+    """
+    # --- JSON ---
+    json_mode: JsonMode = "remove"
+    json_replace_marker: str = "/// JSON BLOCK REMOVED FOR BREVITY ///"
 
-# Regex to capture ```lang?\n ... \n``` blocks, non-greedy
-_CODE_BLOCK_RE = re.compile(
-    r"```([^\n`]*)\n(.*?)```",
-    re.DOTALL
-)
+    # --- Block XML (e.g. <command-response>, <internal-data>) ---
+    xml_block_mode: XmlBlockMode = XmlBlockMode.REMOVE
+    # Tags whose entire blocks should be removed when xml_block_mode=REMOVE
+    xml_block_tags: tuple[str, ...] = (
+        "command-response",
+        "command-response[example]",
+        "internal-data",
+    )
 
-MNEMOSYNE_EMBEDDING_CODE_CFG = CodeBlockFilterConfig(
-    enabled=True,
-    mode=CodeBlockFilterMode.REMOVE,
-    max_lines=0,
-    min_lines_for_filter=0,
-)
+    # --- Tag-only XML (strip wrappers, keep content) ---
+    xml_tag_strip_mode: XmlTagStripMode = XmlTagStripMode.KEEP
+    # Tags whose *tags* should be stripped when xml_tag_strip_mode=STRIP
+    xml_tag_strip_tags: tuple[str, ...] = field(default_factory=tuple)
 
-MNEMOSYNE_PROMPT_CODE_CFG = CodeBlockFilterConfig(
-    enabled=True,
-    mode=CodeBlockFilterMode.TRUNCATE,
-    max_lines=3,
-    min_lines_for_filter=6,
-    marker_text="/// Code block shortened for brevity ///",
-)
+    # --- Code blocks ---
+    code_enabled: bool = False
+    code_mode: CodeBlockFilterMode = CodeBlockFilterMode.TRUNCATE
+    code_min_lines_for_filter: int = 6
+    code_max_lines: int = 40
+    code_marker_text: str = "/// Code block shortened for brevity ///"
+
+
 
 def filter_code_blocks_by_lines(
     text: str,
-    config: Optional[CodeBlockFilterConfig] = None
+    config: TextFilterConfig,
 ) -> str:
     """
-    Apply line-count based filtering to ``` ``` blocks.
-
-    Modes:
-      - REMOVE:   remove entire block (including backticks)
-      - REPLACE:  replace entire block with a marker block
-      - TRUNCATE: keep first N lines, then add marker, then closing ```
+    Apply line-count based filtering to ``` ``` blocks, based on TextFilterConfig.
     """
-    if config is None:
-        # Default: do nothing
-        return text
-
-    if not config.enabled:
+    if not config.code_enabled:
         return text
 
     def _replace(match: re.Match) -> str:
-        lang = match.group(1) or ""  # may be empty
+        lang = match.group(1) or ""
         body = match.group(2)
 
-        # Normalize to \n for counting
-        # Strip trailing newline so splitlines() behaves nicely
-        body_stripped = body.rstrip("\n")
+        body_stripped = body.strip()
+        # If body is empty or whitespace-only, just remove the whole block
+        if not body_stripped:
+            return ""
+
         lines = body_stripped.splitlines()
         line_count = len(lines)
 
-        # If it's a short block, leave it alone
-        if line_count <= config.min_lines_for_filter:
+        if line_count <= config.code_min_lines_for_filter:
             return match.group(0)
 
-        # If it's within allowed size, leave it alone
-        if line_count <= config.max_lines:
+        if line_count <= config.code_max_lines:
             return match.group(0)
 
-        # Over the limit: apply mode
-        mode = config.mode
+        mode = config.code_mode
 
         if mode == CodeBlockFilterMode.REMOVE:
-            # Remove entire block
             return ""
 
         if mode == CodeBlockFilterMode.REPLACE:
-            # Replace with a synthetic block
-            # Optionally include line_count in marker
-            marker = f"{config.marker_text} (original {line_count} lines)"
+            if not config.code_marker_text:
+                # Embedding mode: drop the whole block, no marker
+                return ""
+            marker = f"{config.code_marker_text} (original {line_count} lines)"
             return f"```{lang}\n{marker}\n```"
 
         if mode == CodeBlockFilterMode.TRUNCATE:
-            # Keep first N lines, then marker, then closing ```
-            kept = lines[: config.max_lines]
-            remaining = line_count - config.max_lines
-            marker = f"{config.marker_text} (remaining {remaining} lines omitted)"
+            kept = lines[: config.code_max_lines]
+            remaining = line_count - config.code_max_lines
+
+            if not config.code_marker_text:
+                # Embedding mode: keep only the first N lines, no marker
+                new_body = "\n".join(kept)
+                return f"```{lang}\n{new_body}\n```"
+            
+            marker = (
+                f"{config.code_marker_text} "
+                f"(remaining {remaining} lines omitted)"
+            )
             new_body = "\n".join(kept + [marker])
             return f"```{lang}\n{new_body}\n```"
 
-        # Fallback: if somehow an unknown mode sneaks in, be conservative
         return match.group(0)
 
     return _CODE_BLOCK_RE.sub(_replace, text)
@@ -247,46 +217,86 @@ class TextFilterPurpose(str, Enum):
     RECENT_CONTEXT = "recent_context"
     RELEVANT_MEMORIES = "relevant_memories"
 
-def _json_mode_for_purpose(purpose: TextFilterPurpose) -> str | None:
-    if purpose == TextFilterPurpose.MNEMOSYNE_EMBEDDING:
-        return None  # default: remove
-    if purpose == TextFilterPurpose.MNEMOSYNE_PROMPT:
-        return "replace"
-    if purpose in (TextFilterPurpose.RECENT_CONTEXT,
-                   TextFilterPurpose.RELEVANT_MEMORIES):
-        return "disabled"
-    return None
+# --- Call/Import these ---
 
-def filter_text_for_purpose(
-    raw_text: str,
-    purpose: TextFilterPurpose,
-) -> str:
-    # 1. Base cleaner (XML + JSON)
-    json_mode = _json_mode_for_purpose(purpose)
-    text = clean_message_text(
-        raw_text,
-        remove_json_mode=json_mode,
-        # you can also pass extra_tag_only_xml based on purpose if needed
+def filter_text(raw_text: str, config: TextFilterConfig) -> str:
+    """
+    Apply all text filters (JSON, XML, code) according to a single config.
+    """
+
+    text = raw_text
+
+    # 1. Block XML
+    if config.xml_block_mode == XmlBlockMode.REMOVE:
+        text = strip_block_xml(text, tags=config.xml_block_tags)
+
+    # 2. Tag-only XML
+    if config.xml_tag_strip_mode == XmlTagStripMode.STRIP:
+        text = strip_tag_only_xml(text)
+
+    # 3. JSON
+    text = strip_json(
+        text,
+        mode=config.json_mode,
+        marker=config.json_replace_marker,
     )
 
-    # 2. Code blocks
-    code_cfg = _code_cfg_for_purpose(purpose)
-    if code_cfg and code_cfg.enabled:
-        text = filter_code_blocks_by_lines(text, code_cfg)
-
-    # 3. (Optional) whitespace normalization per‑purpose
-    # if purpose in (TextFilterPurpose.MNEMOSYNE_EMBEDDING,):
-    #     text = normalize_whitespace(text)
+    # 4. Code blocks
+    text = filter_code_blocks_by_lines(text, config)
 
     return text
 
-def _code_cfg_for_purpose(purpose: TextFilterPurpose) -> CodeBlockFilterConfig | None:
+def config_for_purpose(purpose: TextFilterPurpose) -> TextFilterConfig:
     if purpose == TextFilterPurpose.MNEMOSYNE_EMBEDDING:
-        return MNEMOSYNE_EMBEDDING_CODE_CFG
+        return MNEMOSYNE_EMBEDDING_CFG
     if purpose == TextFilterPurpose.MNEMOSYNE_PROMPT:
-        return MNEMOSYNE_PROMPT_CODE_CFG
-    # maybe no code filtering for recent context:
-    if purpose in (TextFilterPurpose.RECENT_CONTEXT,
-                   TextFilterPurpose.RELEVANT_MEMORIES):
-        return None
-    return None
+        return MNEMOSYNE_PROMPT_CFG
+    if purpose == TextFilterPurpose.RECENT_CONTEXT:
+        return RECENT_CONTEXT_MIXED_CFG
+    if purpose == TextFilterPurpose.RELEVANT_MEMORIES:
+        return RELEVANT_MEMORIES_MIXED_CFG
+    # default fallback
+    return TextFilterConfig()
+
+# --- Presets ---
+
+MNEMOSYNE_EMBEDDING_CFG = TextFilterConfig(
+    json_mode="remove",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.REMOVE,
+    code_min_lines_for_filter=0,
+    code_max_lines=0,
+)
+
+MNEMOSYNE_PROMPT_CFG = TextFilterConfig(
+    json_mode="replace",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.STRIP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.TRUNCATE,
+    code_min_lines_for_filter=6,
+    code_max_lines=3,
+)
+
+RECENT_CONTEXT_MIXED_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.KEEP,
+    xml_tag_strip_mode=XmlTagStripMode.KEEP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.TRUNCATE,
+    code_min_lines_for_filter=12,
+    code_max_lines=12,
+)
+
+RELEVANT_MEMORIES_MIXED_CFG = TextFilterConfig(
+    json_mode="disabled",
+    xml_block_mode=XmlBlockMode.REMOVE,
+    xml_tag_strip_mode=XmlTagStripMode.KEEP,
+    code_enabled=True,
+    code_mode=CodeBlockFilterMode.TRUNCATE,
+    code_min_lines_for_filter=6,
+    code_max_lines=3,
+)
+
