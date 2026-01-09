@@ -3,6 +3,7 @@ from qdrant_client.http import models as qmodels
 from qdrant_client import models as rest
 from sentence_transformers import SentenceTransformer
 import uuid, bson
+from typing import Sequence
 from app.config import muse_config
 
 QDRANT_HOST = muse_config.get("QDRANT_HOST")
@@ -21,9 +22,10 @@ QDRANT_COLLECTION = "muse_memory"
 def get_qdrant_client():
     return qdrant
 
-def query(
+def search_collection(
     collection_name,
-    search_query: str | None,
+    search_query: str | None = None,
+    query_vector: Sequence[float] | None = None,
     limit: int = 10,
     query_filter=None,
     with_payload: bool = True,
@@ -31,10 +33,20 @@ def query(
 ):
     client = get_qdrant_client()
 
-    query_vector = None
-    if search_query is not None:
-        # semantic search
-        query_vector = model.encode([search_query])[0]
+    # Only auto-embed if we *need* a vector and don't have one yet
+    if query_vector is None and search_query is not None:
+        # semantic search from text
+        query_vector = model.encode(search_query)
+
+    # If we have neither a query vector nor text, we’re in filter-only mode.
+    # In that case, require a filter so we don't accidentally scan the whole collection.
+    if query_vector is None and search_query is None and query_filter is None:
+        raise ValueError(
+            "qdrant_connector.query(): either search_query, query_vector, "
+            "or query_filter must be provided. "
+            "Got no query and no filter, which would return the entire collection."
+        )
+
 
     response = client.query_points(
         collection_name=collection_name,

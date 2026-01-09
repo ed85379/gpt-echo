@@ -3,7 +3,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 from app.core.prompt_builder import PromptBuilder, make_whisper_directive
-from app.core.utils import is_quiet_hour, build_project_lookup, LOCATIONS, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
+from app.core.utils import (is_quiet_hour,
+                            build_project_lookup,
+                            build_project_filter_lookup,
+                            LOCATIONS,
+                            SOURCES_CHAT,
+                            SOURCES_CONTEXT,
+                            SOURCES_ALL)
 from app.config import muse_config
 
 # ============================
@@ -37,10 +43,12 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     timestamp = kwargs.get("timestamp", "")
     source = kwargs.get("source", "")
     project_lookup = build_project_lookup()
+    project_filter_lookup = build_project_filter_lookup()
     project_meta = ""
     project_id_raw = kwargs.get("project_id")  # may be None or ""
     project_id = None
     proj_name = ""
+    proj_code_intensity = ""
     if project_id_raw:
         try:
             project_id = ObjectId(project_id_raw)
@@ -50,6 +58,8 @@ def build_api_prompt(user_input, muse_config, **kwargs):
         proj_name = project_lookup.get(project_id)
         if proj_name:
             project_meta = f"[Project: {proj_name}] "
+    if project_id and project_filter_lookup:
+        proj_code_intensity = project_filter_lookup.get(project_id)
     source_name = LOCATIONS.get(source, source or "Unknown Source")
     author_name = muse_config.get("USER_NAME", "Unknown Person")
     # Developer role segments
@@ -84,11 +94,12 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     builder.render_locations(current_location=source)
     builder.build_conversation_context(source_name, author_name, timestamp, proj_name)
     builder.add_prompt_context(
-        user_input,
-        [kwargs.get("project_id")] if kwargs.get("project_id") else [],
-        kwargs.get("blend_ratio", 0.0),
-        kwargs.get("message_ids_to_exclude", []),
-        kwargs.get("final_top_k", 10),
+        user_input=user_input,
+        projects_in_focus=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
+        blend_ratio=kwargs.get("blend_ratio", 0.0),
+        message_ids_to_exclude=kwargs.get("message_ids_to_exclude", []),
+        final_top_k=kwargs.get("final_top_k", 10),
+        proj_code_intensity=proj_code_intensity
     )
     builder.add_time()
     #builder.add_monologue_reminder()
@@ -179,7 +190,10 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
                                 public=True)
     builder.render_locations(current_location=source)
     builder.build_conversation_context(source_name, author_name, timestamp)
-    builder.add_prompt_context(user_input, [], 0.0, public=True)
+    builder.add_prompt_context(user_input=user_input,
+                               projects_in_focus=[],
+                               blend_ratio=0.0,
+                               public=True)
     #builder.add_monologue_reminder()
     builder.add_formatting_instructions()
     footer = f"[{timestamp}] [Source: {source_name}]"

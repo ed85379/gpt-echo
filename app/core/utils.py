@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from typing import Optional
 from nanoid import generate
 from app.config import muse_config
+from app.core.text_filters import get_text_filter_config, filter_text
 
 from app.databases.mongo_connector import mongo, mongo_system
 
@@ -195,19 +196,11 @@ def build_project_filter_lookup():
     projects = mongo.find_documents(
         "muse_projects",
         query={},
-        projection={
-            "_id": 1,
-            "code_intensity": 1,
-        },
+        projection={ "_id": 1, "code_intensity": 1}
     )
-    return {
-        p["_id"]: {
-            "code_intensity": p.get("code_intensity", "mixed"),
-        }
-        for p in projects
-    }
+    return { p["_id"]: p.get("code_intensity", "mixed") for p in projects}
 
-def format_context_entry(e, project_lookup=None):
+def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", purpose=None):
     role = e.get("role", "")
     if role == "user":
         name = muse_config.get("USER_NAME") or "User"
@@ -273,6 +266,10 @@ def format_context_entry(e, project_lookup=None):
 
     # --- Message text ---
     msg = e.get("message", "")
+    if purpose:
+        filter_cfg = get_text_filter_config("CONTEXT", purpose, proj_code_intensity)
+        msg = filter_text(msg, filter_cfg)
+
     msg = strip_command_blocks(msg)
 
     # --- Build lines ---

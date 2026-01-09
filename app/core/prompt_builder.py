@@ -8,7 +8,8 @@ from app.core.memory_core import cortex
 from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
 from app.databases.mongo_connector import mongo
-from app.databases.qdrant_connector import query as qdrant_query
+from app.databases.qdrant_connector import search_collection
+from app.core.text_filters import get_text_filter_config, filter_text
 import numpy as np
 from app.config import muse_config
 from app.core.muse_profile import muse_profile
@@ -219,7 +220,9 @@ class PromptBuilder:
                            blend_ratio,
                            message_ids_to_exclude=[],
                            final_top_k=15,
-                           public: bool = False):
+                           public: bool = False,
+                           proj_code_intensity="mixed"
+                           ):
         # Pull recents as before
         recent_entries = memory_core.get_immediate_context(n=10,
                                                            hours=24,
@@ -237,14 +240,20 @@ class PromptBuilder:
                                                                          n_recent=6,
                                                                          hours=1,
                                                                          similarity_threshold=0.50,
-                                                                         public=public)
-#        conversation_context = memory_core.get_immediate_context(n=6,
-#                                                                 hours=0.5,
-#                                                                 sources=utils.SOURCES_CHAT,
-#                                                                 public=public)
+                                                                         public=public,
+                                                                         proj_code_intensity=proj_code_intensity
+                                                                         )
 
-        context_messages = [msg["message"] for msg in conversation_context]
-        full_context_query = "\n".join(context_messages + [user_input])
+        filter_cfg = get_text_filter_config("SEARCH", "EMBEDDING", proj_code_intensity)
+
+        # Filter each context message individually
+        filtered_context_messages = [
+            filter_text(msg["message"], filter_cfg)
+            for msg in conversation_context
+        ]
+
+        # Join filtered context + raw user input into one query string
+        full_context_query = "\n".join(filtered_context_messages + [user_input])
 
         # Search main/project indexes, blend as per ratio
         blended_semantic = memory_core.search_indexed_memory(
@@ -267,7 +276,11 @@ class PromptBuilder:
         relevant_block = ""
         if deduped_semantic:
             formatted_semantic = "\n\n".join(
-                utils.format_context_entry(e, project_lookup=project_lookup)
+                utils.format_context_entry(e,
+                                           project_lookup=project_lookup,
+                                           proj_code_intensity=proj_code_intensity,
+                                           purpose="RELEVANT"
+                                           )
                 for e in deduped_semantic
             )
             relevant_block = f"[Relevant Memories]\n\n{formatted_semantic}"
@@ -275,7 +288,11 @@ class PromptBuilder:
         convo_block = ""
         if recent_entries:
             formatted_recent = "\n\n".join(
-                utils.format_context_entry(e, project_lookup=project_lookup)
+                utils.format_context_entry(e,
+                                           project_lookup=project_lookup,
+                                           proj_code_intensity=proj_code_intensity,
+                                           purpose="RECENT"
+                                           )
                 for e in recent_entries
             )
             convo_block = f"[Conversation Log]\n\n{formatted_recent}"
@@ -570,7 +587,10 @@ class PromptBuilder:
                     ]
                 }
 
-                qdrant_hits = qdrant_query("muse_memory_layers", user_query, semantic_slots, query_filter)
+                qdrant_hits = search_collection("muse_memory_layers",
+                                           search_query=user_query,
+                                           limit=semantic_slots,
+                                           query_filter=query_filter)
                 semantic_results = []
                 for hit in qdrant_hits:
                     payload = hit.payload

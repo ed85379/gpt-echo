@@ -14,13 +14,13 @@ from croniter import croniter
 from app import config
 #from app.api.api_main import QDRANT_COLLECTION
 from app.config import muse_config
-from app.core.utils import write_system_log, align_cron_for_croniter
+from app.core.utils import write_system_log, align_cron_for_croniter, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
 from app.core import utils
 from app.databases.mongo_connector import mongo
 from app.services.openai_client import get_openai_autotags
 from app.databases import memory_indexer
 from app.api.queues import index_memory_queue
-from app.databases.qdrant_connector import delete_point, query as qdrant_query
+from app.databases.qdrant_connector import delete_point, search_collection
 
 # </editor-fold>
 
@@ -167,8 +167,30 @@ def get_excluded_project_ids(public: bool = False) -> set:
     )
     return {p["_id"] for p in projects}
 
-def get_immediate_context(n=10, hours=4, sources=None, public: bool = False):
-    now = datetime.utcnow()
+def get_immediate_context(n=10,
+                          hours=4,
+                          sources=None,
+                          public: bool = False,
+                          anchor_message_id: str | None = None,
+                          ):
+    """
+    Return a list of messages, starting from a moment and working backward.
+    - Accepts anchor_message_id to start the search, otherwise starts with "now".
+    TODO:
+    - Add anchor_id functionality for "Continue from here..." feature.
+    - Add scene_id functionality for Roleplays other other types of bounded sessions.
+    """
+    if anchor_message_id is not None:
+        anchor_message_query = {"message_id": anchor_message_id}
+        anchor = mongo.find_one_document(collection_name="muse_conversations",
+                                         query=anchor_message_query
+                                         )
+        if not anchor:
+            raise ValueError(f"No message found for id={anchor_message_id}")
+        now = anchor["timestamp"]
+    else:
+        now = datetime.utcnow()
+
     since = now - timedelta(hours=hours)
     excluded_project_ids = get_excluded_project_ids(public=public)
     convo_count = n
@@ -303,7 +325,10 @@ def search_indexed_memory(
     #    limit=overfetch_k,
     #    query_filter=query_filter
     #)
-    search_result = qdrant_query(QDRANT_COLLECTION, query, overfetch_k, query_filter)
+    search_result = search_collection(collection_name=QDRANT_COLLECTION,
+                                 search_query=query,
+                                 limit=overfetch_k,
+                                 query_filter=query_filter)
 
     #print("\n[Raw Search Results]")
     #for i, hit in enumerate(search_result[:50]):
@@ -414,7 +439,9 @@ def get_semantic_episode_context(
     n_recent: int = 6,
     hours: int | None = 0.5,
     similarity_threshold: float = 0.75,
-    public=False
+    public=False,
+    anchor_message_id: str | None = None,
+    proj_code_intensity="mixed"
 ):
     """
     Return a trimmed list of recent messages forming a 'semantic episode'.
@@ -427,14 +454,16 @@ def get_semantic_episode_context(
       to the one immediately before it (episode continuity).
     - Stop when similarity drops below threshold.
     - Return the contiguous tail slice that forms the episode.
+    - Accepts an anchor_message_id to start the backward search from there.
     """
 
     # 1) Get recent messages from Mongo (your existing function)
     recent = get_immediate_context(
         n=n_recent,
         hours=hours if hours is not None else 0.5,
-        sources=None,
+        sources=SOURCES_CHAT,
         public=public,
+        anchor_message_id=anchor_message_id
     )
 
     if not recent:
@@ -452,7 +481,7 @@ def get_semantic_episode_context(
     	]
     }
 
-    response = qdrant_query(collection_name="muse_memory",
+    response = search_collection(collection_name="muse_memory",
                  search_query=None,
                  limit=len(message_ids),
                  query_filter=query_filter,
