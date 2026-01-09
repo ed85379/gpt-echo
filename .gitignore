@@ -85,6 +85,7 @@ app/_archive/frontend/static/avatar.png
 local-dev/
 uploadedfiles/
 projectfiles/
+recall_tests/
 dupe_pairs.txt
 failed_message_ids.txt
 frontend/public/iris-new.jpg
