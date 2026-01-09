@@ -82,22 +82,22 @@ const CodeIntensitySelector = ({ value, onChange }) => {
         onValueChange={onChange}
         className="flex flex-col gap-1"
       >
-        <div style={optionStyle("no_code")}>
-          <RadioGroupItem value="no_code" id="code-none" className="h-3 w-3" />
+        <div style={optionStyle("NOCODE")}>
+          <RadioGroupItem value="NOCODE" id="code-none" className="h-3 w-3" />
           <Label htmlFor="code-none" style={{ fontSize: 11, color: "#e5e7eb" }}>
             None
           </Label>
         </div>
 
-        <div style={optionStyle("mixed")}>
-          <RadioGroupItem value="mixed" id="code-mixed" className="h-3 w-3" />
+        <div style={optionStyle("MIXED")}>
+          <RadioGroupItem value="MIXED" id="code-mixed" className="h-3 w-3" />
           <Label htmlFor="code-mixed" style={{ fontSize: 11, color: "#e5e7eb" }}>
             Mixed
           </Label>
         </div>
 
-        <div style={optionStyle("heavy_code")}>
-          <RadioGroupItem value="heavy_code" id="code-heavy" className="h-3 w-3" />
+        <div style={optionStyle("HEAVYCODE")}>
+          <RadioGroupItem value="HEAVYCODE" id="code-heavy" className="h-3 w-3" />
           <Label htmlFor="code-heavy" style={{ fontSize: 11, color: "#e5e7eb" }}>
             Heavy
           </Label>
