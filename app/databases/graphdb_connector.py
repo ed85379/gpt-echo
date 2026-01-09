@@ -4,8 +4,11 @@ from gqlalchemy import Memgraph
 from app.config import muse_config
 from app.core.utils import write_system_log
 
+host = muse_config.get("GRAPHDB_HOST")
+port = muse_config.get("GRAPHDB_PORT")
+
 class GraphDBConnector:
-    def __init__(self, host, port):
+    def __init__(self, host=host, port=port):
         self.host = host
         self.port = port
         self.mg = None
@@ -14,26 +17,116 @@ class GraphDBConnector:
     def _connect(self):
         try:
             self.mg = Memgraph(self.host, self.port)
+            # Light ping to confirm connectivity
             self.mg.execute("RETURN 1;")
-            write_system_log(level="debug", module="databases", component="graphdb", function="_connect",
-                             action="connect", host=self.host, port=self.port)
+            write_system_log(
+                level="debug", module="databases", component="graphdb",
+                function="_connect", action="connect", host=self.host, port=self.port
+            )
         except Exception as e:
-            write_system_log(level="error", module="databases", component="graphdb", function="_connect",
-                             action="connect_error", host=self.host, port=self.port, error=str(e))
+            write_system_log(
+                level="error", module="databases", component="graphdb",
+                function="_connect", action="connect_error",
+                host=self.host, port=self.port, error=str(e)
+            )
             self.mg = None
 
     def run_cypher(self, query, params=None):
         if not self.mg:
-            write_system_log(level="error", module="databases", component="graphdb", function="run_cypher",
-                             action="no_connection", query=query, params=params)
+            write_system_log(
+                level="error", module="databases", component="graphdb",
+                function="run_cypher", action="no_connection",
+                query=query, params=params
+            )
             return []
         try:
-            result = list(self.mg.execute_and_fetch(query, params or {}))
-            return result
+            return list(self.mg.execute_and_fetch(query, params or {}))
         except Exception as e:
-            write_system_log(level="error", module="databases", component="graphdb", function="run_cypher",
-                             action="query_error", query=query, params=params, error=str(e))
+            write_system_log(
+                level="error", module="databases", component="graphdb",
+                function="run_cypher", action="query_error",
+                query=query, params=params, error=str(e)
+            )
             return []
+
+    # --- New helper methods ---
+
+    def expand_entities(self, entity_names, depth=2):
+        """
+        Expand outward from any node whose name matches one of the given entity_names.
+        Works natively in Memgraph (no APOC dependency).
+        Filters out hidden/deleted messages and projects.
+        Returns dict with nodes, rels, and message_ids.
+        """
+        query = """
+            MATCH (n)
+            WHERE n.name IN $entity_names
+            MATCH p = (n)-[*1..$depth]-(m)
+            WITH collect(DISTINCT n) + collect(DISTINCT m) AS nodes,
+                 collect(DISTINCT relationships(p)) AS rel_lists
+            UNWIND rel_lists AS sublist
+            UNWIND sublist AS r
+            WITH nodes, collect(DISTINCT r) AS rels
+            
+            // Filter visible messages
+            WITH nodes, rels,
+                 [m IN nodes
+                  WHERE 'Message' IN labels(m)
+                    AND coalesce(m.is_hidden,false)=false
+                    AND coalesce(m.is_deleted,false)=false
+                    AND ALL(pr IN [(m)-[:IN_PROJECT]->(proj:Project) | coalesce(proj.is_hidden,false)] WHERE pr=false)
+                 ] AS visible_msgs
+            
+            UNWIND visible_msgs AS m
+            WITH nodes, rels, collect(m.message_id) AS message_ids
+            
+            // Build rich maps now that the parser’s calm
+            WITH
+                [nd IN nodes | {
+                    name: coalesce(nd.name, ""),
+                    canonical_name: coalesce(nd.canonical_name, nd.name, ""),
+                    labels: labels(nd),
+                    type: coalesce(nd.type, head(labels(nd)), ""),
+                    real_name: coalesce(nd.real_name, nd.name, ""),
+                    description: coalesce(nd.description, ""),
+                    descriptions: coalesce(nd.descriptions, []),
+                    is_hidden: coalesce(nd.is_hidden, false),
+                    is_deleted: coalesce(nd.is_deleted, false)
+                }] AS nodes,
+                [r IN rels | {
+                    start: startNode(r).name,
+                    end: endNode(r).name,
+                    type: type(r),
+                    description: coalesce(r.description, "")
+                }] AS rels,
+                message_ids
+            
+            RETURN nodes, rels, message_ids;
+        """
+        entity_list = "[" + ",".join(f'"{e}"' for e in entity_names) + "]"
+        query = query.replace("$entity_names", entity_list)
+        query = query.replace("$depth", str(int(depth)))
+        result = self.run_cypher(query)
+
+        if not result:
+            return {"nodes": [], "rels": [], "message_ids": []}
+
+        record = result[0]
+        return {
+            "nodes": record.get("nodes", []),
+            "rels": record.get("rels", []),
+            "message_ids": record.get("message_ids", [])
+        }
+
+    def clear_graph(self):
+        """Utility: wipe all nodes and relationships. Use carefully."""
+        return self.run_cypher("MATCH (n) DETACH DELETE n;")
+
+    def count_nodes(self):
+        """Quick sanity check on graph size."""
+        result = self.run_cypher("MATCH (n) RETURN count(n) AS nodes;")
+        return result[0]["nodes"] if result else 0
+
 
     # --- Example Retrieval Methods ---
 
