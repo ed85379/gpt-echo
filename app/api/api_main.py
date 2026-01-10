@@ -172,11 +172,13 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     user_input = data.get("prompt", "")
     user_timestamp = data.get("timestamp")  # <-- Accept incoming timestamp!
     user_message_id = data.get("message_id")  # (Optional)
-    project_id = data.get("project_id")
-    blend_ratio = data.get("blend_ratio", 0.0)
-    auto_assign = data.get("auto_assign")
     injected_files = data.get("injected_files", [])
     ephemeral_files = data.get("ephemeral_files", [])
+    # UI States
+    project_id = data.get("project_id")
+    auto_assign = data.get("auto_assign")
+    blend_ratio = data.get("blend_ratio", 0.0)
+
     if not user_input:
         return JSONResponse(status_code=400, content={"error": "No prompt provided."})
 
@@ -191,19 +193,27 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     final_top_k = utils.get_adaptive_top_k(min_top_k, default_top_k, total_chunks)
     print(f"FINAL_TOP_K: {final_top_k}")
 
+    # Report UI states
+    ui_states_report = utils.report_ui_states(
+        project_id=project_id,
+        blend_ratio=blend_ratio,
+        auto_assign=auto_assign
+    )
+
     # Call prompt_profiles to build the prompt for the frontend UI
     timestamp_for_context = datetime.now(timezone.utc).isoformat()
     dev_prompt, user_prompt, ephemeral_images = build_api_prompt(
         user_input,
-        muse_config,
         source="frontend",
         timestamp=timestamp_for_context,
-        project_id=project_id,
-        blend_ratio=blend_ratio,
         message_ids_to_exclude=message_ids_to_exclude,
         final_top_k=final_top_k,
         injected_file_ids=injected_file_ids,
         ephemeral_files=ephemeral_files,
+        # ui states
+        project_id=project_id,
+        blend_ratio=blend_ratio,
+        ui_states_report=ui_states_report,
     )
     #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
     print(f"USER_PROMPT:\n" + user_prompt)

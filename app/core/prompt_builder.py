@@ -309,6 +309,40 @@ class PromptBuilder:
             formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)
             self.segments["conversation_context"] = f"[Recent Context]\n\n{formatted}"
 
+    def build_ui_state_system_message(
+        self,
+        ui_states_report: dict,
+        project_name: str | None = None,
+    ) -> None:
+        """
+        Inspect ui_states_report and, if anything deserves ceremony,
+        write a short system message into self.segments["system_messages"].
+
+        Right now:
+        - Only narrates project switches.
+        - Leaves the segment empty if nothing changed.
+        """
+
+        if not ui_states_report:
+            return
+
+        lines: list[str] = []
+
+        project_change = ui_states_report.get("project_id", {})
+        if project_change.get("changed"):
+            if project_name:
+                lines.append(f"[Project Switch] — {project_name} —")
+            else:
+                lines.append("[Project Switch] — No active project —")
+
+        # Future: add more here if other state changes get narration.
+        # e.g. focus mode, etc.
+
+        system_messages = "\n".join(lines).strip()
+
+        # Only overwrite if we actually have something to say.
+        if system_messages:
+            self.segments["system_messages"] = system_messages
 
     def add_indexed_memory(self, query="*", top_k=5, bias_source=None, bias_author_id=None):
         entries = memory_core.search_indexed_memory(query, top_k=top_k)

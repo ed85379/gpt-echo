@@ -4,8 +4,7 @@ from zoneinfo import ZoneInfo
 from bson import ObjectId
 from app.core.prompt_builder import PromptBuilder, make_whisper_directive
 from app.core.utils import (is_quiet_hour,
-                            build_project_lookup,
-                            build_project_filter_lookup,
+                            prompt_projects_helper,
                             LOCATIONS,
                             SOURCES_CHAT,
                             SOURCES_CONTEXT,
@@ -37,31 +36,16 @@ SEGMENT_MANIFEST = [
     {"method": "add_due_reminders", "segment": "due_reminders", "purpose": "Reminders that are due now"},
 ]
 
-def build_api_prompt(user_input, muse_config, **kwargs):
+def build_api_prompt(user_input, **kwargs):
     builder = PromptBuilder()
+    muse_name = muse_config.get("MUSE_NAME")
     # Set variables for certain builder segments
     timestamp = kwargs.get("timestamp", "")
     source = kwargs.get("source", "")
-    project_lookup = build_project_lookup()
-    project_filter_lookup = build_project_filter_lookup()
-    project_meta = ""
-    project_id_raw = kwargs.get("project_id")  # may be None or ""
-    project_id = None
-    proj_name = ""
-    proj_code_intensity = ""
-    if project_id_raw:
-        try:
-            project_id = ObjectId(project_id_raw)
-        except Exception:
-            project_id = None  # bad ID, just treat as no project
-    if project_id and project_lookup:
-        proj_name = project_lookup.get(project_id)
-        if proj_name:
-            project_meta = f"[Project: {proj_name}] "
-    if project_id and project_filter_lookup:
-        proj_code_intensity = project_filter_lookup.get(project_id)
     source_name = LOCATIONS.get(source, source or "Unknown Source")
     author_name = muse_config.get("USER_NAME", "Unknown Person")
+    ui_states_report = kwargs.get("ui_states_report", {})
+    project_id, project_name, project_meta, project_code_intensity = prompt_projects_helper(kwargs.get("project_id"))
     # Developer role segments
     builder.add_laws()
     builder.add_profile()
@@ -83,7 +67,7 @@ def build_api_prompt(user_input, muse_config, **kwargs):
         commands.append("remember_project_fact")
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
-
+    print(f"UI States: {ui_states_report}")
     # User role segments
     builder.add_dot_status()
     #builder.add_discovery_snippets()
@@ -92,22 +76,23 @@ def build_api_prompt(user_input, muse_config, **kwargs):
     ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
     builder.render_locations(current_location=source)
-    builder.build_conversation_context(source_name, author_name, timestamp, proj_name)
+    builder.build_conversation_context(source_name, author_name, timestamp, project_name)
     builder.add_prompt_context(
         user_input=user_input,
         projects_in_focus=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
         blend_ratio=kwargs.get("blend_ratio", 0.0),
         message_ids_to_exclude=kwargs.get("message_ids_to_exclude", []),
         final_top_k=kwargs.get("final_top_k", 10),
-        proj_code_intensity=proj_code_intensity
+        proj_code_intensity=project_code_intensity
     )
     builder.add_time()
+    builder.build_ui_state_system_message(ui_states_report, project_name)
     #builder.add_monologue_reminder()
     #builder.add_identity_reminders(["identity_reminder"])
     footer = f"[{timestamp}] {project_meta}[Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
-    user_prompt += f"\n\nRight now - {muse_config.get("USER_NAME")} said:\n{user_input}\n{footer}\n\n{muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\nRight now - {muse_config.get("USER_NAME")} said:\n{user_input}\n{footer}\n\n{muse_name}:"
     return dev_prompt, user_prompt, ephemeral_images
 
 def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwargs):

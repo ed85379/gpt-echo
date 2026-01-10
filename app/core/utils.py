@@ -8,13 +8,13 @@ from bson import ObjectId
 from charset_normalizer import from_bytes
 from cryptography.fernet import Fernet
 from zoneinfo import ZoneInfo
-from typing import Optional
+from typing import Optional, Dict, Any, Union
 from nanoid import generate
 from app.config import muse_config
 from app.core.text_filters import get_text_filter_config, filter_text
-
 from app.databases.mongo_connector import mongo, mongo_system
 
+ProjectIdLike = Union[str, ObjectId, None]
 
 LOG_LEVELS = {
     "debug": 10,
@@ -32,6 +32,135 @@ LOCATIONS = {
 SOURCES_ALL = ["frontend", "discord", "chatgpt", "reminder", "system", "debug", "internal", "thoughts"]
 SOURCES_CHAT = ["frontend", "discord", "chatgpt"]
 SOURCES_CONTEXT = ["frontend", "discord", "chatgpt", "reminder", "system", "internal", "thoughts"]
+
+def report_ui_states(
+    *,
+    project_id: ProjectIdLike,
+    auto_assign: Optional[bool],
+    blend_ratio: Optional[float],
+) -> Dict[str, Any]:
+    """
+    - Reads/creates the single 'ui_states' document in muse_states.
+    - Flat schema:
+        {
+          "type": "ui_states",
+          "project_id": ObjectId | None,
+          "auto_assign": bool | None,
+          "blend_ratio": float | None
+        }
+    - For each field, compares stored vs incoming:
+        - if different: writes new value, marks changed=True
+        - if same: changed=False
+    - Returns:
+        {
+          "project_id": {"changed": bool, "previous": ..., "current": ...},
+          "auto_assign": {"changed": bool, "previous": ..., "current": ...},
+          "blend_ratio": {"changed": bool, "previous": ..., "current": ...},
+        }
+    """
+
+    # Normalize project_id once, since UI sends it as a str
+    if isinstance(project_id, str):
+        project_id = ObjectId(project_id)
+    # if it's already ObjectId or None, leave it as-is
+
+    filter_query = {"type": "ui_states"}
+
+    state_doc = mongo_system.find_one_document(
+        "muse_states",
+        query=filter_query,
+        projection=None,
+    )
+
+    # If doc doesn't exist, create it with exactly what we were given
+    if not state_doc:
+        new_doc = {
+            "type": "ui_states",
+            "project_id": project_id,      # ObjectId or None
+            "auto_assign": auto_assign,    # bool or None
+            "blend_ratio": blend_ratio,    # float or None
+        }
+        mongo_system.insert_one_document("muse_states", new_doc)
+
+        return {
+            "project_id": {
+                "changed": True,
+                "previous": None,
+                "current": project_id,
+            },
+            "auto_assign": {
+                "changed": True,
+                "previous": None,
+                "current": auto_assign,
+            },
+            "blend_ratio": {
+                "changed": True,
+                "previous": None,
+                "current": blend_ratio,
+            },
+        }
+
+    # Ensure fields exist even on legacy docs
+    stored_project_id = state_doc.get("project_id", None)
+    stored_auto_assign = state_doc.get("auto_assign", None)
+    stored_blend_ratio = state_doc.get("blend_ratio", None)
+
+    updates: Dict[str, Any] = {}
+    changes: Dict[str, Dict[str, Any]] = {}
+
+    # --- project_id ---
+    if stored_project_id != project_id:
+        updates["project_id"] = project_id
+        changes["project_id"] = {
+            "changed": True,
+            "previous": stored_project_id,
+            "current": project_id,
+        }
+    else:
+        changes["project_id"] = {
+            "changed": False,
+            "previous": stored_project_id,
+            "current": stored_project_id,
+        }
+
+    # --- auto_assign ---
+    if stored_auto_assign != auto_assign:
+        updates["auto_assign"] = auto_assign
+        changes["auto_assign"] = {
+            "changed": True,
+            "previous": stored_auto_assign,
+            "current": auto_assign,
+        }
+    else:
+        changes["auto_assign"] = {
+            "changed": False,
+            "previous": stored_auto_assign,
+            "current": stored_auto_assign,
+        }
+
+    # --- blend_ratio ---
+    if stored_blend_ratio != blend_ratio:
+        updates["blend_ratio"] = blend_ratio
+        changes["blend_ratio"] = {
+            "changed": True,
+            "previous": stored_blend_ratio,
+            "current": blend_ratio,
+        }
+    else:
+        changes["blend_ratio"] = {
+            "changed": False,
+            "previous": stored_blend_ratio,
+            "current": stored_blend_ratio,
+        }
+
+    if updates:
+        mongo_system.update_one_document(
+            "muse_states",
+            filter_query=filter_query,
+            update_data=updates,
+        )
+
+    return changes
 
 def write_system_log(level, module=None, component=None, function=None, **fields):
     # Lookup global level (from config or db)
@@ -199,6 +328,28 @@ def build_project_filter_lookup():
         projection={ "_id": 1, "code_intensity": 1}
     )
     return { p["_id"]: p.get("code_intensity", "mixed") for p in projects}
+
+def prompt_projects_helper(project_id=None):
+    project_lookup = build_project_lookup()
+    project_filter_lookup = build_project_filter_lookup()
+    project_meta = ""
+    project_id_raw = project_id  # may be None or ""
+    project_id = None
+    project_name = ""
+    project_code_intensity = ""
+    if project_id_raw:
+        try:
+            project_id = ObjectId(project_id_raw)
+        except Exception:
+            project_id = None  # bad ID, just treat as no project
+    if project_id and project_lookup:
+        project_name = project_lookup.get(project_id)
+        if project_name:
+            project_meta = f"[Project: {project_name}] "
+    if project_id and project_filter_lookup:
+        project_code_intensity = project_filter_lookup.get(project_id)
+
+    return project_id, project_name, project_meta, project_code_intensity
 
 def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", purpose=None):
     role = e.get("role", "")
