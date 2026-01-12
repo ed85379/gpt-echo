@@ -1,5 +1,6 @@
 # prompt_builder.py
 import json
+import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bson import ObjectId
@@ -13,7 +14,7 @@ from app.core.text_filters import get_text_filter_config, filter_text
 import numpy as np
 from app.config import muse_config
 from app.core.muse_profile import muse_profile
-from app.services.gcp_dot import get_dot_status
+from app.services.feeds import get_dot_status, get_openweathermap, get_space_weather
 
 MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
 MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
@@ -311,7 +312,7 @@ class PromptBuilder:
 
     def build_ui_state_system_message(
         self,
-        ui_states_report: dict,
+        active_project_report: dict,
         project_name: str | None = None,
     ) -> None:
         """
@@ -323,12 +324,12 @@ class PromptBuilder:
         - Leaves the segment empty if nothing changed.
         """
 
-        if not ui_states_report:
+        if not active_project_report:
             return
 
         lines: list[str] = []
 
-        project_change = ui_states_report.get("project_id", {})
+        project_change = active_project_report.get("project_id", {})
         if project_change.get("changed"):
             if project_name:
                 lines.append(f"[Project Switch] — {project_name} —")
@@ -517,6 +518,61 @@ class PromptBuilder:
                 "GCP data unavailable.\n"
             )
         self.segments["gcp_dot"] = display_status
+
+    def add_world_now_block(self):
+        # User time/location
+        import pgeocode
+        nomi = pgeocode.Nominatim('US')
+        user_location= nomi.query_postal_code(muse_config.get("USER_ZIPCODE"))
+        user_city = user_location.get("place_name") or "Unknown City"
+        user_state = user_location.get("state_code") or "??"
+        user_time_string = f"-Local Time-: {self.now} ({user_city}, {user_state})"
+
+        # User weather
+        weather_data = get_openweathermap()
+        if weather_data:
+            weather_main = weather_data['weather_main']
+            weather_desc = weather_data['weather_desc']
+            weather_temp = weather_data['weather_temp']
+            weather_feels = weather_data['weather_feels']
+            weather_string = f"-Current Weather-: {weather_main} ({weather_desc}) - Temp {weather_temp}°F ({weather_feels})"
+        else:
+            weather_string = f"-Current Weather-: Weather data unavailable"
+
+        # Space weather
+        space = get_space_weather()
+        if space:
+            geomag_state = space["geomag_state"]
+            xray_state = space["xray_state"]
+            xray_class = space["xray_class"]
+
+            # e.g. "-Space Weather-: geomagnetic active · X-ray calm (B-class)"
+            space_string = (
+                f"-Space Weather-: geomagnetic {geomag_state} · "
+                f"X-ray {xray_state} ({xray_class})"
+            )
+        else:
+            space_string = "-Space Weather-: data unavailable"
+
+        # Global Consciousness Project
+        gcp_status = get_dot_status()
+        if gcp_status:
+            gcp_severity = gcp_status['severity']
+            gcp_color = gcp_status['color']
+            gcp_zscore = f"{gcp_status['z_score']:.3f}"
+            gcp_string = f"-Global Consciousness Project-: {gcp_severity} ({gcp_color}) · Z-Score: {gcp_zscore}"
+        else:
+            gcp_string = f"-Global Consciousness Project-: GCP data unavailable"
+
+        # Put the block together
+        display_block = (
+            "[World / Now]\n"
+            f"{user_time_string}\n"
+            f"{weather_string}\n"
+            f"{space_string}\n"
+            f"{gcp_string}\n"
+        )
+        self.segments["worldnow"] = display_block
 
 
     def add_memory_layers(self, project_id=None, user_query="continuity"):
