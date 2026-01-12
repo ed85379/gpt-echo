@@ -34,3 +34,4 @@ nanoid
 pytimeparse2
 cron_descriptor
 humanize
+pgeocode

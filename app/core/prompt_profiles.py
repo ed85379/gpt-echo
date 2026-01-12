@@ -44,7 +44,7 @@ def build_api_prompt(user_input, **kwargs):
     source = kwargs.get("source", "")
     source_name = LOCATIONS.get(source, source or "Unknown Source")
     author_name = muse_config.get("USER_NAME", "Unknown Person")
-    ui_states_report = kwargs.get("ui_states_report", {})
+    active_project_report = kwargs.get("active_project_report", {})
     project_id, project_name, project_meta, project_code_intensity = prompt_projects_helper(kwargs.get("project_id"))
     # Developer role segments
     builder.add_laws()
@@ -57,19 +57,19 @@ def build_api_prompt(user_input, **kwargs):
         "note_to_self",
         "manage_memories",
         "set_reminder",
-        "edit_reminder",
-        "skip_reminder",
-        "snooze_reminder",
-        "toggle_reminder",
+#        "edit_reminder",
+#        "skip_reminder",
+#        "snooze_reminder",
+#        "toggle_reminder",
         "search_reminders"
     ]
     if kwargs.get("project_id"):
         commands.append("remember_project_fact")
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
-    print(f"UI States: {ui_states_report}")
     # User role segments
-    builder.add_dot_status()
+    builder.add_world_now_block()
+    #builder.add_dot_status()
     #builder.add_discovery_snippets()
     builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))
@@ -85,8 +85,8 @@ def build_api_prompt(user_input, **kwargs):
         final_top_k=kwargs.get("final_top_k", 10),
         proj_code_intensity=project_code_intensity
     )
-    builder.add_time()
-    builder.build_ui_state_system_message(ui_states_report, project_name)
+    #builder.add_time()
+    builder.build_ui_state_system_message(active_project_report, project_name)
     #builder.add_monologue_reminder()
     #builder.add_identity_reminders(["identity_reminder"])
     footer = f"[{timestamp}] {project_meta}[Source: {source_name}]"
@@ -108,10 +108,10 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwa
         "note_to_self",
         "manage_memories",
         "set_reminder",
-        "edit_reminder",
-        "skip_reminder",
-        "snooze_reminder",
-        "toggle_reminder",
+#        "edit_reminder",
+#        "skip_reminder",
+#        "snooze_reminder",
+#        "toggle_reminder",
         "search_reminders"
     ]
     builder.add_intent_listener(commands, kwargs.get("project_id"))
