@@ -30,12 +30,12 @@ function MemoryTab() {
       prev.map(layer =>
         layer.id === layerId
           ? {
-              ...layer,
-              entries: layer.entries.map(e =>
-                e.id === entryId ? { ...e, ...patch } : e
-              )
-            }
-          : layer
+            ...layer,
+            entries: layer.entries.map(e =>
+              e.id === entryId ? { ...e, ...patch } : e
+            )
+          }
+        : layer
       )
     );
   };
@@ -45,7 +45,7 @@ function MemoryTab() {
       prev.map(layer =>
         layer.id === layerId
           ? { ...layer, entries: [...layer.entries, newEntry] }
-          : layer
+        : layer
       )
     );
   };
@@ -55,11 +55,10 @@ function MemoryTab() {
       prev.map(layer =>
         layer.id === layerId
           ? { ...layer, entries: layer.entries.filter(e => e.id !== entryId) }
-          : layer
+        : layer
       )
     );
   };
-
 
   const selectedLayer = layers.find(l => l.id === selectedLayerId);
 
@@ -102,42 +101,42 @@ function MemoryTab() {
             gap: 12
           }}
         >
-{layers.map(layer => {
-  const total = layer.entries?.length ?? 0;
-  const pinned = layer.entries?.filter(e => e.is_pinned).length ?? 0;
-  const recycled = layer.entries?.filter(e => e.recycled).length ?? 0;
+          {layers.map(layer => {
+            const total = layer.entries?.length ?? 0;
+            const pinned = layer.entries?.filter(e => e.is_pinned).length ?? 0;
+            const recycled = layer.entries?.filter(e => e.recycled).length ?? 0;
 
-  return (
-    <li
-      key={layer.id}
-      onClick={() => setSelectedLayerId(layer.id)}
-      style={{
-        cursor: "pointer",
-        background: selectedLayerId === layer.id ? "#312e81" : "#2a2a40",
-        borderRadius: 8,
-        padding: "12px 14px",
-        boxShadow:
-          selectedLayerId === layer.id
-            ? "0 2px 8px rgba(0,0,0,0.35)"
-            : "0 1px 3px rgba(0,0,0,0.2)",
-        color: "#f7f7ff",
-        transition: "background 0.2s"
-      }}
-    >
-      <div style={{ fontWeight: "bold", marginBottom: 4 }}>
-        {layer.name || "Untitled Layer"}
-      </div>
-      <div style={{ fontSize: 13, color: "#bbb", marginBottom: 6 }}>
-        Purpose: {layer.purpose || "—"}
-      </div>
-      <div style={{ fontSize: 13, display: "flex", gap: 12, color: "#ccc" }}>
-        <span>📌 pinned: {pinned}</span>
-        <span>🗂 total: {total}</span>
-        <span>♻ recycled: {recycled}</span>
-      </div>
-    </li>
-  );
-})}
+            return (
+              <li
+                key={layer.id}
+                onClick={() => setSelectedLayerId(layer.id)}
+                style={{
+                  cursor: "pointer",
+                  background: selectedLayerId === layer.id ? "#312e81" : "#2a2a40",
+                  borderRadius: 8,
+                  padding: "12px 14px",
+                  boxShadow:
+                    selectedLayerId === layer.id
+                      ? "0 2px 8px rgba(0,0,0,0.35)"
+                      : "0 1px 3px rgba(0,0,0,0.2)",
+                  color: "#f7f7ff",
+                  transition: "background 0.2s"
+                }}
+              >
+                <div style={{ fontWeight: "bold", marginBottom: 4 }}>
+                  {layer.name || "Untitled Layer"}
+                </div>
+                <div style={{ fontSize: 13, color: "#bbb", marginBottom: 6 }}>
+                  Purpose: {layer.purpose || "—"}
+                </div>
+                <div style={{ fontSize: 13, display: "flex", gap: 12, color: "#ccc" }}>
+                  <span>📌 pinned: {pinned}</span>
+                  <span>🗂 total: {total}</span>
+                  <span>♻ recycled: {recycled}</span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </aside>
 

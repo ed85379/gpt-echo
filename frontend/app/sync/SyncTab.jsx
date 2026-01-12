@@ -180,14 +180,14 @@ export default function SyncTab() {
     }, 1000);
   };
 
-    const handleDeleteImport = async (collection) => {
-      if (!window.confirm("Delete this import? This cannot be undone.")) return;
-      await fetch(`/api/import/delete?collection=${collection}`, { method: "DELETE" });
-      // Refresh the imports list after deletion
-      fetch("/api/import/list")
-        .then(res => res.json())
-        .then(data => setPendingImports(data.imports || []));
-    };
+  const handleDeleteImport = async (collection) => {
+    if (!window.confirm("Delete this import? This cannot be undone.")) return;
+    await fetch(`/api/import/delete?collection=${collection}`, { method: "DELETE" });
+    // Refresh the imports list after deletion
+    fetch("/api/import/list")
+      .then(res => res.json())
+      .then(data => setPendingImports(data.imports || []));
+  };
 
 
   const formatPromptBlock = (logContent) => {
@@ -200,36 +200,36 @@ export default function SyncTab() {
   const exportFile = `chat_export_${formattedDate}${safeTitle ? "_" + safeTitle : ""}.jsonl`;
 
   const exportScript = `(() => {
-  const messages = Array.from(document.querySelectorAll('[data-message-author-role]'));
-  const lines = [];
-  lines.push(JSON.stringify({ muse_export_watermark: "gpt-muse-export-v1" }));
-  const baseDate = new Date('${formattedDate}T00:00:00Z');
-  let offsetSeconds = 0;
-  for (const message of messages) {
-    const roleAttr = message.getAttribute('data-message-author-role');
-    const role = roleAttr === 'user' ? 'user' : 'muse';
-    const content = message.innerText.trim();
-    const rawISO = new Date(baseDate.getTime() + offsetSeconds * 1000).toISOString();
-    const timestamp = rawISO.replace("Z", "+00:00");
-    offsetSeconds += 30;
-    if (content) {
-      lines.push(JSON.stringify({
-        timestamp,
-        role,
-        source: "chatgpt",
-        message: content,
-        metadata: {}
-      }));
+    const messages = Array.from(document.querySelectorAll('[data-message-author-role]'));
+    const lines = [];
+    lines.push(JSON.stringify({ muse_export_watermark: "gpt-muse-export-v1" }));
+    const baseDate = new Date('${formattedDate}T00:00:00Z');
+    let offsetSeconds = 0;
+    for (const message of messages) {
+      const roleAttr = message.getAttribute('data-message-author-role');
+      const role = roleAttr === 'user' ? 'user' : 'muse';
+      const content = message.innerText.trim();
+      const rawISO = new Date(baseDate.getTime() + offsetSeconds * 1000).toISOString();
+      const timestamp = rawISO.replace("Z", "+00:00");
+      offsetSeconds += 30;
+      if (content) {
+        lines.push(JSON.stringify({
+          timestamp,
+          role,
+          source: "chatgpt",
+          message: content,
+          metadata: {}
+        }));
+      }
     }
-  }
-  const blob = new Blob([lines.join('\\n')], { type: 'application/jsonl' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = '${exportFile}';
-  a.click();
-  URL.revokeObjectURL(url);
-})();`;
+    const blob = new Blob([lines.join('\\n')], { type: 'application/jsonl' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '${exportFile}';
+    a.click();
+    URL.revokeObjectURL(url);
+    })();`;
 
   // MAIN RENDER:
   return (

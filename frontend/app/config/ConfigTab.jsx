@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 
-// Poetic config intro as before
 function ConfigIntro() {
   return (
     <div className="mb-6 p-4 bg-gradient-to-r from-purple-950 via-neutral-950 to-neutral-950 rounded shadow text-neutral-200 border border-purple-900">
@@ -47,36 +46,36 @@ const ConfigTab = () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value: newValue }),
     })
-      .then(res => res.json())
-      .then(data => {
-        if (data.status === "ok") {
-          setSaved(s => ({ ...s, [entryKey]: true }));
-          setTimeout(() => setSaved(s => ({ ...s, [entryKey]: false })), 1200);
-        } else {
-          throw new Error(data.detail || "Unknown error");
-        }
-      })
-      .catch(err => {
-        setError(e => ({ ...e, [entryKey]: err.message || "Save failed" }));
-      })
-      .finally(() => setSaving(s => ({ ...s, [entryKey]: false })));
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === "ok") {
+        setSaved(s => ({ ...s, [entryKey]: true }));
+        setTimeout(() => setSaved(s => ({ ...s, [entryKey]: false })), 1200);
+      } else {
+        throw new Error(data.detail || "Unknown error");
+      }
+    })
+    .catch(err => {
+      setError(e => ({ ...e, [entryKey]: err.message || "Save failed" }));
+    })
+    .finally(() => setSaving(s => ({ ...s, [entryKey]: false })));
   };
 
   const handleDelete = (category, entryKey) => {
     if (!window.confirm("Revert this config to its default?")) return;
     setSaving(s => ({ ...s, [entryKey]: true }));
     fetch(`/api/config/${entryKey}/revert`, { method: "DELETE" })
-      .then(res => res.json())
-      .then(data => {
-        if (data.status === "ok") {
-          setConfig(prev => {
-            const updated = { ...prev };
-            updated[category] = updated[category].filter(e => e.key !== entryKey);
-            return updated;
-          });
-        }
-      })
-      .finally(() => setSaving(s => ({ ...s, [entryKey]: false })));
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === "ok") {
+        setConfig(prev => {
+          const updated = { ...prev };
+          updated[category] = updated[category].filter(e => e.key !== entryKey);
+          return updated;
+        });
+      }
+    })
+    .finally(() => setSaving(s => ({ ...s, [entryKey]: false })));
   };
 
   // Flatten all entries for searching
@@ -86,11 +85,11 @@ const ConfigTab = () => {
   const filtered = !search
     ? allEntries
     : allEntries.filter(
-        entry =>
-          entry.key?.toLowerCase().includes(search.toLowerCase()) ||
-          String(entry.value).toLowerCase().includes(search.toLowerCase()) ||
-          entry.description?.toLowerCase().includes(search.toLowerCase())
-      );
+      entry =>
+        entry.key?.toLowerCase().includes(search.toLowerCase()) ||
+        String(entry.value).toLowerCase().includes(search.toLowerCase()) ||
+        entry.description?.toLowerCase().includes(search.toLowerCase())
+     );
 
   // Regroup by category after filtering
   const grouped = filtered.reduce((acc, entry) => {

@@ -147,11 +147,11 @@ function ProjectsTab() {
     }
   };
 
-    const getStatusTitle = (project) => {
-      if (project.is_hidden) return "Hidden project";
-      if (project.is_private) return "Private project";
-      return "Public project";
-    };
+  const getStatusTitle = (project) => {
+    if (project.is_hidden) return "Hidden project";
+    if (project.is_private) return "Private project";
+    return "Public project";
+  };
 
   return (
     <div style={{

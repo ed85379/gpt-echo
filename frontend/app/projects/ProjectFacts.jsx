@@ -5,7 +5,6 @@ import MemoryLayerEditor from "@/components/app/MemoryLayerEditor";
 function ProjectFacts({ project }) {
   const [layer, setLayer] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const projectId = project._id; // passed in from parent page
 
   useEffect(() => {
@@ -30,12 +29,12 @@ function ProjectFacts({ project }) {
     setLayer(prev =>
       prev
         ? {
-            ...prev,
-            entries: prev.entries.map(e =>
-              e.id === entryId ? { ...e, ...patch } : e
-            )
-          }
-        : prev
+          ...prev,
+          entries: prev.entries.map(e =>
+            e.id === entryId ? { ...e, ...patch } : e
+          )
+        }
+      : prev
     );
   };
 
@@ -43,10 +42,10 @@ function ProjectFacts({ project }) {
     setLayer(prev =>
       prev
         ? {
-            ...prev,
-            entries: prev.entries.filter(e => e.id !== entryId)
-          }
-        : prev
+          ...prev,
+          entries: prev.entries.filter(e => e.id !== entryId)
+        }
+      : prev
     );
   };
 
@@ -133,20 +132,20 @@ function ProjectFacts({ project }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text: " " })
           })
-            .then(res => res.json())
-            .then(data => {
-              const realEntry = data.entry;
-              setLayer(prev =>
-                prev
-                  ? {
-                      ...prev,
-                      entries: prev.entries.map(e =>
-                        e.id === tempId ? { ...realEntry, text: realEntry.text ?? " " } : e
-                      )
-                    }
-                  : prev
-              );
-            });
+          .then(res => res.json())
+          .then(data => {
+            const realEntry = data.entry;
+            setLayer(prev =>
+              prev
+                ? {
+                    ...prev,
+                    entries: prev.entries.map(e =>
+                      e.id === tempId ? { ...realEntry, text: realEntry.text ?? " " } : e
+                    )
+                  }
+                : prev
+            );
+          });
         }}
       />
     </div>

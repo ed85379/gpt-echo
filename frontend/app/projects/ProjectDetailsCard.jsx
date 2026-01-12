@@ -257,154 +257,151 @@ function ProjectDetailsCard({ project, projectMap, projects, projectsLoading, on
 
   const handleEdit = (field) => setEditing(e => ({...e, [field]: true}));
 
+  useEffect(() => {
+    setTagList(project.tags || []);
+  }, [project]);
 
+  const handleAddTag = (newTag) => {
+    setTagList(prev => (!prev.includes(newTag) ? [...prev, newTag] : prev));
+  };
 
-useEffect(() => {
-  setTagList(project.tags || []);
-}, [project]);
+  const handleRemoveTag = idx => {
+    setTagList(prev => prev.filter((_, i) => i !== idx));
+  };
 
-const handleAddTag = (newTag) => {
-  setTagList(prev => (!prev.includes(newTag) ? [...prev, newTag] : prev));
-};
-
-const handleRemoveTag = idx => {
-  setTagList(prev => prev.filter((_, i) => i !== idx));
-};
-
-const handleSaveTags = () => {
-  onProjectChange({ tags: tagList });
-  setEditing(e => ({...e, tags: false}));
-};
+  const handleSaveTags = () => {
+    onProjectChange({ tags: tagList });
+    setEditing(e => ({...e, tags: false}));
+  };
 
   return (
     <div>
-
-    <div style={{ marginBottom: 18 }}>
-      <span style={{ fontWeight: "bold", color: "#bbb" }}>Description: </span>
-      {editing.description ? (
-        <form
-          onSubmit={e => { e.preventDefault(); handleSave("description"); }}
-          style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}
-        >
-          <textarea
-            value={draft.description}
-            onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
-            maxLength={MAX_LENGTH_DESC}
-            autoFocus
-            rows={2}
-            style={{
-              fontWeight: "bold",
-              fontSize: 16,
-              background: "none",
-              color: "#fff",
-              border: draft.description.length > MAX_LENGTH_DESC ? "2px solid #f55" : "1px solid #666",
-              borderRadius: 6,
-              outline: "none",
-              width: "100%",
-              padding: "6px 12px",
-              marginBottom: 4,
-              minWidth: 280
-            }}
-            onBlur={() => handleSave("description")}
-          />
-          <div
-            style={{
-              textAlign: "right",
-              fontSize: 12,
-              color: draft.description.length > MAX_LENGTH_DESC ? "#f55" : "#bbb",
-              alignSelf: "flex-end",
-              marginBottom: 4,
-            }}
+      <div style={{ marginBottom: 18 }}>
+        <span style={{ fontWeight: "bold", color: "#bbb" }}>Description: </span>
+        {editing.description ? (
+          <form
+            onSubmit={e => { e.preventDefault(); handleSave("description"); }}
+            style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}
           >
-            {draft.description.length}/{MAX_LENGTH_DESC}
-          </div>
-          {/* Optional: Save/Cancel buttons */}
-          {/* <div>
-            <button style={miniBtnStyle} type="submit">Save</button>
-            <button style={miniBtnStyle} type="button" onClick={() => setEditing(e => ({ ...e, description: false }))}>Cancel</button>
-          </div> */}
-        </form>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}>
-          <span style={{
-            background: "#16162a",
-            color: "#cbd5fa",
-            borderRadius: 6,
-            padding: "6px 12px",
-            display: "inline-block",
-            fontSize: 15,
-            minWidth: 280,
-            marginBottom: 4,
-          }}>
-            {project.description || <span style={{ color: "#777" }}>none</span>}
-          </span>
-          <SquarePen size={18} strokeWidth={1.5} onClick={() => handleEdit("description")} style={{ cursor: "pointer" }} />
-        </div>
-      )}
-    </div>
-        <div style={{ marginBottom: 18 }}>
-          <span style={{ fontWeight: "bold", color: "#bbb" }}>Short Description: </span>
-      {editing.shortdesc ? (
-        <form
-          onSubmit={e => { e.preventDefault(); handleSave("shortdesc"); }}
-          style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}
-        >
-          <textarea
-            value={draft.shortdesc}
-            onChange={e => setDraft(d => ({ ...d, shortdesc: e.target.value }))}
-            maxLength={MAX_LENGTH_SHORTDESC}
-            autoFocus
-            rows={1}
-            style={{
-              fontWeight: "bold",
-              fontSize: 16,
-              background: "none",
-              color: "#fff",
-              border: draft.shortdesc.length > MAX_LENGTH_SHORTDESC ? "2px solid #f55" : "1px solid #666",
+            <textarea
+              value={draft.description}
+              onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+              maxLength={MAX_LENGTH_DESC}
+              autoFocus
+              rows={2}
+              style={{
+                fontWeight: "bold",
+                fontSize: 16,
+                background: "none",
+                color: "#fff",
+                border: draft.description.length > MAX_LENGTH_DESC ? "2px solid #f55" : "1px solid #666",
+                borderRadius: 6,
+                outline: "none",
+                width: "100%",
+                padding: "6px 12px",
+                marginBottom: 4,
+                minWidth: 280
+              }}
+              onBlur={() => handleSave("description")}
+            />
+            <div
+              style={{
+                textAlign: "right",
+                fontSize: 12,
+                color: draft.description.length > MAX_LENGTH_DESC ? "#f55" : "#bbb",
+                alignSelf: "flex-end",
+                marginBottom: 4,
+              }}
+            >
+              {draft.description.length}/{MAX_LENGTH_DESC}
+            </div>
+            {/* Optional: Save/Cancel buttons */}
+            {/* <div>
+              <button style={miniBtnStyle} type="submit">Save</button>
+              <button style={miniBtnStyle} type="button" onClick={() => setEditing(e => ({ ...e, description: false }))}>Cancel</button>
+            </div> */}
+          </form>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}>
+            <span style={{
+              background: "#16162a",
+              color: "#cbd5fa",
               borderRadius: 6,
-              outline: "none",
-              width: "100%",
               padding: "6px 12px",
+              display: "inline-block",
+              fontSize: 15,
+              minWidth: 280,
               marginBottom: 4,
-              minWidth: 280
-            }}
-            onBlur={() => handleSave("shortdesc")}
-          />
-          <div
-            style={{
-              textAlign: "right",
-              fontSize: 12,
-              color: draft.shortdesc.length > MAX_LENGTH_SHORTDESC ? "#f55" : "#bbb",
-              alignSelf: "flex-end",
-              marginBottom: 4,
-            }}
-          >
-            {draft.shortdesc.length}/{MAX_LENGTH_SHORTDESC}
+            }}>
+              {project.description || <span style={{ color: "#777" }}>none</span>}
+            </span>
+            <SquarePen size={18} strokeWidth={1.5} onClick={() => handleEdit("description")} style={{ cursor: "pointer" }} />
           </div>
-          {/* Optional: Save/Cancel buttons */}
-          {/* <div>
-            <button style={miniBtnStyle} type="submit">Save</button>
-            <button style={miniBtnStyle} type="button" onClick={() => setEditing(e => ({ ...e, shortdesc: false }))}>Cancel</button>
-          </div> */}
-        </form>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}>
-          <span style={{
-            background: "#16162a",
-            color: "#cbd5fa",
-            borderRadius: 6,
-            padding: "6px 12px",
-            display: "inline-block",
-            fontSize: 15,
-            minWidth: 280,
-            marginBottom: 4,
-          }}>
-            {project.shortdesc || <span style={{ color: "#777" }}>none</span>}
-          </span>
-          <SquarePen size={18} strokeWidth={1.5} onClick={() => handleEdit("shortdesc")} style={{ cursor: "pointer" }} />
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <span style={{ fontWeight: "bold", color: "#bbb" }}>Short Description: </span>
+        {editing.shortdesc ? (
+          <form
+            onSubmit={e => { e.preventDefault(); handleSave("shortdesc"); }}
+            style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}
+          >
+            <textarea
+              value={draft.shortdesc}
+              onChange={e => setDraft(d => ({ ...d, shortdesc: e.target.value }))}
+              maxLength={MAX_LENGTH_SHORTDESC}
+              autoFocus
+              rows={1}
+              style={{
+                fontWeight: "bold",
+                fontSize: 16,
+                background: "none",
+                color: "#fff",
+                border: draft.shortdesc.length > MAX_LENGTH_SHORTDESC ? "2px solid #f55" : "1px solid #666",
+                borderRadius: 6,
+                outline: "none",
+                width: "100%",
+                padding: "6px 12px",
+                marginBottom: 4,
+                minWidth: 280
+              }}
+              onBlur={() => handleSave("shortdesc")}
+            />
+            <div
+              style={{
+                textAlign: "right",
+                fontSize: 12,
+                color: draft.shortdesc.length > MAX_LENGTH_SHORTDESC ? "#f55" : "#bbb",
+                alignSelf: "flex-end",
+                marginBottom: 4,
+              }}
+            >
+              {draft.shortdesc.length}/{MAX_LENGTH_SHORTDESC}
+            </div>
+            {/* Optional: Save/Cancel buttons */}
+            {/* <div>
+              <button style={miniBtnStyle} type="submit">Save</button>
+              <button style={miniBtnStyle} type="button" onClick={() => setEditing(e => ({ ...e, shortdesc: false }))}>Cancel</button>
+            </div> */}
+          </form>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6 }}>
+            <span style={{
+              background: "#16162a",
+              color: "#cbd5fa",
+              borderRadius: 6,
+              padding: "6px 12px",
+              display: "inline-block",
+              fontSize: 15,
+              minWidth: 280,
+              marginBottom: 4,
+            }}>
+              {project.shortdesc || <span style={{ color: "#777" }}>none</span>}
+            </span>
+            <SquarePen size={18} strokeWidth={1.5} onClick={() => handleEdit("shortdesc")} style={{ cursor: "pointer" }} />
+          </div>
+        )}
+      </div>
       <div style={{marginBottom: 8}}>
         <span style={{fontWeight: "bold", color: "#bbb"}}>Tags: </span>
         {editing.tags ? (
@@ -477,21 +474,13 @@ const handleSaveTags = () => {
         )}
       </div>
       <hr style={{border: "none", borderTop: "1px solid #282860", margin: "18px 0"}} />
-     <div style={{
+      <div style={{
         display: "flex", gap: 32, marginBottom: 12, fontSize: 16, color: "#b1b1df"
       }}>
         <span>Messages: <b>{project.messageCount ?? "—"}</b></span>
         <span>Key Facts: <b>{project.cortexCount ?? "—"}</b></span>
       </div>
-{/*       <div style={{
-        marginTop: 10, fontSize: 14,
-        color: project.is_hidden ? "#ef4444" : "#22c55e"
-      }}>
-        {project.is_hidden
-          ? "Project data is hidden from your muse and OpenAI’s systems."
-          : "Project data is accessible to your muse (and may be processed by OpenAI)."}
-      </div>
-      */}
+
       <footer style={{display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24}}>
         {/*}<button style={{
           ...cardBtnStyle, background: "#ef444422", color: "#ff4455", border: "1px solid #ef4444"
@@ -511,6 +500,7 @@ const cardBtnStyle = {
   cursor: "pointer",
   fontWeight: 500
 };
+
 const miniBtnStyle = {
   ...cardBtnStyle,
   padding: "3px 13px",

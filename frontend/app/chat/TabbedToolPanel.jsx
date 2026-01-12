@@ -22,27 +22,27 @@ function humanFileSize(bytes) {
 }
 
 export default function TabbedToolPanel(
-    {
-        projects,
-        project,
-        fetchProjects,
-        projectMap,
-        selectedProjectId,
-        setSelectedProjectId,
-        focus,
-        setFocus,
-        autoAssign,
-        setAutoAssign,
-        injectedFiles,
-        setInjectedFiles,
-        files,
-        fetchFiles,
-        filesLoading,
-        setFilesLoading,
-        filesError,
-        handlePinToggle
-         }
-     ) {
+  {
+    projects,
+    project,
+    fetchProjects,
+    projectMap,
+    selectedProjectId,
+    setSelectedProjectId,
+    focus,
+    setFocus,
+    autoAssign,
+    setAutoAssign,
+    injectedFiles,
+    setInjectedFiles,
+    files,
+    fetchFiles,
+    filesLoading,
+    setFilesLoading,
+    filesError,
+    handlePinToggle
+  }
+) {
   const [activeTab, setActiveTab] = useState("muse");
 
   return (

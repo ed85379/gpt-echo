@@ -197,24 +197,24 @@ export default function ProjectFiles({
   };
 
 
-    const handleDelete = async (file) => {
-      await fetch(`/api/files/${file.id}`, {
-        method: "DELETE"
-        // No need for headers or body unless your API expects them (yours does not)
-      });
-      fetchFiles();
-      setDeleteDialogOpen(false);
-    };
+  const handleDelete = async (file) => {
+    await fetch(`/api/files/${file.id}`, {
+      method: "DELETE"
+      // No need for headers or body unless your API expects them (yours does not)
+    });
+    fetchFiles();
+    setDeleteDialogOpen(false);
+  };
 
-    const handleDeleteConfirm = async () => {
-      if (!deletingFile) return;
-      await fetch(`/api/files/${deletingFile.id}`, {
-        method: "DELETE"
-      });
-      fetchFiles();
-      setDeleteDialogOpen(false);
-      setDeletingFile(null);
-    };
+  const handleDeleteConfirm = async () => {
+    if (!deletingFile) return;
+    await fetch(`/api/files/${deletingFile.id}`, {
+      method: "DELETE"
+    });
+    fetchFiles();
+    setDeleteDialogOpen(false);
+    setDeletingFile(null);
+  };
 
   // File upload logic
   const handleUpload = (file) => {

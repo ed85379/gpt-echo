@@ -84,7 +84,7 @@ const HistoryTab = () => {
       ? messages
       : messages.filter(msg =>
           (msg.user_tags || []).some(tag => tagFilter.includes(tag))
-        );
+      );
 
   useEffect(() => {
     setCalendarStatus({});
@@ -141,9 +141,8 @@ const HistoryTab = () => {
 
 
   return (
-<div className="p-6 text-white bg-neutral-950 overflow-y-auto"
-     style={{ maxHeight: "calc(100vh - 92px - 48px)" }}>
-  <div className="flex items-center gap-6 mb-4">
+    <div className="p-6 text-white bg-neutral-950 overflow-y-auto" style={{ maxHeight: "calc(100vh - 92px - 48px)" }}>
+      <div className="flex items-center gap-6 mb-4">
         <label className="text-sm text-neutral-300">
           Source:
           <select
@@ -229,33 +228,30 @@ const HistoryTab = () => {
           )}
           {messages.length > 0 && (
             <div className="space-y-2">
-                {filteredMessages.map((msg, idx) => {
-                  return (
-                      <MessageItem
-                        key={msg.message_id || idx}
-                        msg={msg}
-                        projects={projects}
-                        projectsLoading={projectsLoading}
-                        projectMap={projectMap}
-                        tagDialogOpen={tagDialogOpen}
-                        setTagDialogOpen={setTagDialogOpen}
-                        projectDialogOpen={projectDialogOpen}
-                        setProjectDialogOpen={setProjectDialogOpen}
-                        museName={museName}
-                        onDelete={onDelete}
-                          onTogglePrivate={onTogglePrivate}
-                          onToggleHidden={onToggleHidden}
-                          onToggleRemembered={onToggleRemembered}
-                          onSetProject={onSetProject}
-                          onClearProject={onClearProject}
-                          onAddTag={onAddTag}
-                          onRemoveTag={onRemoveTag}
-                      />
-                  );
-                }
-            )}
-
-
+              {filteredMessages.map((msg, idx) => {
+                return (
+                  <MessageItem
+                    key={msg.message_id || idx}
+                    msg={msg}
+                    projects={projects}
+                    projectsLoading={projectsLoading}
+                    projectMap={projectMap}
+                    tagDialogOpen={tagDialogOpen}
+                    setTagDialogOpen={setTagDialogOpen}
+                    projectDialogOpen={projectDialogOpen}
+                    setProjectDialogOpen={setProjectDialogOpen}
+                    museName={museName}
+                    onDelete={onDelete}
+                      onTogglePrivate={onTogglePrivate}
+                      onToggleHidden={onToggleHidden}
+                      onToggleRemembered={onToggleRemembered}
+                      onSetProject={onSetProject}
+                      onClearProject={onClearProject}
+                      onAddTag={onAddTag}
+                      onRemoveTag={onRemoveTag}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

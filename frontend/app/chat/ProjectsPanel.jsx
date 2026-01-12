@@ -57,48 +57,48 @@ export default function ProjectsPanel({
     });
   };
 
-const handleInjectToggle = (fid, name) => {
-  setInjectedFiles(prev => {
-    const exists = prev.find(f => f.id === fid);
-    if (exists) {
-      return prev.filter(f => f.id !== fid);
-    } else {
-      return [...prev, { id: fid, name, pinned: false }];
-    }
-  });
-};
+  const handleInjectToggle = (fid, name) => {
+    setInjectedFiles(prev => {
+      const exists = prev.find(f => f.id === fid);
+      if (exists) {
+        return prev.filter(f => f.id !== fid);
+      } else {
+        return [...prev, { id: fid, name, pinned: false }];
+      }
+    });
+  };
 
-const isInjected = fid => injectedFiles.some(f => f.id === fid);
-const isPinned = fid => injectedFiles.some(f => f.id === fid && f.pinned);
+  const isInjected = fid => injectedFiles.some(f => f.id === fid);
+  const isPinned = fid => injectedFiles.some(f => f.id === fid && f.pinned);
 
   return (
     <div className="p-2 text-neutral-200">
-        {/* Project Dropdown */}
-        <div className="mb-4 flex items-center gap-2">
-          <span className="mr-2 font-semibold text-purple-300">Select Project:</span>
-          <select
-            className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm"
-            value={selectedProjectId}
-            onChange={e => setSelectedProjectId(e.target.value)}
-            onFocus={fetchProjects}
-          >
-            <option value="">(Select...)</option>
-            {projects
-              .filter(proj => !proj.is_hidden) // Only show non-hidden projects
-              .map(proj => (
-                <option key={proj._id} value={proj._id}>
-                  {proj.name}
-                </option>
-              ))
-            }
-          </select>
-          {/* Note about hidden projects */}
-          {projects.filter(proj => proj.is_hidden).length > 0 && (
-            <span className="text-xs text-neutral-500">
-              ({projects.filter(proj => proj.is_hidden).length} hidden project{projects.filter(proj => proj.is_hidden).length > 1 ? 's' : ''})
-            </span>
-          )}
-        </div>
+      {/* Project Dropdown */}
+      <div className="mb-4 flex items-center gap-2">
+        <span className="mr-2 font-semibold text-purple-300">Select Project:</span>
+        <select
+          className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm"
+          value={selectedProjectId}
+          onChange={e => setSelectedProjectId(e.target.value)}
+          onFocus={fetchProjects}
+        >
+          <option value="">(Select...)</option>
+          {projects
+            .filter(proj => !proj.is_hidden) // Only show non-hidden projects
+            .map(proj => (
+              <option key={proj._id} value={proj._id}>
+                {proj.name}
+              </option>
+            ))
+          }
+        </select>
+        {/* Note about hidden projects */}
+        {projects.filter(proj => proj.is_hidden).length > 0 && (
+          <span className="text-xs text-neutral-500">
+            ({projects.filter(proj => proj.is_hidden).length} hidden project{projects.filter(proj => proj.is_hidden).length > 1 ? 's' : ''})
+          </span>
+        )}
+      </div>
 
       {!project && (
         <div className="text-neutral-400">
@@ -144,29 +144,29 @@ const isPinned = fid => injectedFiles.some(f => f.id === fid && f.pinned);
           </label>
         </div>
 
-          {/* Files in project */}
-          <div className="mb-4">
-            <div className="flex items-center mb-2 font-semibold text-purple-300">
-              <span>Files in Project:</span>
-              {
-                filesLoading ? (
-                  <svg className="ml-2 animate-spin h-5 w-5 text-purple-400" /* ...spinner SVG... */ />
-              ) : (
-              <button
-                type="button"
-                className="ml-2 p-1 rounded hover:bg-neutral-800 transition-colors"
-                title="Refresh file list"
-                onClick={fetchFiles}
-                aria-label="Refresh file list"
-              >
-                <RefreshCw size={18} className="text-purple-400 hover:rotate-90 transition-transform" />
-              </button>
-                )
-            }
-            </div>
-            {filesLoading && <div className="text-neutral-500">Loading files…</div>}
-            {filesError && <div className="text-red-400">{filesError}</div>}
-            <ul className="space-y-1">
+        {/* Files in project */}
+        <div className="mb-4">
+          <div className="flex items-center mb-2 font-semibold text-purple-300">
+            <span>Files in Project:</span>
+            {
+              filesLoading ? (
+                <svg className="ml-2 animate-spin h-5 w-5 text-purple-400" /* ...spinner SVG... */ />
+            ) : (
+            <button
+              type="button"
+              className="ml-2 p-1 rounded hover:bg-neutral-800 transition-colors"
+              title="Refresh file list"
+              onClick={fetchFiles}
+              aria-label="Refresh file list"
+            >
+              <RefreshCw size={18} className="text-purple-400 hover:rotate-90 transition-transform" />
+            </button>
+            )
+          }
+          </div>
+          {filesLoading && <div className="text-neutral-500">Loading files…</div>}
+          {filesError && <div className="text-red-400">{filesError}</div>}
+          <ul className="space-y-1">
             {files.map(file => {
               const injected = isInjected(file.id);
               const pinned = isPinned(file.id);
@@ -213,11 +213,11 @@ const isPinned = fid => injectedFiles.some(f => f.id === fid && f.pinned);
                 </li>
               );
             })}
-              {(!filesLoading && files.length === 0) && (
-                <li className="text-neutral-500">No files in this project yet.</li>
-              )}
-            </ul>
-          </div>
+            {(!filesLoading && files.length === 0) && (
+              <li className="text-neutral-500">No files in this project yet.</li>
+            )}
+          </ul>
+        </div>
         </>
       )}
     </div>

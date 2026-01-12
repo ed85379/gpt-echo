@@ -16,7 +16,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-
 const EXPORT_FORMATS = ["txt", "json", "csv", "pdf"];
 const VIEW_MODES = ["infinite", "byDay"];
 
@@ -114,7 +113,6 @@ export default function ProjectMessages({ project, projectMap, projects, project
 
   // --- Infinite scroll: load older/newer logic ---
   const loadOlderMessages = async () => {
-      console.log("loading older")
     if (loadingOlder || atStart || messages.length === 0) return;
     setLoadingOlder(true);
     const oldest = messages[0];
@@ -153,8 +151,8 @@ export default function ProjectMessages({ project, projectMap, projects, project
   const filteredMessages = tagFilter.length === 0
     ? messages
     : messages.filter(msg =>
-        (msg.user_tags || []).some(tag => tagFilter.includes(tag))
-      );
+      (msg.user_tags || []).some(tag => tagFilter.includes(tag))
+    );
 
   useEffect(() => {
     setCalendarStatus({});
@@ -178,52 +176,46 @@ export default function ProjectMessages({ project, projectMap, projects, project
       {/* Top bar: filters, export, view mode */}
       <div className="sticky top-0 z-10 bg-neutral-950 border-b border-neutral-800 p-2 flex flex-col md:flex-row gap-4 items-start">
         <div className="flex gap-2 items-center">
-{/*          <span className="text-sm">View:</span>
-          <select value={viewMode} onChange={e => setViewMode(e.target.value)}>
-            <option value="infinite">Infinite Scroll</option>
-            <option value="byDay">By Day</option>
-          </select>
-*/}
         </div>
         {viewMode === "byDay" && (
           <div>
             <Label htmlFor="date" className="px-1">
             Select Day
             </Label>
-              <Popover open={open} onOpenChange={setOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    id="date"
-                    className="w-36 justify-between font-normal"
-                  >
-                    {selectedDate ? selectedDate.toLocaleDateString() : "Select date"}
-                    <ChevronDownIcon />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto overflow-hidden p-0" align="start">
-                    <DayPicker
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                        classNames={{
-                        months: "bg-neutral-900 text-neutral-100 rounded-lg shadow p-2",
-                        caption_label: "text-purple-300 font-semibold",
-                        day_selected: "bg-purple-700 text-white",
-                        day: "hover:bg-purple-800/60"
-                        }}
-                      modifiers={{
-                        hasMessages: day => {
-                          const d = day.toISOString().slice(0,10);
-                          return !!calendarStatus[d];
-                        }
-                      }}
-                      modifiersClassNames={{
-                        hasMessages: "bg-purple-800/70 text-white font-bold"
-                      }}
-                    />
-                            </PopoverContent>
-              </Popover>
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  id="date"
+                  className="w-36 justify-between font-normal"
+                >
+                  {selectedDate ? selectedDate.toLocaleDateString() : "Select date"}
+                  <ChevronDownIcon />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto overflow-hidden p-0" align="start">
+                <DayPicker
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                    classNames={{
+                    months: "bg-neutral-900 text-neutral-100 rounded-lg shadow p-2",
+                    caption_label: "text-purple-300 font-semibold",
+                    day_selected: "bg-purple-700 text-white",
+                    day: "hover:bg-purple-800/60"
+                    }}
+                  modifiers={{
+                    hasMessages: day => {
+                      const d = day.toISOString().slice(0,10);
+                      return !!calendarStatus[d];
+                    }
+                  }}
+                  modifiersClassNames={{
+                    hasMessages: "bg-purple-800/70 text-white font-bold"
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
         )}
         <div className="flex flex-wrap gap-2 items-center">
@@ -269,48 +261,48 @@ export default function ProjectMessages({ project, projectMap, projects, project
           </div>
         )}
         {!loading && filteredMessages.length > 0 && (
-            <Virtuoso
-              style={{ height: 400, width: "100%" }}
-              initialTopMostItemIndex={filteredMessages.length - 1}
-              data={filteredMessages}
-              itemContent={(index, msg) => (
-                <MessageItem
-                  key={msg.message_id || index}
-                  msg={msg}
-                  projectMap={projectMap}
-                  projects={projects}
-                  projectsLoading={projectsLoading}
-                  tagDialogOpen={tagDialogOpen}
-                  setTagDialogOpen={setTagDialogOpen}
-                  projectDialogOpen={projectDialogOpen}
-                  setProjectDialogOpen={setProjectDialogOpen}
-                  onDelete={onDelete}
-                  onTogglePrivate={onTogglePrivate}
-                  onToggleHidden={onToggleHidden}
-                  onToggleRemembered={onToggleRemembered}
-                  onSetProject={onSetProject}
-                  onClearProject={onClearProject}
-                  onAddTag={onAddTag}
-                  onRemoveTag={onRemoveTag}
-                />
-              )}
-            startReached={viewMode === "infinite" ? loadOlderMessages : undefined}
-            endReached={viewMode === "infinite" ? loadNewerMessages : undefined}
-            overscan={200} // buffer pixels above/below for smoother scroll
-            components={{
-              Header: () =>
-                loadingOlder ? (
-                  <div className="text-center text-xs text-neutral-400 py-2">Loading older messages...</div>
-                ) : atStart ? (
-                  <div className="text-center text-xs text-neutral-400 py-2">— Beginning of project —</div>
-                ) : null,
-              Footer: () =>
-                loadingNewer ? (
-                  <div className="text-center text-xs text-neutral-400 py-2">Loading newer messages...</div>
-                ) : atEnd ? (
-                  <div className="text-center text-xs text-neutral-400 py-2">— Latest message —</div>
-                ) : null,
-            }}
+          <Virtuoso
+            style={{ height: 400, width: "100%" }}
+            initialTopMostItemIndex={filteredMessages.length - 1}
+            data={filteredMessages}
+            itemContent={(index, msg) => (
+              <MessageItem
+                key={msg.message_id || index}
+                msg={msg}
+                projectMap={projectMap}
+                projects={projects}
+                projectsLoading={projectsLoading}
+                tagDialogOpen={tagDialogOpen}
+                setTagDialogOpen={setTagDialogOpen}
+                projectDialogOpen={projectDialogOpen}
+                setProjectDialogOpen={setProjectDialogOpen}
+                onDelete={onDelete}
+                onTogglePrivate={onTogglePrivate}
+                onToggleHidden={onToggleHidden}
+                onToggleRemembered={onToggleRemembered}
+                onSetProject={onSetProject}
+                onClearProject={onClearProject}
+                onAddTag={onAddTag}
+                onRemoveTag={onRemoveTag}
+              />
+            )}
+          startReached={viewMode === "infinite" ? loadOlderMessages : undefined}
+          endReached={viewMode === "infinite" ? loadNewerMessages : undefined}
+          overscan={200} // buffer pixels above/below for smoother scroll
+          components={{
+            Header: () =>
+              loadingOlder ? (
+                <div className="text-center text-xs text-neutral-400 py-2">Loading older messages...</div>
+              ) : atStart ? (
+                <div className="text-center text-xs text-neutral-400 py-2">— Beginning of project —</div>
+              ) : null,
+            Footer: () =>
+              loadingNewer ? (
+                <div className="text-center text-xs text-neutral-400 py-2">Loading newer messages...</div>
+              ) : atEnd ? (
+                <div className="text-center text-xs text-neutral-400 py-2">— Latest message —</div>
+              ) : null,
+          }}
           />
         )}
       </div>

@@ -27,59 +27,59 @@ const CortexTab = () => {
     entry => !search || (entry.text && entry.text.toLowerCase().includes(search.toLowerCase()))
   );
 
-    const getDisplayDate = (entry) => {
-      const dateVal = entry.created_at || entry.timestamp;
-      if (!dateVal) return "—";
-      try {
-        // If it's already a string, this will work. If it's a Date object, call .toISOString()
-        const iso = typeof dateVal === "string"
-          ? dateVal
-          : dateVal.toISOString
-          ? dateVal.toISOString()
-          : String(dateVal);
-        // Show just the date part, or prettify as you wish:
-        return new Date(iso).toLocaleString();
-      } catch {
-        return String(dateVal);
+  const getDisplayDate = (entry) => {
+    const dateVal = entry.created_at || entry.timestamp;
+    if (!dateVal) return "—";
+    try {
+      // If it's already a string, this will work. If it's a Date object, call .toISOString()
+      const iso = typeof dateVal === "string"
+        ? dateVal
+        : dateVal.toISOString
+        ? dateVal.toISOString()
+        : String(dateVal);
+      // Show just the date part, or prettify as you wish:
+      return new Date(iso).toLocaleString();
+    } catch {
+      return String(dateVal);
+    }
+  };
+
+  const handleDelete = (entryId) => {
+    if (!window.confirm("Are you sure you want to delete this entry?")) return;
+    fetch(`/api/cortex/${entryId}`, {
+      method: "DELETE",
+    })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.status === "ok") {
+        setCortex((prev) => {
+          const updated = { ...prev };
+          updated[selectedType] = updated[selectedType].filter(e => (e.id || e._id) !== entryId);
+          return updated;
+        });
       }
-    };
+    });
+  };
 
-    const handleDelete = (entryId) => {
-      if (!window.confirm("Are you sure you want to delete this entry?")) return;
-      fetch(`/api/cortex/${entryId}`, {
-        method: "DELETE",
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.status === "ok") {
-            setCortex((prev) => {
-              const updated = { ...prev };
-              updated[selectedType] = updated[selectedType].filter(e => (e.id || e._id) !== entryId);
-              return updated;
-            });
-          }
+  const handleEdit = (entryId, newText) => {
+    fetch(`/api/cortex/${entryId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: newText }),
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === "ok") {
+        setCortex(prev => {
+          const updatedTypes = { ...prev };
+          updatedTypes[selectedType] = updatedTypes[selectedType].map(e =>
+            (e.id || e._id) === entryId ? { ...e, text: newText, updated: new Date().toISOString() } : e
+          );
+          return updatedTypes;
         });
-    };
-
-    const handleEdit = (entryId, newText) => {
-      fetch(`/api/cortex/${entryId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: newText }),
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.status === "ok") {
-            setCortex(prev => {
-              const updatedTypes = { ...prev };
-              updatedTypes[selectedType] = updatedTypes[selectedType].map(e =>
-                (e.id || e._id) === entryId ? { ...e, text: newText, updated: new Date().toISOString() } : e
-              );
-              return updatedTypes;
-            });
-          }
-        });
-    };
+      }
+    });
+  };
 
 
   return (
@@ -142,49 +142,48 @@ const CortexTab = () => {
               )}
             </div>
             {editMode && (
-                <textarea
-                  defaultValue={entry.text}
-                  className="w-full bg-neutral-800 text-white rounded mt-2 p-2 text-sm border border-neutral-700"
-                  rows={2}
-                  onBlur={e => {
-                    if (e.target.value !== entry.text) {
-                      handleEdit(entry.id || entry._id, e.target.value);
-                    }
-                  }}
-                />
+              <textarea
+                defaultValue={entry.text}
+                className="w-full bg-neutral-800 text-white rounded mt-2 p-2 text-sm border border-neutral-700"
+                rows={2}
+                onBlur={e => {
+                  if (e.target.value !== entry.text) {
+                    handleEdit(entry.id || entry._id, e.target.value);
+                  }
+                }}
+              />
 
             )}
-{/* Tags and Metadata */}
-{(Array.isArray(entry.tags) && entry.tags.length > 0) || (entry.metadata && Object.keys(entry.metadata).length > 0) ? (
-  <div className="flex flex-wrap items-center gap-4 mt-2">
-    {/* Tags */}
-    {Array.isArray(entry.tags) && entry.tags.length > 0 && (
-      <div className="flex gap-2 items-center">
-        <span className="text-xs text-neutral-400">Tags:</span>
-        {entry.tags.map(tag => (
-          <span
-            key={tag}
-            className="px-2 py-0.5 rounded bg-purple-900 text-purple-200 text-xs font-mono"
-          >
-            {tag}
-          </span>
-        ))}
-      </div>
-    )}
-    {/* Metadata */}
-    {entry.metadata && Object.keys(entry.metadata).length > 0 && (
-      <div className="flex gap-2 items-center">
-        <span className="text-xs text-neutral-400">Meta:</span>
-        <span className="text-xs text-neutral-300 font-mono">
-          {Object.entries(entry.metadata)
-            .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
-            .join(" | ")}
-        </span>
-      </div>
-    )}
-  </div>
-) : null}
-
+            {/* Tags and Metadata */}
+            {(Array.isArray(entry.tags) && entry.tags.length > 0) || (entry.metadata && Object.keys(entry.metadata).length > 0) ? (
+              <div className="flex flex-wrap items-center gap-4 mt-2">
+                {/* Tags */}
+                {Array.isArray(entry.tags) && entry.tags.length > 0 && (
+                  <div className="flex gap-2 items-center">
+                    <span className="text-xs text-neutral-400">Tags:</span>
+                    {entry.tags.map(tag => (
+                      <span
+                        key={tag}
+                        className="px-2 py-0.5 rounded bg-purple-900 text-purple-200 text-xs font-mono"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* Metadata */}
+                {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+                  <div className="flex gap-2 items-center">
+                    <span className="text-xs text-neutral-400">Meta:</span>
+                    <span className="text-xs text-neutral-300 font-mono">
+                      {Object.entries(entry.metadata)
+                        .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+                        .join(" | ")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
