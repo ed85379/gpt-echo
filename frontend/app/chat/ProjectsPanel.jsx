@@ -1,18 +1,8 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, Pin } from 'lucide-react';
+import { useConfig } from '@/hooks/ConfigContext';
+import { humanFileSize } from '@/utils/utils';
 
-// Helper for pretty file sizes
-function humanFileSize(bytes) {
-  const thresh = 1024;
-  if (Math.abs(bytes) < thresh) return bytes + " B";
-  const units = ["KB", "MB", "GB", "TB"];
-  let u = -1;
-  do {
-    bytes /= thresh;
-    ++u;
-  } while (Math.abs(bytes) >= thresh && u < units.length - 1);
-  return bytes.toFixed(1) + " " + units[u];
-}
 
 export default function ProjectsPanel({
   projects,
@@ -34,10 +24,38 @@ export default function ProjectsPanel({
   handlePinToggle
 }) {
 
-  // UI handlers
-  const handleFocusChange = val => setFocus(val);
+  async function updateUiStateForProject(projectId, updates) {
+    if (!projectId) return; // nothing selected, nothing to persist
 
-  const handleAutoAssignChange = () => setAutoAssign(a => !a);
+    try {
+      const res = await fetch(`/api/states/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+
+      if (!res.ok) {
+        // Optional: log or surface an error later
+        console.error("Failed to update UI state", await res.text());
+      }
+    } catch (err) {
+      console.error("Error updating UI state", err);
+    }
+  }
+
+  // UI handlers
+  const handleFocusChange = val => {
+    setFocus(val); // keep the UI snappy
+    updateUiStateForProject(selectedProjectId, { blend_ratio: val });
+  };
+
+  const handleAutoAssignChange = () => {
+    setAutoAssign(prev => {
+      const next = !prev;
+      updateUiStateForProject(selectedProjectId, { auto_assign: next });
+      return next;
+    });
+  };
 
 const handleInjectToggle = (fid, name) => {
   setInjectedFiles(prev => {

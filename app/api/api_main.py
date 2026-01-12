@@ -18,6 +18,7 @@ from app.interfaces.websocket_server import router as websocket_router
 from app.interfaces.websocket_server import broadcast_message
 from app.core.memory_core import log_message
 from app.databases.memory_indexer import build_index, build_memory_index
+from app.core.states_core import set_active_project
 from app.core import utils
 from app.core.files_core import get_all_message_ids_for_files
 from app.api.routers.config_api import router as config_router
@@ -27,6 +28,7 @@ from app.api.routers.memory_api import router as memory_router
 from app.api.routers.import_api import router as import_router
 from app.api.routers.projects_api import router as projects_router
 from app.api.routers.files_api import router as files_router
+from app.api.routers.states_api import router as states_router
 from app.services.openai_client import api_openai_client, audio_openai_client
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 
@@ -45,6 +47,8 @@ app.include_router(memory_router)
 app.include_router(import_router)
 app.include_router(projects_router)
 app.include_router(files_router)
+app.include_router(states_router)
+
 
 
 # Add CORS middleware
@@ -175,9 +179,12 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     injected_files = data.get("injected_files", [])
     ephemeral_files = data.get("ephemeral_files", [])
     # UI States
-    project_id = data.get("project_id")
     auto_assign = data.get("auto_assign")
     blend_ratio = data.get("blend_ratio", 0.0)
+    project_id = data.get("project_id")
+    # Normalize blank/empty project_id to None
+    if isinstance(project_id, str) and not project_id.strip():
+        project_id = None
 
     if not user_input:
         return JSONResponse(status_code=400, content={"error": "No prompt provided."})
@@ -194,10 +201,8 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     print(f"FINAL_TOP_K: {final_top_k}")
 
     # Report UI states
-    ui_states_report = utils.report_ui_states(
+    active_project_report = set_active_project(
         project_id=project_id,
-        blend_ratio=blend_ratio,
-        auto_assign=auto_assign
     )
 
     # Call prompt_profiles to build the prompt for the frontend UI
@@ -213,7 +218,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         # ui states
         project_id=project_id,
         blend_ratio=blend_ratio,
-        ui_states_report=ui_states_report,
+        active_project_report=active_project_report,
     )
     #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
     print(f"USER_PROMPT:\n" + user_prompt)

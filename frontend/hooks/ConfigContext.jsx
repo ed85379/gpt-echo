@@ -7,22 +7,23 @@ const ConfigContext = createContext();
 // 2. Provider component
 export function ConfigProvider({ children }) {
   const [config, setConfig] = useState({});
-  const [profile, setProfile] = useState(null);  // <-- NEW
+  const [profile, setProfile] = useState(null);
+  const [states, setStates] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(true); // Optional: For profile-specific loading
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [statesLoading, setStatesLoading] = useState(true);
 
   useEffect(() => {
-    // Config fetch (as before)
     fetch('/api/config')
       .then(res => res.json())
       .then(data => {
         const clean = {};
-        for (let key in data) {
-          let val = data[key];
-          if (val === "True" || val === "true") val = true;
-          else if (val === "False" || val === "false") val = false;
-          else clean[key] = val;
-        }
+          for (let key in data) {
+            let val = data[key];
+            if (val === "True" || val === "true") val = true;
+            else if (val === "False" || val === "false") val = false;
+            else clean[key] = val;
+          }
         setConfig(clean);
         setLoading(false);
       });
@@ -34,6 +35,13 @@ export function ConfigProvider({ children }) {
         setProfile(data);
         setProfileLoading(false);
       });
+    // Muse profile fetch
+    fetch('/api/states')
+      .then(res => res.json())
+      .then(data => {
+        setStates(data);
+        setStatesLoading(false);
+        });
   }, []);
 
   return (
@@ -41,12 +49,13 @@ export function ConfigProvider({ children }) {
       value={{
         config,
         loading,
-        // Add the new fields:
         museProfile: profile,
         museProfileLoading: profileLoading,
+        uiStates: states,
+        uiStatesLoading: statesLoading
       }}
     >
-      {children}
+    {children}
     </ConfigContext.Provider>
   );
 }
