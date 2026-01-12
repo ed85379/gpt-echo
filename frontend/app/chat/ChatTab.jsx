@@ -6,7 +6,7 @@ import { Eye, EyeOff, EyeClosed, DoorClosed, DoorClosedLocked, Tags, Shredder, S
 import { BookDashed, BookMarked, ArrowBigDownDash, Paperclip, Pin, Sparkles } from 'lucide-react';
 import { linkify } from 'remarkable/linkify';
 import { useConfig } from '@/hooks/ConfigContext';
-import { assignMessageId } from '@/utils/utils';
+import { assignMessageId, toPythonIsoString, fileToBase64, trimMessages } from '@/utils/utils';
 import { useMemo } from "react";
 import MessageItem from "@/components/app/MessageItem";
 import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
@@ -14,19 +14,19 @@ import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActi
 
 
 const ChatTab = (
-    {
-        setSpeaking,
-        selectedProjectId,
-        focus,
-        autoAssign,
-        injectedFiles,
-        files,
-        setInjectedFiles,
-        handlePinToggle,
-        ephemeralFiles,
-        setEphemeralFiles,
-        handleEphemeralUpload
-    }
+  {
+      setSpeaking,
+      selectedProjectId,
+      focus,
+      autoAssign,
+      injectedFiles,
+      files,
+      setInjectedFiles,
+      handlePinToggle,
+      ephemeralFiles,
+      setEphemeralFiles,
+      handleEphemeralUpload
+  }
 ) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -64,7 +64,7 @@ const ChatTab = (
   const visibleMessages = messages.slice(-MAX_RENDERED_MESSAGES);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
-      // "Bind" each handler to local state
+  // "Bind" each handler to local state
   const onDelete = (message_id, markDeleted) =>
     handleDelete(setMessages, message_id, markDeleted);
 
@@ -149,7 +149,7 @@ const ChatTab = (
   const handleReadAloudClick = () => {
     if (isTTSPlaying) {
       // STOP logic
-      window.speechSynthesis.cancel(); // (or your audio.stop())
+      window.speechSynthesis.cancel();
       setIsTTSPlaying(false);
     } else {
       // START logic
@@ -204,7 +204,7 @@ const ChatTab = (
       //setScrollToBottom(true); // Scroll when loading initial/latest
     }
     if (data.messages.length === SCROLLBACK_LIMIT) setHasMore(false);
-    setLoadingMore(false);
+      setLoadingMore(false);
   };
 
 
@@ -213,21 +213,6 @@ const ChatTab = (
     // eslint-disable-next-line
   }, []);
 
-function trimMessages(arr, limit) {
-  return arr.slice(-limit);
-}
-
-function Paragraph({ children }) {
-  // If the child is a <pre>, render it directly, don't wrap in <p>
-  if (
-    children &&
-    React.Children.count(children) === 1 &&
-    children[0]?.type === "pre"
-  ) {
-    return children[0];
-  }
-  return <p>{children}</p>;
-}
 
   useEffect(() => {
     if (scrollToBottom) {
@@ -241,9 +226,9 @@ function Paragraph({ children }) {
     function connectWebSocket() {
       setConnecting(true);
       const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-        const wsHost = window.location.host;
-        const wsPath = "/ws"; // or whatever your backend WebSocket endpoint is
-        const ws = new WebSocket(`${wsProtocol}://${wsHost}${wsPath}`);
+      const wsHost = window.location.host;
+      const wsPath = "/ws"; // or whatever your backend WebSocket endpoint is
+      const ws = new WebSocket(`${wsProtocol}://${wsHost}${wsPath}`);
       wsRef.current = ws;
 
       const tryRegister = () => {
@@ -256,37 +241,36 @@ function Paragraph({ children }) {
       };
       tryRegister();
 
-        ws.onmessage = async (event) => {
-          const data = JSON.parse(event.data);
-          if (data.type === "muse_message") {
-            const text = data.message;
-            const message_id = data.message_id;
-            const project_id = data.project_id;
-            setMessages((prev) =>
-              trimMessages([
-                ...prev,
-                {
-                  from: "muse",
-                  text,
-                  message_id,
-                  timestamp: new Date().toISOString(),
-                  project_id
-                }
-              ], ACTIVE_WINDOW_LIMIT)
-            );
-            setScrollToMessageId(message_id);  // <-- Flag for scroll
+      ws.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "muse_message") {
+          const text = data.message;
+          const message_id = data.message_id;
+          const project_id = data.project_id;
+          setMessages((prev) =>
+            trimMessages([
+              ...prev,
+              {
+                from: "muse",
+                text,
+                message_id,
+                timestamp: new Date().toISOString(),
+                project_id
+              }
+            ], ACTIVE_WINDOW_LIMIT)
+          );
+          setScrollToMessageId(message_id);  // <-- Flag for scroll
 
-            setLastTTS(text);
-            setThinking(false);
-            if (autoTTS) {
-              //window.speechSynthesis.cancel(); // Cancel browser TTS if in use (optional, for browser TTS only)
+          setLastTTS(text);
+          setThinking(false);
+          if (autoTTS) {
 
-              await speak(text, () => setIsTTSPlaying(false));
-            } else {
-              playPing();
-            }
+            await speak(text, () => setIsTTSPlaying(false));
+          } else {
+            playPing();
           }
-        };
+        }
+      };
 
 
       ws.onclose = () => {
@@ -310,99 +294,77 @@ function Paragraph({ children }) {
     };
   }, [autoTTS]);
 
-    useEffect(() => {
-      if (scrollToBottom) {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }
-    }, [messages, scrollToBottom]);
+  useEffect(() => {
+    if (scrollToBottom) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, scrollToBottom]);
 
-    useEffect(() => {
-      if (scrollToMessageId && messageRefs.current[scrollToMessageId]) {
-        messageRefs.current[scrollToMessageId].current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        setScrollToMessageId(null);
-      }
-    }, [scrollToMessageId, messages]);
+  useEffect(() => {
+    if (scrollToMessageId && messageRefs.current[scrollToMessageId]) {
+      messageRefs.current[scrollToMessageId].current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setScrollToMessageId(null);
+    }
+  }, [scrollToMessageId, messages]);
 
-    useEffect(() => {
-      fetch("/api/projects")
-        .then(res => res.json())
-        .then(data => {
-          setProjects(data.projects || []);
-          setProjectsLoading(false);
-        });
-    }, []);
+  useEffect(() => {
+    fetch("/api/projects")
+      .then(res => res.json())
+      .then(data => {
+        setProjects(data.projects || []);
+        setProjectsLoading(false);
+      });
+  }, []);
 
-    // Build a map for fast lookup
-    const projectMap = useMemo(() => {
-      const map = {};
-      for (const proj of projects) {
-        map[proj._id] = proj;
-      }
-      return map;
-    }, [projects]);
+  // Build a map for fast lookup
+  const projectMap = useMemo(() => {
+    const map = {};
+    for (const proj of projects) {
+      map[proj._id] = proj;
+    }
+    return map;
+  }, [projects]);
 
 
-function toPythonIsoString(date = new Date()) {
-  // Pad milliseconds if needed
-  const pad = (n, width = 2) => n.toString().padStart(width, '0');
-  const yyyy = date.getUTCFullYear();
-  const mm = pad(date.getUTCMonth() + 1);
-  const dd = pad(date.getUTCDate());
-  const hh = pad(date.getUTCHours());
-  const min = pad(date.getUTCMinutes());
-  const ss = pad(date.getUTCSeconds());
-  const ms = pad(date.getUTCMilliseconds(), 3);
 
-  // If you want microseconds, append '000' or use a polyfill
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}.${ms}000+00:00`;
-}
 
-const mergedFiles = [
-  ...ephemeralFiles.map(f => ({
-    id: f.id,
-    name: f.name,
-    type: f.type,
-    size: f.size,
-    file: f.file,
-    source: "ephemeral",
-  })),
-  ...injectedFiles
-    .filter(({ id }) => {
-      // Exclude any injected files that are also in ephemeralFiles, if you ever overlap
-      return !ephemeralFiles.some(f => f.id === id);
-    })
-    .map(({ id: fileId, pinned }) => {
-      const file = files.find(f => f.id === fileId);
-      if (!file) return null;
-      return {
-        id: fileId,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        pinned,
-        source: "injected",
-        file,
-      };
-    })
-].filter(Boolean);
+  const mergedFiles = [
+    ...ephemeralFiles.map(f => ({
+      id: f.id,
+      name: f.name,
+      type: f.type,
+      size: f.size,
+      file: f.file,
+      source: "ephemeral",
+    })),
+    ...injectedFiles
+      .filter(({ id }) => {
+        // Exclude any injected files that are also in ephemeralFiles, if you ever overlap
+        return !ephemeralFiles.some(f => f.id === id);
+      })
+      .map(({ id: fileId, pinned }) => {
+        const file = files.find(f => f.id === fileId);
+        if (!file) return null;
+        return {
+          id: fileId,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          pinned,
+          source: "injected",
+          file,
+        };
+      })
+  ].filter(Boolean);
 
-const clearEphemeralFiles = () => {
-  setInjectedFiles(prev => prev.filter(f => f.pinned));
-  setEphemeralFiles([]);
-};
+  const clearEphemeralFiles = () => {
+    setInjectedFiles(prev => prev.filter(f => f.pinned));
+    setEphemeralFiles([]);
+  };
 
-async function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      resolve(reader.result.split(',')[1]); // Strips the data:...;base64, prefix
-    reader.onerror = error => reject(error);
-    reader.readAsDataURL(file);
-  });
-}
 
-const handleSubmit = async () => {
-  if (!input.trim()) return;
+  const handleSubmit = async () => {
+    if (!input.trim()) return;
     const allFiles = [
       ...injectedFiles,
       ...ephemeralFiles.map(f => ({
@@ -415,30 +377,30 @@ const handleSubmit = async () => {
     const filenamesBlock = allFiles.length
       ? '\n' + allFiles.map(f => `[file: ${f.name}]`).join('\n')
       : '';
-  const timestamp = toPythonIsoString();
-  const role = "user";
-  const source = "frontend";
-  const message = input + (filenamesBlock ? '\n' + filenamesBlock : '');
-  const project_id = (autoAssign && selectedProjectId) ? selectedProjectId : "";
-  const ephemeralPayload = await Promise.all(
-    ephemeralFiles.map(async (f) => ({
-      name: f.name,
-      type: f.type,
-      size: f.size,
-      data: await fileToBase64(f.file),
-      encoding: "base64"
-    }))
-  );
+    const timestamp = toPythonIsoString();
+    const role = "user";
+    const source = "frontend";
+    const message = input + (filenamesBlock ? '\n' + filenamesBlock : '');
+    const project_id = (autoAssign && selectedProjectId) ? selectedProjectId : "";
+    const ephemeralPayload = await Promise.all(
+      ephemeralFiles.map(async (f) => ({
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        data: await fileToBase64(f.file),
+        encoding: "base64"
+      }))
+    );
 
-  // 1. Generate the message_id (async)
-  const message_id = await assignMessageId({
-    timestamp,
-    role,
-    source,
-    message
-  });
+    // 1. Generate the message_id (async)//
+    const message_id = await assignMessageId({
+      timestamp,
+      role,
+      source,
+      message
+    });
 
-  // 2. Add to UI state immediately (so it’s taggable, traceable, etc.)
+    // 2. Add to UI state immediately (so it’s taggable, traceable, etc.)//
     setMessages(prev =>
       trimMessages([
         ...prev,
@@ -454,88 +416,87 @@ const handleSubmit = async () => {
       ], ACTIVE_WINDOW_LIMIT)
     );
 
-  setInput("");
-  setThinking(true);
-  setScrollToBottom(true);
+    setInput("");
+    setThinking(true);
+    setScrollToBottom(true);
 
-  // 3. Send the message to the backend, including timestamp
-  await fetch("/api/talk", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompt: message,
-      timestamp,
-      message_id,
-      project_id: selectedProjectId,
-      auto_assign: autoAssign,
-      blend_ratio: focus,
-      injected_files: injectedFiles.map(f => f.id),
-      ephemeral_files: ephemeralPayload
-    }),
-  });
+    // 3. Send the message to the backend, including timestamp
+    await fetch("/api/talk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: message,
+        timestamp,
+        message_id,
+        project_id: selectedProjectId,
+        auto_assign: autoAssign,
+        blend_ratio: focus,
+        injected_files: injectedFiles.map(f => f.id),
+        ephemeral_files: ephemeralPayload
+      }),
+    });
 
-  // 4. Clean up ephemerals (only keep pinned)
-  clearEphemeralFiles();
-};
+    // 4. Clean up ephemerals (only keep pinned) //
+    clearEphemeralFiles();
+  };
 
-const speak = async (text, onDone) => {
-  setSpeaking(true);
-  setIsTTSPlaying(true);
+  const speak = async (text, onDone) => {
+    setSpeaking(true);
+    setIsTTSPlaying(true);
 
-  // If audio is playing, stop it
-  if (audioSourceRef.current) {
-    try {
-      audioSourceRef.current.stop();
-    } catch (e) {}
-    audioSourceRef.current = null;
-  }
-  if (audioCtxRef.current) {
-    try {
-      audioCtxRef.current.close();
-    } catch (e) {}
-    audioCtxRef.current = null;
-  }
+    // If audio is playing, stop it
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.stop();
+      } catch (e) {}
+      audioSourceRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try {
+        audioCtxRef.current.close();
+      } catch (e) {}
+      audioCtxRef.current = null;
+    }
 
-  const response = await fetch("/api/tts/stream", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (!response.ok) {
-    setSpeaking(false);
-    setIsTTSPlaying(false);
-    if (onDone) onDone();
-    return;
-  }
-  const reader = response.body.getReader();
-  const audioCtx = new window.AudioContext();
-  audioCtxRef.current = audioCtx; // Track for stopping
-  const source = audioCtx.createBufferSource();
-  audioSourceRef.current = source; // Track for stopping
-  const chunks = [];
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(...value);
-  }
-
-  const buffer = new Uint8Array(chunks).buffer;
-  audioCtx.decodeAudioData(buffer, (decoded) => {
-    if (!audioCtxRef.current) return; // canceled before playback started
-    source.buffer = decoded;
-    source.connect(audioCtx.destination);
-    source.start(0);
-    source.onended = () => {
+    const response = await fetch("/api/tts/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!response.ok) {
       setSpeaking(false);
       setIsTTSPlaying(false);
-      audioSourceRef.current = null;
-      audioCtxRef.current = null;
       if (onDone) onDone();
-    };
-  });
-};
+      return;
+    }
+    const reader = response.body.getReader();
+    const audioCtx = new window.AudioContext();
+    audioCtxRef.current = audioCtx; // Track for stopping
+    const source = audioCtx.createBufferSource();
+    audioSourceRef.current = source; // Track for stopping
+    const chunks = [];
 
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(...value);
+    }
+
+    const buffer = new Uint8Array(chunks).buffer;
+    audioCtx.decodeAudioData(buffer, (decoded) => {
+      if (!audioCtxRef.current) return; // canceled before playback started
+      source.buffer = decoded;
+      source.connect(audioCtx.destination);
+      source.start(0);
+      source.onended = () => {
+        setSpeaking(false);
+        setIsTTSPlaying(false);
+        audioSourceRef.current = null;
+        audioCtxRef.current = null;
+        if (onDone) onDone();
+      };
+    });
+  };
 
 
   const handleKeyDown = (e) => {
@@ -577,7 +538,6 @@ const speak = async (text, onDone) => {
               setSpeaking(false);
             } else if (lastTTS && !connecting) {
               speak(lastTTS, () => setIsTTSPlaying(false));
-
             }
           }}
           className="text-sm text-purple-300 hover:underline"
@@ -585,256 +545,246 @@ const speak = async (text, onDone) => {
         >
           {isTTSPlaying ? "⏹️ Stop" : "▶️ Play"}
         </button>
-
-
-
       </div>
-
       <div
-          ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto space-y-2"
-          onScroll={async (e) => {
-            const { scrollTop, scrollHeight, clientHeight } = e.target;
-              if (scrollTop + clientHeight >= scrollHeight - 10) {
-                setAtBottom(true);
-              } else {
-                setAtBottom(false);
-              }
-            if (scrollTop === 0 && hasMore && !loadingMore && messages.length > 0) {
-              // Get the timestamp of the oldest message
-              const oldest = messages[0]?.timestamp;
-              if (oldest) {
-                await loadMessages(oldest);
-              }
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto space-y-2"
+        onScroll={async (e) => {
+          const { scrollTop, scrollHeight, clientHeight } = e.target;
+          if (scrollTop + clientHeight >= scrollHeight - 10) {
+            setAtBottom(true);
+          } else {
+            setAtBottom(false);
+          }
+          if (scrollTop === 0 && hasMore && !loadingMore && messages.length > 0) {
+            // Get the timestamp of the oldest message //
+            const oldest = messages[0]?.timestamp;
+            if (oldest) {
+              await loadMessages(oldest);
             }
-          }}
-        >
+          }
+        }}
+      >
       {!atBottom && (
-      <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-50">
-        <button
-          className="bg-purple-700 text-white px-3 py-1 rounded-full shadow-lg hover:bg-purple-800 transition"
-          onClick={() => {
-            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-          }}
-        >
-          <ArrowBigDownDash />
-        </button>
+        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-50">
+          <button
+            className="bg-purple-700 text-white px-3 py-1 rounded-full shadow-lg hover:bg-purple-800 transition"
+            onClick={() => {
+              chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            <ArrowBigDownDash />
+          </button>
+        </div>
+      )}
+      <div className="text-sm text-neutral-400 italic text-center mt-2">
+        That’s the beginning. Visit the History Tab for more.
       </div>
-    )}
-
-    <div className="text-sm text-neutral-400 italic text-center mt-2">
-      That’s the beginning. Visit the History Tab for more.
-    </div>
-
-        {connecting && (
-          <div className="text-sm text-neutral-400">Reconnecting…</div>
-        )}
-        {visibleMessages.map((msg, idx) => {
-              if (!messageRefs.current[msg.message_id]) {
-                messageRefs.current[msg.message_id] = React.createRef();
-              }
-                  return (
-                      <MessageItem
-                        key={msg.message_id || idx}
-                        ref={messageRefs.current[msg.message_id]}
-                        msg={msg}
-                        projects={projects}
-                        projectsLoading={projectsLoading}
-                        projectMap={projectMap}
-                        tagDialogOpen={tagDialogOpen}
-                        setTagDialogOpen={setTagDialogOpen}
-                        projectDialogOpen={projectDialogOpen}
-                        setProjectDialogOpen={setProjectDialogOpen}
-                        museName={museName}
-                        onDelete={onDelete}
-                          onTogglePrivate={onTogglePrivate}
-                          onToggleHidden={onToggleHidden}
-                          onToggleRemembered={onToggleRemembered}
-                          onSetProject={onSetProject}
-                          onClearProject={onClearProject}
-                          onAddTag={onAddTag}
-                          onRemoveTag={onRemoveTag}
-                      />
-                  );
-                }
-            )}
-
-
-        {thinking && (
-          <div className="text-sm text-neutral-500 italic">
-            {museName} is thinking...
-          </div>
-        )}
+      {connecting && (
+        <div className="text-sm text-neutral-400">Reconnecting…</div>
+      )}
+      {visibleMessages.map((msg, idx) => {
+        if (!messageRefs.current[msg.message_id]) {
+          messageRefs.current[msg.message_id] = React.createRef();
+        }
+        return (
+          <MessageItem
+            key={msg.message_id || idx}
+            ref={messageRefs.current[msg.message_id]}
+            msg={msg}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectMap={projectMap}
+            tagDialogOpen={tagDialogOpen}
+            setTagDialogOpen={setTagDialogOpen}
+            projectDialogOpen={projectDialogOpen}
+            setProjectDialogOpen={setProjectDialogOpen}
+            museName={museName}
+            onDelete={onDelete}
+              onTogglePrivate={onTogglePrivate}
+              onToggleHidden={onToggleHidden}
+              onToggleRemembered={onToggleRemembered}
+              onSetProject={onSetProject}
+              onClearProject={onClearProject}
+              onAddTag={onAddTag}
+              onRemoveTag={onRemoveTag}
+          />
+        );
+      })}
+      {thinking && (
+        <div className="text-sm text-neutral-500 italic">
+          {museName} is thinking...
+        </div>
+      )}
         <div ref={chatEndRef} />
       </div>
-        {mergedFiles.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
-            {mergedFiles.map(f => {
-              // Icon logic
-              let Icon;
-              let iconTitle;
-              let tileBg = "";
-              let badge = null;
+    {mergedFiles.length > 0 && (
+      <div className="flex flex-wrap gap-2 mb-2">
+        {mergedFiles.map(f => {
+          // Icon logic
+          let Icon;
+          let iconTitle;
+          let tileBg = "";
+          let badge = null;
 
-              if (f.source === "ephemeral") {
-                Icon = /* your ephemeral icon, e.g. */ Sparkles || PaperAirplaneIcon; // swap as you wish
-                iconTitle = "Ephemeral file (not saved)";
-                tileBg = "bg-blue-950/80 border border-blue-300";
+          if (f.source === "ephemeral") {
+            Icon = /* your ephemeral icon, e.g. */ Sparkles || PaperAirplaneIcon;
+            iconTitle = "Ephemeral file (not saved)";
+            tileBg = "bg-blue-950/80 border border-blue-300";
 
-              } else if (f.pinned) {
-                Icon = Pin;
-                iconTitle = "Pinned file";
-                tileBg = "bg-purple-900 border-2 border-purple-500";
-              } else {
-                Icon = Paperclip;
-                iconTitle = "Injected file";
-                tileBg = "bg-white/10 border border-white/15";
-              }
+          } else if (f.pinned) {
+            Icon = Pin;
+            iconTitle = "Pinned file";
+            tileBg = "bg-purple-900 border-2 border-purple-500";
+          } else {
+            Icon = Paperclip;
+            iconTitle = "Injected file";
+            tileBg = "bg-white/10 border border-white/15";
+          }
 
-              return (
-                <span
-                  key={f.id}
-                  className={`
-                    flex items-center px-2 py-1 rounded-md shadow-sm text-xs font-medium
-                    transition hover:bg-white/20 cursor-default select-none
-                    ${tileBg}
-                    text-purple-100 max-w-[200px] backdrop-blur-[2px]
-                  `}
+          return (
+            <span
+              key={f.id}
+              className={`
+                flex items-center px-2 py-1 rounded-md shadow-sm text-xs font-medium
+                transition hover:bg-white/20 cursor-default select-none
+                ${tileBg}
+                text-purple-100 max-w-[200px] backdrop-blur-[2px]
+              `}
+            >
+              {/* Icon */}
+              <Icon
+                className={`w-4 h-4 shrink-0 mr-1 ${
+                  f.pinned
+                    ? "text-yellow-300 opacity-100"
+                    : f.source === "ephemeral"
+                    ? "text-blue-300 opacity-90"
+                    : "text-purple-300 opacity-70"
+                }`}
+                strokeWidth={2}
+                title={iconTitle}
+              />
+
+              {/* File name (with badge for ephemeral) */}
+              <span className="truncate max-w-[120px]">
+                {f.name.length > 32 ? f.name.slice(0, 29) + "..." : f.name}
+              </span>
+              {badge}
+
+              {/* Remove button */}
+              <button
+                onClick={() => {
+                  if (f.source === "ephemeral") {
+                    setEphemeralFiles(files => files.filter(x => x.id !== f.id));
+                  } else {
+                    setInjectedFiles(prev => prev.filter(x => x.id !== f.id));
+                  }
+                }}
+                aria-label={`Remove ${f.name}`}
+                className="
+                  ml-2
+                  text-purple-300 hover:text-red-400
+                  text-base font-bold
+                  focus:outline-none
+                  transition
+                  px-0.5 leading-none
+                "
+                type="button"
+                tabIndex={0}
+              >
+                ×
+              </button>
+              {/* Pin toggle only for injected */}
+              {f.source === "injected" && (
+                <button
+                  onClick={() => handlePinToggle(f.id)}
+                  aria-label={f.pinned ? `Unpin ${f.name}` : `Pin ${f.name}`}
+                  className="ml-1 focus:outline-none"
+                  type="button"
+                  tabIndex={0}
+                  title={f.pinned ? "Unpin file" : "Pin file"}
+                  style={{ background: "none", border: 0, padding: 0, display: "flex", alignItems: "center" }}
                 >
-                  {/* Icon */}
-                  <Icon
-                    className={`w-4 h-4 shrink-0 mr-1 ${
+                  <Pin
+                    className={`w-4 h-4 shrink-0 ${
                       f.pinned
                         ? "text-yellow-300 opacity-100"
-                        : f.source === "ephemeral"
-                          ? "text-blue-300 opacity-90"
-                          : "text-purple-300 opacity-70"
+                        : "text-purple-300 opacity-60"
                     }`}
                     strokeWidth={2}
-                    title={iconTitle}
                   />
-
-                  {/* File name (with badge for ephemeral) */}
-                  <span className="truncate max-w-[120px]">
-                    {f.name.length > 32 ? f.name.slice(0, 29) + "..." : f.name}
-                  </span>
-                  {badge}
-
-                  {/* Remove button */}
-                  <button
-                    onClick={() => {
-                      if (f.source === "ephemeral") {
-                        setEphemeralFiles(files => files.filter(x => x.id !== f.id));
-                      } else {
-                        setInjectedFiles(prev => prev.filter(x => x.id !== f.id));
-                      }
-                    }}
-                    aria-label={`Remove ${f.name}`}
-                    className="
-                      ml-2
-                      text-purple-300 hover:text-red-400
-                      text-base font-bold
-                      focus:outline-none
-                      transition
-                      px-0.5 leading-none
-                    "
-                    type="button"
-                    tabIndex={0}
-                  >
-                    ×
-                  </button>
-                  {/* Pin toggle only for injected */}
-                  {f.source === "injected" && (
-                    <button
-                      onClick={() => handlePinToggle(f.id)}
-                      aria-label={f.pinned ? `Unpin ${f.name}` : `Pin ${f.name}`}
-                      className="ml-1 focus:outline-none"
-                      type="button"
-                      tabIndex={0}
-                      title={f.pinned ? "Unpin file" : "Pin file"}
-                      style={{ background: "none", border: 0, padding: 0, display: "flex", alignItems: "center" }}
-                    >
-                      <Pin
-                        className={`w-4 h-4 shrink-0 ${
-                          f.pinned
-                            ? "text-yellow-300 opacity-100"
-                            : "text-purple-300 opacity-60"
-                        }`}
-                        strokeWidth={2}
-                      />
-                    </button>
-                  )}
-                </span>
-              );
-            })}
-          </div>
-        )}
-        <div className="flex gap-1 items-end w-full">
-          {/* Textarea, slightly narrower */}
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={3}
-              className="flex-1 min-w-0 p-2 rounded-lg bg-neutral-800 text-white resize-none border border-neutral-700 focus:border-purple-500 focus:outline-none"
-              placeholder={`Say something to ${museName}...`}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onPaste={handlePaste}
-              style={{
-                background: dragActive ? "#a78bfa22" : undefined,
-                border: dragActive ? "2px dashed #a78bfa" : undefined,
-                borderRadius: dragActive ? 10 : undefined,
-                transition: "border 0.15s, background 0.15s"
-              }}
-            />
-
-          {/* Attach button: Tall, narrow, matches textarea height */}
-            <button
-              type="button"
-              className="
-                flex items-center justify-center
-                bg-neutral-900 border border-purple-600
-                rounded-lg
-                px-0
-                h-full
-                w-[42px]   // Tweak to taste, but narrow
-                hover:bg-purple-950/30 transition
-                text-purple-300
-                focus:outline-none
-                select-none
-                shadow-sm
-              "
-              style={{
-                minHeight: "42px", // Or match the Send button's actual height
-              }}
-              onClick={() => fileInputRef.current && fileInputRef.current.click()}
-              aria-label="Attach file"
-              tabIndex={0}
-            >
-              <Paperclip className="w-5 h-5" strokeWidth={2.2} />
-            </button>
-
-          {/* Send button: unchanged, big & square */}
-          <button
-            onClick={handleSubmit}
-            className="bg-purple-700 text-white px-6 py-2 rounded-lg hover:bg-purple-800 h-full"
-
-          >
-            Send
-          </button>
-
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={ACCEPTED_TYPES.join(",")}
-            style={{ display: "none" }}
-            onChange={handleFileInputChange}
-            multiple={false}
+                </button>
+              )}
+            </span>
+          );
+        })}
+      </div>
+    )}
+      <div className="flex gap-1 items-end w-full">
+        {/* Textarea, slightly narrower */}
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={3}
+            className="flex-1 min-w-0 p-2 rounded-lg bg-neutral-800 text-white resize-none border border-neutral-700 focus:border-purple-500 focus:outline-none"
+            placeholder={`Say something to ${museName}...`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onPaste={handlePaste}
+            style={{
+              background: dragActive ? "#a78bfa22" : undefined,
+              border: dragActive ? "2px dashed #a78bfa" : undefined,
+              borderRadius: dragActive ? 10 : undefined,
+              transition: "border 0.15s, background 0.15s"
+            }}
           />
-        </div>
+
+        {/* Attach button: Tall, narrow, matches textarea height */}
+        <button
+          type="button"
+          className="
+            flex items-center justify-center
+            bg-neutral-900 border border-purple-600
+            rounded-lg
+            px-0
+            h-full
+            w-[42px]   // Tweak to taste, but narrow
+            hover:bg-purple-950/30 transition
+            text-purple-300
+            focus:outline-none
+            select-none
+            shadow-sm
+          "
+          style={{
+            minHeight: "42px", // Or match the Send button's actual height
+          }}
+          onClick={() => fileInputRef.current && fileInputRef.current.click()}
+          aria-label="Attach file"
+          tabIndex={0}
+        >
+          <Paperclip className="w-5 h-5" strokeWidth={2.2} />
+        </button>
+
+        {/* Send button: unchanged, big & square */}
+        <button
+          onClick={handleSubmit}
+          className="bg-purple-700 text-white px-6 py-2 rounded-lg hover:bg-purple-800 h-full"
+        >
+        Send
+        </button>
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_TYPES.join(",")}
+          style={{ display: "none" }}
+          onChange={handleFileInputChange}
+          multiple={false}
+        />
+      </div>
     </div>
   );
 };
