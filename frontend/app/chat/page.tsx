@@ -5,6 +5,7 @@ import MusePanel from './MusePanel';
 import HistoryTab from './HistoryTab';
 import { useConfig } from '@/hooks/ConfigContext';
 import PresencePanel from './PresencePanel';
+import MotdBar from './MotdBar';
 import TabbedToolPanel from './TabbedToolPanel';
 
 const TABS = [
@@ -19,6 +20,7 @@ export default function ChatPage() {
   const [projectMap, setProjectMap] = useState({});
   const { uiStates, loading: uiStatesLoading } = useConfig();
   const initialProjectId = uiStates?.project_id ?? "";
+  const motd = uiStates?.motd?.text ?? "";
 
   const fetchProjects = async () => {
     const res = await fetch("/api/projects");
@@ -202,6 +204,7 @@ export default function ChatPage() {
           <div className="flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">
             {/* Expandable/collapsible presence panel */}
             <PresencePanel speaking={speaking} />
+            <MotdBar />
             {/* Always-scrollable tool panel below */}
             <div className="flex-1 overflow-y-auto">
             <TabbedToolPanel
