@@ -8,9 +8,11 @@ from cron_descriptor import get_description
 from app.core.memory_core import manager, cortex
 from app.config import muse_config
 from app.core.utils import serialize_doc
+from app.core.utils import _load_user_location
 
 def user_tz():
-    return ZoneInfo(muse_config.get("USER_TIMEZONE"))
+    loc = _load_user_location()
+    return ZoneInfo(loc.timezone)
 
 def format_visible_reminders(entry: dict) -> str:
     parts = [f"{entry['text']} — {humanize_time(get_cron_description_safe(entry['cron']))}"]

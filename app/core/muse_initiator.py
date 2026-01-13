@@ -6,7 +6,8 @@ from dateutil import parser
 from croniter import croniter
 from openai import OpenAI
 from app.config import muse_config
-from app.core import utils
+from app.core.utils import write_system_log
+from app.core.time_location_utils import get_quiet_hours_end_today, get_last_user_activity_timestamp, _load_user_location
 from app.core.muse_responder import handle_muse_decision
 from app.core.memory_core import cortex
 from app.core import prompt_profiles
@@ -23,7 +24,7 @@ def run_whispergate():
 
     response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="frontend")
     #print("WhisperGate prompt:", prompt)
-    utils.write_system_log(level="info", module="core", component="initiator", function="run_whispergate",
+    write_system_log(level="info", module="core", component="initiator", function="run_whispergate",
                            action="whispergate_response", response=response)
 
     print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
@@ -39,7 +40,7 @@ def run_dropped_threads_check():
 
     response = handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_MODEL"))
     #print("WhiserGate prompt:", prompt)
-    utils.write_system_log(level="info", module="core", component="initiator", function="run_dropped_threads_check",
+    write_system_log(level="info", module="core", component="initiator", function="run_dropped_threads_check",
                            action="whispergate_response", response=response)
 
     print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
@@ -52,7 +53,7 @@ def run_inactivity_check():
     now_utc = datetime.now(timezone.utc)
 
     # Get quiet_end in user timezone, convert to UTC
-    quiet_end_local = utils.get_quiet_hours_end_today()
+    quiet_end_local = get_quiet_hours_end_today()
     quiet_end_utc = quiet_end_local.astimezone(ZoneInfo("UTC"))
 
     # If it's still quiet hours — exit early
@@ -60,7 +61,7 @@ def run_inactivity_check():
         print("Still within quiet hours. Skipping check-in.")
         return
 
-    last_user_ts = utils.get_last_user_activity_timestamp()
+    last_user_ts = get_last_user_activity_timestamp()
     if last_user_ts:
         last_time = last_user_ts
         # Always ensure UTC timezone
@@ -84,7 +85,7 @@ def run_inactivity_check():
         print("Prompt built. Sending to model...")
 
         response = handle_muse_decision(dev_prompt, user_prompt, model=muse_config.get("OPENAI_MODEL"), source="inactivity_checker")
-        utils.write_system_log(level="info", module="core", component="initiator", function="run_inactivity_check",
+        write_system_log(level="info", module="core", component="initiator", function="run_inactivity_check",
                          action="whispergate_response", response=response)
 
         print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
@@ -100,7 +101,7 @@ def run_discoveryfeeds_lookup():
     response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="discovery")
     #print("WhiserGate prompt:", prompt)
 
-    utils.write_system_log(level="info", module="core", component="initiator", function="run_discoveryfeeds_lookup",
+    write_system_log(level="info", module="core", component="initiator", function="run_discoveryfeeds_lookup",
                            action="whispergate_response", response=response)
 
     print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
@@ -112,6 +113,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 def run_check_reminders():
+    loc = _load_user_location()
     reminders = search_for_timely_reminders()
     if reminders:
         print("\nWhisperGate: Evaluating...")
@@ -121,13 +123,13 @@ def run_check_reminders():
         response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": reminders})
         # print("WhisperGate prompt:", prompt)
 
-        utils.write_system_log(level="info", module="core", component="initiator", function="run_check_reminders",
+        write_system_log(level="info", module="core", component="initiator", function="run_check_reminders",
                          action="whispergate_response", response=response)
 
         print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
 
         # ---- Update reminder for each reminder fired to add new early_notification calculations----
-        base_time = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE"))) + timedelta(minutes=2)
+        base_time = datetime.now(ZoneInfo(loc.timezone)) + timedelta(minutes=2)
         for reminder in reminders:
             handle_edit({"id": reminder["id"]}, base_time=base_time)
             print(f"Updated next early_notification for {reminder.get('text', '')} ({reminder['id']})")

@@ -5,6 +5,7 @@ from app import config
 from app.config import muse_config
 from app.databases import qdrant_connector
 from app.core import utils
+from app.core.time_location_utils import get_formatted_datetime
 
 # ----------------------
 # Config & Constants
@@ -83,7 +84,7 @@ def search_indexed_journal(query, top_k=5, include_private=False):
 
 def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="public", source="manual"):
     ensure_journal_dir()
-    now = utils.get_formatted_datetime()
+    now = get_formatted_datetime()
     slug = utils.slugify(title)
     filename = f"{now.replace(':', '-').replace('.', '-')}_{slug}.md"
     filepath = JOURNAL_DIR / filename

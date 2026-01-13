@@ -52,10 +52,12 @@ def get_dot_status(timeout=0.5):
         return None
 
 def get_openweathermap(timeout=0.5):
+    from app.core.time_location_utils import _load_user_location
+    loc = _load_user_location()
     api_key = config.OPENWEATHERMAP_API_KEY
     base_url = muse_config.get("OPENWEATHERMAP_API_URL")
-    zip_code = muse_config.get("USER_ZIPCODE")
-    country_code = muse_config.get("USER_COUNTRYCODE")
+    zip_code = loc.zip_code
+    country_code = loc.country_code
     temp_units = muse_config.get("MEASUREMENT_UNITS")
     full_url = f"{base_url}?zip={zip_code},{country_code}&units={temp_units}&appid={api_key}"
 

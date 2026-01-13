@@ -4,7 +4,7 @@ import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bson import ObjectId
-from app.core import memory_core, journal_core, discovery_core, utils
+from app.core import memory_core, journal_core, discovery_core, utils, time_location_utils
 from app.core.memory_core import cortex
 from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
@@ -41,10 +41,6 @@ class PromptBuilder:
     def __init__(self, destination="default"):
         self.destination = destination
         self.segments = {}
-        self.now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE"))).isoformat()
-
-    def add_time(self):
-        self.segments["usertime"] = f"[Current Time] {self.now}"
 
     def add_laws(self):
         laws = (
@@ -519,14 +515,28 @@ class PromptBuilder:
             )
         self.segments["gcp_dot"] = display_status
 
+    def add_time(self):
+        from app.core.time_location_utils import user_data
+        user_time, user_city, user_state = user_data()
+        human_time = user_time.strftime('%A, %B %d, %Y %I:%M %p %Z')
+        self.segments["usertime"] = f"[Current Time] {human_time}"
+
     def add_world_now_block(self):
         # User time/location
-        import pgeocode
-        nomi = pgeocode.Nominatim('US')
-        user_location= nomi.query_postal_code(muse_config.get("USER_ZIPCODE"))
-        user_city = user_location.get("place_name") or "Unknown City"
-        user_state = user_location.get("state_code") or "??"
-        user_time_string = f"-Local Time-: {self.now} ({user_city}, {user_state})"
+        from app.core.time_location_utils import user_data
+        user_time, user_city, user_state = user_data()
+        human_time = user_time.strftime('%A, %B %d, %Y %I:%M %p %Z')
+        user_time_string = f"-Local Time-: {human_time} ({user_city}, {user_state})"
+
+        # Astro data
+        from app.core.time_location_utils import sun_moon_snapshot
+        sky = sun_moon_snapshot()
+        sun_part = sky["band"] or "unknown"
+        if sky["moment"]:
+            sun_part = f"{sun_part} ({sky['moment']})"
+
+        moon_part = f"moon is {sky['moon_phase']} and {'up' if sky['moon_up'] else 'down'}"
+        sun_moon_string = f"-Sun & Moon-: {sun_part} - {moon_part}"
 
         # User weather
         weather_data = get_openweathermap()
@@ -569,6 +579,7 @@ class PromptBuilder:
             "[World / Now]\n"
             f"{user_time_string}\n"
             f"{weather_string}\n"
+            f"{sun_moon_string}\n"
             f"{space_string}\n"
             f"{gcp_string}\n"
         )
@@ -816,12 +827,12 @@ def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = Fals
    Fields:
      - text: A short-form insight to store long-term.\n""",
     }
-
-    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
+    loc = time_location_utils._load_user_location()
+    now = datetime.now(ZoneInfo(loc.timezone))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
     quiet_note = (
         "Note: It is currently quiet hours. Do not choose to speak aloud. Journaling or remembering is acceptable.\n"
-        if utils.is_quiet_hour() and any(c in allowed_commands for c in ("speak", "speak_direct"))
+        if time_location_utils.is_quiet_hour() and any(c in allowed_commands for c in ("speak", "speak_direct"))
         else ""
     )
     return (

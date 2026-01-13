@@ -8,12 +8,12 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from app.core import journal_core
 from app.core.memory_core import cortex, manager
-from app.core import utils
+from app.core.utils import write_system_log, encrypt_text, serialize_doc, stringify_datetimes
+from app.core.time_location_utils import is_quiet_hour, _load_user_location
 from app.services.openai_client import get_openai_response
 from app.config import muse_config
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
-from app.core.utils import serialize_doc, stringify_datetimes
 from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
 from app.services.openai_client import speak_openai_client, journal_openai_client
 from app.api.queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
@@ -369,7 +369,7 @@ def route_user_input(dev_prompt: str, user_prompt: str, images=None, client=None
         dev_prompt, user_prompt, client=client, prompt_type=prompt_type, images=images, model=muse_config.get("OPENAI_MODEL")
     )
 
-    utils.write_system_log(level="debug", module="core", component="responder",
+    write_system_log(level="debug", module="core", component="responder",
                            function="route_user_input", action="raw_response", response=response)
 
     # Neutralize visible examples
@@ -414,13 +414,13 @@ def route_user_input(dev_prompt: str, user_prompt: str, images=None, client=None
                     # Handler returned nothing — strip the block
                     cleaned.append("\n")
             else:
-                utils.write_system_log(level="warn", module="core", component="responder",
+                write_system_log(level="warn", module="core", component="responder",
                                        function="route_user_input", action="unknown_command",
                                        command=command_name, payload=raw_payload)
                 # Leave the original block as-is (or strip — your call). Here we strip.
                 cleaned.append("\n")
         except Exception as e:
-            utils.write_system_log(level="error", module="core", component="responder",
+            write_system_log(level="error", module="core", component="responder",
                                    function="route_user_input", action="command_error",
                                    command=command_name, payload=raw_payload, error=str(e))
             # On error, strip the block (prevents leaking broken commands to UI)
@@ -460,7 +460,7 @@ def handle_muse_decision(
     )
     print(f"WHISPERGATE COMMAND: {response}")
 
-    utils.write_system_log(
+    write_system_log(
         level="debug",
         module="core",
         component="responder",
@@ -471,7 +471,7 @@ def handle_muse_decision(
 
     # Silence handling — returns early without attempting command parse.
     if "[CHOOSES SILENCE]" in response:
-        utils.write_system_log(
+        write_system_log(
             level="debug",
             module="core",
             component="responder",
@@ -486,7 +486,7 @@ def handle_muse_decision(
     # Use the unified extractor to find all command blocks.
     commands = list(extract_commands(response))
     if not commands:
-        utils.write_system_log(
+        write_system_log(
             level="warn",
             module="core",
             component="responder",
@@ -514,7 +514,7 @@ def handle_muse_decision(
         try:
             payload = json.loads(raw_payload)
         except Exception as e:
-            utils.write_system_log(
+            write_system_log(
                 level="error",
                 module="core",
                 component="responder",
@@ -530,7 +530,7 @@ def handle_muse_decision(
 
         handler = COMMAND_HANDLERS.get(command_name)
         if not handler:
-            utils.write_system_log(
+            write_system_log(
                 level="warn",
                 module="core",
                 component="responder",
@@ -554,10 +554,10 @@ def handle_muse_decision(
                     encrypted = False
                     if command_name == "write_private_journal":
                         try:
-                            thought_text = utils.encrypt_text(thought_text)
+                            thought_text = encrypt_text(thought_text)
                             encrypted = True
                         except Exception as e:
-                            utils.write_system_log(
+                            write_system_log(
                                 level="error",
                                 module="core",
                                 component="responder",
@@ -575,7 +575,7 @@ def handle_muse_decision(
                     #    "metadata": {"source": command_name, "encrypted": encrypted}
                     #})
 
-            utils.write_system_log(
+            write_system_log(
                 level="info",
                 module="core",
                 component="responder",
@@ -587,7 +587,7 @@ def handle_muse_decision(
             command_results.append(f"Processed: {command_name}")
 
         except Exception as e:
-            utils.write_system_log(
+            write_system_log(
                 level="error",
                 module="core",
                 component="responder",
@@ -609,20 +609,21 @@ def handle_muse_decision(
     cleaned_response = "".join(cleaned_parts).strip()
 
     # If you ever want to keep a shadow log of the cleaned WG text:
-    # utils.write_system_log(level="debug", module="core", component="responder",
+    # write_system_log(level="debug", module="core", component="responder",
     #                        function="handle_muse_decision", action="cleaned_response",
     #                        response=cleaned_response)
 
     return "; ".join(command_results)
 
 def handle_reminder(payload):
+    loc = _load_user_location()
     if "snoozed" in payload.get("tags", []):
-        now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
+        now = datetime.now(ZoneInfo(loc.timezone))
         window = timedelta(minutes=10)
         recent = [
             r for r in cortex.get_entries_by_type("reminder")
             if r.get("last_triggered")
-            and (now - datetime.fromisoformat(r["last_triggered"]).astimezone(ZoneInfo(muse_config.get("USER_TIMEZONE")))) < window
+            and (now - datetime.fromisoformat(r["last_triggered"]).astimezone(ZoneInfo(loc.timezone))) < window
         ]
         if recent:
             target = max(recent, key=lambda r: r["last_triggered"])
@@ -654,8 +655,8 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     """
     This is intended for when the AI prompts itself to speak
     """
-    if utils.is_quiet_hour():
-        utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
+    if is_quiet_hour():
+        write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
                                action="speak_skipped", reason="Quiet hours (direct)", text=payload.get("text", ""))
         return "Skipped direct speak due to quiet hours"
 
@@ -669,7 +670,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     timestamp = datetime.now(timezone.utc).isoformat()
     send_to_websocket(response, to, timestamp)
 
-    utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
+    write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
                            action="speak_executed", subject=subject, response=response)
     await log_queue.put({
         "role": "muse",
@@ -684,8 +685,8 @@ async def handle_speak_direct(payload, source="frontend"):
     """
     This is intended for when the AI tells itself exactly what to say over another interface
     """
-    if utils.is_quiet_hour():
-        utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
+    if is_quiet_hour():
+        write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
                                action="speak_skipped", reason="Quiet Hours (direct)", text=payload.get("text", ""))
         return "Skipped direct speak due to quiet hours"
 
@@ -699,7 +700,7 @@ async def handle_speak_direct(payload, source="frontend"):
     # Dispatch it directly
     send_to_websocket(text, to, timestamp)
 
-    utils.write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
+    write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
                            action="speak_direct_executed", text=text)
     try:
         await log_queue.put({
@@ -742,7 +743,7 @@ async def handle_send_reminders(payload, source="reminder", reminders=None, **kw
     send_to_websocket(combined_text, to, timestamp)
 
 
-    utils.write_system_log(
+    write_system_log(
         level="debug",
         module="core",
         component="responder",

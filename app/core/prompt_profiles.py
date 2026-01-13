@@ -3,12 +3,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 from app.core.prompt_builder import PromptBuilder, make_whisper_directive
-from app.core.utils import (is_quiet_hour,
-                            prompt_projects_helper,
+from app.core.utils import (prompt_projects_helper,
                             LOCATIONS,
                             SOURCES_CHAT,
                             SOURCES_CONTEXT,
                             SOURCES_ALL)
+from app.core.time_location_utils import is_quiet_hour, _load_user_location
 from app.config import muse_config
 
 # ============================
@@ -69,7 +69,6 @@ def build_api_prompt(user_input, **kwargs):
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
     # User role segments
     builder.add_world_now_block()
-    #builder.add_dot_status()
     #builder.add_discovery_snippets()
     builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))
@@ -117,13 +116,12 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwa
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers(user_query=subject)
     # User role
-    builder.add_dot_status()
+    builder.add_world_now_block()
     builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
     # Include full article if Muse is speaking about one
     link = payload.get("source_article_url")
     if link:
         builder.add_discovery_feed_article(link)
-    builder.add_time()
     builder.segments["speech"] = f"[Task]\nYou have decided to speak to the user about a topic.\n\n"
 
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
@@ -143,7 +141,7 @@ def build_journal_prompt(subject=None, payload=None, entry_type="public"):
     builder.add_core_principles()
     builder.add_memory_layers(user_query=subject)
     # User role
-    builder.add_dot_status()
+    builder.add_world_now_block()
     builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
     # Include full article if Muse is speaking about one
     link = payload.get("source_article_url")
@@ -170,7 +168,6 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
     builder.add_memory_layers(user_query=user_input)
 
     # User role segments
-    #builder.add_dot_status()
     builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
                                 public=True)
     builder.render_locations(current_location=source)
@@ -229,11 +226,12 @@ def build_whispergate_prompt():
     builder.add_core_principles()
     builder.add_memory_layers(user_query="becoming relationship curiosity")
     # User role
+    builder.add_world_now_block()
     builder.add_recent_context(sources=SOURCES_CONTEXT) # Pulls last 10 lines or upto 2 hours of recent context
     #builder.add_journal_thoughts()
     builder.add_discovery_articles(max_items=5)
 #    builder.add_cortex_thoughts()
-    builder.add_time()
+
     builder.segments["whispergate_directive"] = make_whisper_directive(
         ["speak", "write_public_journal", "write_private_journal"],
         quiet_hours=is_quiet_hour()
@@ -260,6 +258,7 @@ def build_discoveryfeeds_lookup_prompt():
     return dev_prompt, user_prompt
 
 def build_dropped_threads_check_prompt(muse_config):
+    loc = _load_user_location()
     builder = PromptBuilder()
     # Developer prompt
     builder.add_laws()
@@ -267,9 +266,9 @@ def build_dropped_threads_check_prompt(muse_config):
     builder.add_core_principles()
     builder.add_memory_layers()
     # User Prompt
+    builder.add_world_now_block()
     builder.add_recent_context(sources=SOURCES_CHAT) # Pulls last 10 lines or upto 2 hours of recent context
-    builder.add_time()
-    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
+    now = datetime.now(ZoneInfo(loc.timezone))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
     quiet_note = (
         "Note: It is currently quiet hours. Do not choose to speak aloud.\n"
@@ -301,13 +300,14 @@ def build_dropped_threads_check_prompt(muse_config):
     return dev_prompt, user_prompt
 
 def build_inactivity_check_prompt(muse_config):
+    loc = _load_user_location()
     builder = PromptBuilder()
     builder.add_laws()
     builder.add_profile()
     builder.add_core_principles()
     builder.add_memory_layers()
 
-    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
+    now = datetime.now(ZoneInfo(loc.timezone))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
     quiet_note = (
         "Note: It is currently quiet hours. Do not choose to speak aloud.\n"

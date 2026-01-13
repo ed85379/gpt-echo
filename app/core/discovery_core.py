@@ -167,34 +167,3 @@ def fetch_full_article(url: str) -> str:
         return "[Failed to fetch article text]"
 
 
-# --- Local Environmental Awareness ---
-def get_local_weather(zip_code=muse_config.get("USER_ZIPCODE"), country_code=muse_config.get("USER_COUNTRYCODE"), units=muse_config.get("MEASUREMENT_UNITS")):
-    """
-    Fetches current weather conditions by ZIP code.
-    """
-    if not OPENWEATHERMAP_API_KEY:
-        return "Weather data unavailable (missing API key)."
-
-    url = f"https://api.openweathermap.org/data/2.5/weather?zip={muse_config.get("USER_ZIPCODE")},{muse_config.get("USER_COUNTRYCODE")}&appid={OPENWEATHERMAP_API_KEY}&units={units}"
-
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            description = data["weather"][0]["description"].capitalize()
-            temp = data["main"]["temp"]
-            return f"{description}, {temp}°F"
-        else:
-            print(f"⚠️ Weather fetch error: {response.status_code} - {response.text}")
-            return "Weather data unavailable."
-    except Exception as e:
-        print(f"⚠️ Weather fetch exception: {e}")
-        return "Weather data unavailable."
-
-
-def get_local_time():
-    """
-    Returns the current local time formatted cleanly.
-    """
-    now = datetime.now(ZoneInfo(muse_config.get("USER_TIMEZONE")))
-    return now.strftime("%Y-%m-%d %H:%M")

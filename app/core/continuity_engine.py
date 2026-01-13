@@ -1,7 +1,7 @@
 import asyncio
 import random
 from app.core.muse_initiator import run_whispergate, run_discoveryfeeds_lookup, run_check_reminders
-from app.core import utils
+from app.core.time_location_utils import seconds_until
 from app.api.queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 from app.interfaces.websocket_server import broadcast_message
 from app.core.memory_core import log_message
@@ -25,7 +25,7 @@ async def task_runner(task):
 
     if name in ("dreamtime", "introspection_engine"):
         hour = 3 if name == "dreamtime" else 4
-        delay = utils.seconds_until(hour)
+        delay = seconds_until(hour)
         print(f"[ContinuityEngine] {name} will run in {delay} seconds (scheduled for {hour}:00)")
         await asyncio.sleep(delay)
         while True:

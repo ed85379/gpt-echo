@@ -14,7 +14,8 @@ from croniter import croniter
 from app import config
 #from app.api.api_main import QDRANT_COLLECTION
 from app.config import muse_config
-from app.core.utils import write_system_log, align_cron_for_croniter, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
+from app.core.utils import write_system_log, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
+from app.core.time_location_utils import align_cron_for_croniter
 from app.core import utils
 from app.databases.mongo_connector import mongo
 from app.services.openai_client import get_openai_autotags
@@ -630,9 +631,6 @@ class MuseCortexInterface:
     def update_doc(self, doc_id, updated_fields):
         raise NotImplementedError
 
-    def search_cortex_for_timely_reminders(self, window_minutes):
-        raise NotImplementedError
-
 class MongoCortexClient(MuseCortexInterface):
     def __init__(self):
         uri = muse_config.get("MONGO_URI")
@@ -707,62 +705,6 @@ class MongoCortexClient(MuseCortexInterface):
             return_document=ReturnDocument.AFTER
         )
         return updated
-
-    def search_cortex_for_timely_reminders(self, window_minutes=0.5):
-        user_tz = ZoneInfo(muse_config.get("USER_TIMEZONE"))  # e.g., "America/New_York"
-        now_local = datetime.now(user_tz)
-        lower_bound = now_local - timedelta(minutes=window_minutes)
-        upper_bound = now_local + timedelta(minutes=window_minutes)
-
-        reminders = self.get_entries_by_type("reminder")
-        triggered = []
-
-        for entry in reminders:
-            cron = align_cron_for_croniter(entry.get("cron"))
-            skip_until = entry.get("skip_until")
-            try:
-                # Start base_time slightly before now to catch edge triggers
-                base_time = now_local - timedelta(minutes=5)
-                # Respect skip_until if provided
-                if skip_until:
-                    skip_dt = datetime.fromisoformat(skip_until)
-                    if skip_dt.tzinfo is None:
-                        skip_dt = skip_dt.replace(tzinfo=user_tz)
-                    else:
-                        skip_dt = skip_dt.astimezone(user_tz)
-                    if skip_dt > base_time:
-                        base_time = skip_dt
-                # Generate next fire time
-                itr = croniter(cron, base_time)
-                try:
-                    next_trigger = itr.get_next(datetime)
-                    if next_trigger.tzinfo is None:
-                        next_trigger = next_trigger.replace(tzinfo=user_tz)
-                except Exception as e:
-                    print(f"Error parsing cron for reminder: {e}")
-                    continue
-                if next_trigger.tzinfo is None:
-                    next_trigger = next_trigger.replace(tzinfo=user_tz)
-
-                # Compare to now window
-                if lower_bound <= next_trigger <= upper_bound:
-                    ends_on = entry.get("ends_on")
-                    if ends_on:
-                        ends = datetime.fromisoformat(ends_on)
-                        if ends.tzinfo is None:
-                            ends = ends.replace(tzinfo=user_tz)
-                        else:
-                            ends = ends.astimezone(user_tz)
-                        if next_trigger > ends:
-                            continue  # Skip expired reminders
-                    triggered.append(entry)
-
-            except Exception as e:
-                print(f"❌ Error processing reminder: {e}")
-                continue
-
-        print(f"✅ Found {len(triggered)} reminders ready to fire.")
-        return triggered
 
 
 # </editor-fold>
