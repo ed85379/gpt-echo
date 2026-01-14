@@ -1,14 +1,15 @@
 # prompt_builder.py
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from bson import ObjectId
+import humanize
 from app.core import memory_core, journal_core, discovery_core, utils, time_location_utils
 from app.core.memory_core import cortex
 from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
-from app.databases.mongo_connector import mongo
+from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.qdrant_connector import search_collection
 from app.core.text_filters import get_text_filter_config, filter_text
 import numpy as np
@@ -36,6 +37,8 @@ def format_profile_sections(sections):
         else:
             lines.append(f"{key}: {value}")
     return "\n".join(lines)
+
+
 
 class PromptBuilder:
     def __init__(self, destination="default"):
@@ -585,6 +588,35 @@ class PromptBuilder:
         )
         self.segments["worldnow"] = display_block
 
+    def build_motd_block(self):
+        loc = time_location_utils._load_user_location()
+        filter_query = {"type": "ui_states"}
+        projection = {"pollstates.motd": 1, "_id": 0}
+        motddoc = mongo_system.find_one_document("muse_states",
+                                                 query=filter_query,
+                                                 projection=projection
+                                                 )
+        text = motddoc["pollstates"]["motd"]["text"]
+        updated_on = motddoc["pollstates"]["motd"]["updated_on"]
+        if updated_on.tzinfo is None:
+            updated_on = updated_on.replace(tzinfo=timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        dt = updated_on.astimezone(ZoneInfo("UTC"))
+        htime = humanize.naturaltime(updated_on, when=now_utc)
+        instructions = (
+            "The UI / Frontend you use to communicate has a place, just under your photo, where\n"
+            "you may place your thoughts, words of wisdom, inspiration, a joke, or even a flirt.\n"
+            "If you choose to set a message there, keep it short and sweet.\n"
+            "[COMMAND: set_motd] {text: \"...your message ...\"} [/COMMAND]"
+        )
+        display_block = (
+            f"[ MOTD / UI Message to {muse_config.get('USER_NAME')} ]\n"
+            f"Current: {text}\n"
+            f"Last Updated: {htime}\n"
+            f"Instructions:\n{instructions}\n"
+        )
+
+        self.segments["motd"] = display_block
 
     def add_memory_layers(self, project_id=None, user_query="continuity"):
         """

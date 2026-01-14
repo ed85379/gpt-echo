@@ -51,7 +51,7 @@ def build_api_prompt(user_input, **kwargs):
     builder.add_profile()
     builder.add_core_principles()
     commands = [
-        "set_motd",
+        #"set_motd",
         "remember_fact",
         "record_userinfo",
         "realize_insight",
@@ -70,6 +70,7 @@ def build_api_prompt(user_input, **kwargs):
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
     # User role segments
     builder.add_world_now_block()
+    builder.build_motd_block()
     #builder.add_discovery_snippets()
     builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))

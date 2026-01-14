@@ -1,6 +1,6 @@
 
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from app.databases.mongo_connector import mongo_system
 from app.config import muse_config
@@ -98,7 +98,7 @@ def set_motd(text: str):
     """
     if not text:
         return False
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     result = mongo_system.update_one_document(
         "muse_states",
         {"type": "ui_states"},

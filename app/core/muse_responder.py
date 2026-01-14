@@ -116,7 +116,7 @@ COMMANDS = {
     "set_motd": {
         "triggers": [],  # Intentionally blank — only invoked programmatically
         "format": "[COMMAND: set_motd] {text: \"... your message here ...\"} [/COMMAND]",
-        "handler": lambda payload: handle_set_motd(payload),
+        "handler": lambda payload, **kwargs: handle_set_motd(payload),
         "filter": lambda result: {
             "visible": "",
             "hidden": result
