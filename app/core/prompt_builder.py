@@ -826,10 +826,18 @@ def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = Fals
    This is only for things that you will want to remember again.
    Fields:
      - text: A short-form insight to store long-term.\n""",
+
+        "set_motd": """5. [COMMAND: set_motd] {} [/COMMAND]
+    The UI/Frontend you use to communicate has a place, just under your photo, where you may place
+    your thoughts, words of wisdom, inspiration, a joke, or even a flirt. If you choose to set a message there, 
+    keep it short and sweet.
+    Fields:
+      - text: A short message to your user.\n""",
     }
     loc = time_location_utils._load_user_location()
     now = datetime.now(ZoneInfo(loc.timezone))
-    time_line = f"Current local time: {now.strftime('%H:%M')}"
+    time = time_location_utils.get_local_human_time()
+    time_line = f"Current local time: {time}"
     quiet_note = (
         "Note: It is currently quiet hours. Do not choose to speak aloud. Journaling or remembering is acceptable.\n"
         if time_location_utils.is_quiet_hour() and any(c in allowed_commands for c in ("speak", "speak_direct"))

@@ -12,6 +12,7 @@ from app.core.utils import write_system_log, encrypt_text, serialize_doc, string
 from app.core.time_location_utils import is_quiet_hour, _load_user_location
 from app.services.openai_client import get_openai_response
 from app.config import muse_config
+from app.core.states_core import set_motd
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
 from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
@@ -111,6 +112,15 @@ COMMANDS = {
         "triggers": ["write private journal"],
         "format": "[COMMAND: write_private_journal] {subject, emotional_tone, tags, source_article_url} [/COMMAND]",
         "handler": lambda payload, **kwargs: handle_journal_command(payload, entry_type="private", **kwargs)
+    },
+    "set_motd": {
+        "triggers": [],  # Intentionally blank — only invoked programmatically
+        "format": "[COMMAND: set_motd] {text: \"... your message here ...\"} [/COMMAND]",
+        "handler": lambda payload: handle_set_motd(payload),
+        "filter": lambda result: {
+            "visible": "",
+            "hidden": result
+        }
     },
     "speak": {
         "triggers": [],  # Intentionally blank — only invoked programmatically
@@ -650,6 +660,19 @@ def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay
             time.sleep(delay * attempt)
     print("WebSocket send gave up after retries.")
     return False
+
+def handle_set_motd(payload):
+    text = payload.get("text", "")
+    if set_motd(text):
+        return {
+            "cmd": f"{muse_config.get("MUSE_NAME")} has set a new MOTD",
+            "text": text,
+        }
+    else:
+        return {
+            "cmd": "set_motd",
+            "error": "Setting MOTD failed",
+        }
 
 async def handle_speak_command(payload, to="frontend", source="frontend"):
     """

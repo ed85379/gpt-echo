@@ -29,6 +29,7 @@ from app.api.routers.import_api import router as import_router
 from app.api.routers.projects_api import router as projects_router
 from app.api.routers.files_api import router as files_router
 from app.api.routers.states_api import router as states_router
+from app.api.routers.uipolling_api import router as uipolling_router
 from app.services.openai_client import api_openai_client, audio_openai_client
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 
@@ -48,6 +49,7 @@ app.include_router(import_router)
 app.include_router(projects_router)
 app.include_router(files_router)
 app.include_router(states_router)
+app.include_router(uipolling_router)
 
 
 

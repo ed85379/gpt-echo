@@ -1,5 +1,6 @@
 
 from bson import ObjectId
+from datetime import datetime
 from typing import Dict, Any
 from app.databases.mongo_connector import mongo_system
 from app.config import muse_config
@@ -89,4 +90,19 @@ def set_states(project_id: str, updates: dict) -> bool:
     )
 
     # If no doc matched, result will be None
+    return bool(result)
+
+def set_motd(text: str):
+    """
+    Sets the MOTD message that appears in the UI
+    """
+    if not text:
+        return False
+    now = datetime.utcnow()
+    result = mongo_system.update_one_document(
+        "muse_states",
+        {"type": "ui_states"},
+        {"pollstates.motd.text": text, "pollstates.motd.updated_on": now},
+    )
+
     return bool(result)

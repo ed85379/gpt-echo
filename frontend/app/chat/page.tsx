@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import ChatTab from './ChatTab';
-import MusePanel from './MusePanel';
 import HistoryTab from './HistoryTab';
 import { useConfig } from '@/hooks/ConfigContext';
 import PresencePanel from './PresencePanel';

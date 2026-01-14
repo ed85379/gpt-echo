@@ -51,6 +51,7 @@ def build_api_prompt(user_input, **kwargs):
     builder.add_profile()
     builder.add_core_principles()
     commands = [
+        "set_motd",
         "remember_fact",
         "record_userinfo",
         "realize_insight",
@@ -61,7 +62,7 @@ def build_api_prompt(user_input, **kwargs):
 #        "skip_reminder",
 #        "snooze_reminder",
 #        "toggle_reminder",
-        "search_reminders"
+        "search_reminders",
     ]
     if kwargs.get("project_id"):
         commands.append("remember_project_fact")
@@ -229,11 +230,11 @@ def build_whispergate_prompt():
     builder.add_world_now_block()
     builder.add_recent_context(sources=SOURCES_CONTEXT) # Pulls last 10 lines or upto 2 hours of recent context
     #builder.add_journal_thoughts()
-    builder.add_discovery_articles(max_items=5)
+    #builder.add_discovery_articles(max_items=5)
 #    builder.add_cortex_thoughts()
 
     builder.segments["whispergate_directive"] = make_whisper_directive(
-        ["speak", "write_public_journal", "write_private_journal"],
+        ["speak", "write_public_journal", "write_private_journal", "set_motd"],
         quiet_hours=is_quiet_hour()
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])

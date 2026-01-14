@@ -8,18 +8,20 @@ export function ConfigProvider({ children }) {
   const [config, setConfig] = useState({});
   const [profile, setProfile] = useState(null);
   const [states, setStates] = useState(null);
+  const [pollstates, setPollstates] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const [statesLoading, setStatesLoading] = useState(true);
+  const [pollstatesLoading, setPollstatesLoading] = useState(true);
 
-  const POLL_MS = 60_000; // 1 minute; change to 300_000 for 5 minutes
+  const POLL_MS = 300_000; // 1 minute; change to 300_000 for 5 minutes
 
   // --- helpers ---
 
   async function loadConfig(signal) {
     try {
-      const res = await fetch('/api/config', { signal });
+      const res = await fetch('/api/config/', { signal });
       if (!res.ok) throw new Error("Failed to fetch config");
       const data = await res.json();
 
@@ -41,7 +43,7 @@ export function ConfigProvider({ children }) {
 
   async function loadProfile(signal) {
     try {
-      const res = await fetch('/api/muse_profile', { signal });
+      const res = await fetch('/api/muse_profile/', { signal });
       if (!res.ok) throw new Error("Failed to fetch muse profile");
       const data = await res.json();
       setProfile(data);
@@ -54,7 +56,7 @@ export function ConfigProvider({ children }) {
 
   async function loadStates(signal) {
     try {
-      const res = await fetch('/api/states', { signal });
+      const res = await fetch('/api/states/', { signal });
       if (!res.ok) throw new Error("Failed to fetch states");
       const data = await res.json();
       setStates(data);
@@ -65,39 +67,54 @@ export function ConfigProvider({ children }) {
     }
   }
 
+  async function loadPollstates(signal) {
+    try {
+      const res = await fetch('/api/uipolling/', { signal });
+      if (!res.ok) throw new Error("Failed to fetch polling states");
+      const data = await res.json();
+      setPollstates(data);
+      setPollstatesLoading(false);
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      console.error("Error loading polling states:", err);
+    }
+  }
+
   useEffect(() => {
     const configController = new AbortController();
     const profileController = new AbortController();
     const statesController = new AbortController();
+    const pollstatesController = new AbortController();
 
     // initial loads
     loadConfig(configController.signal);
     loadProfile(profileController.signal);
     loadStates(statesController.signal);
+    loadPollstates(pollstatesController.signal);
 
     // 🔁 polling
-    const configInterval = setInterval(() => {
-      const c = new AbortController();
-      loadConfig(c.signal);
-    }, POLL_MS);
+    //const configInterval = setInterval(() => {
+    //  const c = new AbortController();
+    //  loadConfig(c.signal);
+    //}, POLL_MS);
 
-    const profileInterval = setInterval(() => {
-      const p = new AbortController();
-      loadProfile(p.signal);
-    }, POLL_MS);
+    //const profileInterval = setInterval(() => {
+    //  const p = new AbortController();
+    //  loadProfile(p.signal);
+    //}, POLL_MS);
 
-    const statesInterval = setInterval(() => {
+    const pollstatesInterval = setInterval(() => {
       const s = new AbortController();
-      loadStates(s.signal);
+      loadPollstates(s.signal);
     }, POLL_MS);
 
     return () => {
-      configController.abort();
-      profileController.abort();
-      statesController.abort();
-      clearInterval(configInterval);
-      clearInterval(profileInterval);
-      clearInterval(statesInterval);
+    //  configController.abort();
+    //  profileController.abort();
+      pollstatesController.abort();
+    //  clearInterval(configInterval);
+    //  clearInterval(profileInterval);
+      clearInterval(pollstatesInterval);
     };
   }, []);
 
@@ -110,6 +127,8 @@ export function ConfigProvider({ children }) {
         museProfileLoading: profileLoading,
         uiStates: states,
         uiStatesLoading: statesLoading,
+        uiPollstates: pollstates,
+        uiPollstatesLoading: pollstatesLoading,
       }}
     >
       {children}
