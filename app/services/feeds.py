@@ -89,22 +89,78 @@ def get_openweathermap(timeout=0.5):
         else:
             return "oppressively hot"
 
+    def wind_speed_phrase(speed: float) -> str:
+        # speed is already in your chosen units (mph if imperial, m/s if metric)
+        # Assuming imperial here; if you ever switch, we can branch on MEASUREMENT_UNITS.
+        if speed < 1:
+            return "calm"
+        elif speed < 4:
+            return "light air"
+        elif speed < 8:
+            return "light breeze"
+        elif speed < 13:
+            return "gentle breeze"
+        elif speed < 19:
+            return "moderate breeze"
+        elif speed < 25:
+            return "fresh breeze"
+        elif speed < 32:
+            return "strong breeze"
+        elif speed < 39:
+            return "near gale"
+        elif speed < 47:
+            return "gale-force winds"
+        elif speed < 64:
+            return "storm-force winds"
+        else:
+            return "hurricane-force winds"
+
+    def wind_with_gusts_phrase(speed: float, gust: float | None) -> str:
+        base = wind_speed_phrase(speed)
+
+        if gust is None:
+            return base
+
+        # If gusts are basically the same as sustained, ignore them.
+        diff = gust - speed
+        if diff < 5:
+            return base
+
+        # 5–14 mph above sustained → occasional gusts
+        if diff < 15 and gust < 25:
+            return f"{base} with occasional gusts"
+
+        # Anything more intense → strong gusts
+        return f"{base} with strong gusts"
+
     try:
-        weather_results = requests.get(full_url, timeout=0.5)
+        weather_results = requests.get(full_url, timeout=timeout)
         weather_data = json.loads(weather_results.text)
 
+        main = weather_data["weather"][0]["main"]
+        desc = weather_data["weather"][0]["description"]
+        temp = round(weather_data["main"]["temp"])
+        feels_like = round(weather_data["main"]["feels_like"])
+
+        wind_speed = float(weather_data["wind"].get("speed", 0.0))
+        wind_gust = weather_data["wind"].get("gust")
+        wind_gust = float(wind_gust) if wind_gust is not None else None
+
+        wind_desc = wind_with_gusts_phrase(wind_speed, wind_gust)
+
         return {
-            "weather_main": weather_data['weather'][0]['main'],
-            "weather_desc": weather_data['weather'][0]['description'],
-            "weather_temp": round(weather_data['main']['temp']),
-            "weather_feels": temp_mood_phrase(round(weather_data['main']['feels_like']))
+            "weather_main": main,
+            "weather_desc": desc,
+            "weather_temp": temp,
+            "weather_feels": temp_mood_phrase(feels_like),
+            "wind_desc": wind_desc,
         }
 
     except Exception:
         return None
 
-SPACE_WEATHER_URL = "https://services.swpc.noaa.gov/text/current-space-weather-indices.txt"
 
+SPACE_WEATHER_URL = "https://services.swpc.noaa.gov/text/current-space-weather-indices.txt"
 
 def xray_mood(x: float) -> tuple[str, str]:
     """
