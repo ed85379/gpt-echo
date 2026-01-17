@@ -738,6 +738,28 @@ class MemoryLayerManager:
 
     def add_entry(self, doc_id, entry):
         now = datetime.utcnow()
+        text = entry.get("text")
+
+        if text:
+            # look for an existing entry with identical text
+            existing = self.search_entries(
+                doc_id,
+                mongo_query={"text": {"$regex": re.escape(text)}},
+                limit=1,
+            )
+            if existing:
+                existing_entry = existing[0]
+                entry_id = existing_entry["id"]
+
+                # “update” with the same text; edit_entry will bump updated_on
+                updated = self.edit_entry(doc_id, entry_id, {"text": text})
+                self._log(
+                    "add_entry_dedupe",
+                    f"Deduped text into existing entry {entry_id} in {doc_id}",
+                )
+                return updated
+
+        # normal add path
         entry['id'] = self.utils.generate_new_id()
         entry['created_on'] = now
         entry['updated_on'] = now
@@ -748,6 +770,8 @@ class MemoryLayerManager:
         # Only index semantically relevant layers
         if doc_id not in ("inner_monologue", "reminders"):
             asyncio.create_task(index_memory_queue.put(entry['id']))
+        # Add the doc_id only after it is done with entry, before returning it
+        entry['doc_id'] = doc_id
         return entry
 
     def edit_entry(self, doc_id, entry_id, fields):
@@ -764,6 +788,8 @@ class MemoryLayerManager:
         self._log("edit_entry", f"Edited entry {entry_id} in {doc_id}")
         if doc_id not in ("inner_monologue", "reminders"):
             asyncio.create_task(index_memory_queue.put(entry['id']))
+        # Add the doc_id only after it is done with entry, before returning it
+        entry['doc_id'] = doc_id
         return entry
 
     def recycle_entry(self, doc_id, entry_id):
