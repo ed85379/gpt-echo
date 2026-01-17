@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.databases.mongo_connector import mongo_system, mongo
+from app.config import muse_config
 
 
 router = APIRouter(prefix="/api/uipolling", tags=["uipolling"])
@@ -23,11 +24,7 @@ def get_ui_polling_state():
     )
 
     # 3) config: any setting with pollable: true
-    config_docs = mongo_system.find_documents(
-        "muse_config",
-        {"pollable": True},
-        projection={"_id": 1, "value": 1,},
-    )
+    config_docs = muse_config.as_dict(pollable_only=True)
 
     return {
         "ui_states": {

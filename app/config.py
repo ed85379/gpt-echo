@@ -52,15 +52,39 @@ class MuseConfig:
             {"_id": key}, {"$set": {"value": value}}, upsert=True
         )
 
-    def as_dict(self, include_meta=True):
-        live_docs = {doc["_id"]: doc for doc in self.live.find({})}
-        default_docs = {doc["_id"]: doc for doc in self.defaults.find({})}
-        all_keys = set(live_docs) | set(default_docs)
+    def as_dict(self, include_meta=True, pollable_only=False):
+        # 1) Load defaults, optionally filtered by pollable
+        default_query = {}
+        if pollable_only:
+            default_query["pollable"] = True
+
+        default_docs = {doc["_id"]: doc for doc in self.defaults.find(default_query)}
+
+        # 2) Load live docs only for the keys we care about
+        if default_docs:
+            live_query = {"_id": {"$in": list(default_docs.keys())}}
+            live_docs = {doc["_id"]: doc for doc in self.live.find(live_query)}
+        else:
+            live_docs = {}
+
+        # 3) If not pollable_only, we also want any purely-live keys
+        if not pollable_only:
+            # Grab all live docs, then merge with defaults
+            extra_live_docs = {
+                doc["_id"]: doc
+                for doc in self.live.find({})
+                if doc["_id"] not in default_docs
+            }
+            live_docs.update(extra_live_docs)
+
+        # 4) Union of keys
+        all_keys = set(default_docs) | set(live_docs)
 
         result = {}
         for key in all_keys:
             live_doc = live_docs.get(key)
             default_doc = default_docs.get(key)
+
             # Value: live > default > None
             if live_doc and "value" in live_doc:
                 value = live_doc["value"]
@@ -68,20 +92,33 @@ class MuseConfig:
                 value = default_doc["value"]
             else:
                 value = None
+
             entry = {"value": value}
+
             if include_meta:
-                # Prefer meta fields from live, else fallback to default
+                # description
                 if (live_doc and "description" in live_doc) or (default_doc and "description" in default_doc):
-                    entry["description"] = (live_doc.get("description") if live_doc and "description" in live_doc
-                                            else default_doc.get("description", ""))
+                    entry["description"] = (
+                        live_doc.get("description")
+                        if live_doc and "description" in live_doc
+                        else default_doc.get("description", "")
+                    )
                 else:
                     entry["description"] = ""
+
+                # category
                 if (live_doc and "category" in live_doc) or (default_doc and "category" in default_doc):
-                    entry["category"] = (live_doc.get("category") if live_doc and "category" in live_doc
-                                         else default_doc.get("category", "uncategorized"))
+                    entry["category"] = (
+                        live_doc.get("category")
+                        if live_doc and "category" in live_doc
+                        else default_doc.get("category", "uncategorized")
+                    )
                 else:
                     entry["category"] = "uncategorized"
+
+
             result[key] = entry
+
         return result
 
     def as_grouped(self, include_meta=True):
