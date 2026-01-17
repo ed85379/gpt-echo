@@ -2,7 +2,7 @@
 from typing import Optional
 from dataclasses import dataclass
 from dateutil.parser import isoparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import pgeocode
 from astral import LocationInfo
@@ -270,3 +270,23 @@ def align_cron_for_croniter(cron_string):
             fields[6] = f"{year_field}/1"
 
     return ' '.join(fields)
+
+def parse_iso_datetime(value: str) -> datetime | None:
+    """
+    Parse an ISO 8601 datetime string into an aware UTC datetime.
+    Returns None if parsing fails.
+    """
+    if not value:
+        return None
+
+    try:
+        # Python 3.11+ has fromisoformat that handles most ISO strings
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        # If it's naive, assume UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
+    except Exception:
+        return None
