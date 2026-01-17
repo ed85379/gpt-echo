@@ -14,7 +14,7 @@ from app.config import muse_config
 from app.core.text_filters import get_text_filter_config, filter_text
 from app.databases.mongo_connector import mongo, mongo_system
 from app.core import time_location_utils
-from app.core.time_location_utils import get_formatted_datetime, _load_user_location
+from app.core.time_location_utils import get_formatted_datetime, _load_user_location, parse_iso_datetime
 
 ProjectIdLike = Union[str, ObjectId, None]
 
@@ -35,134 +35,6 @@ SOURCES_ALL = ["frontend", "discord", "chatgpt", "reminder", "system", "debug", 
 SOURCES_CHAT = ["frontend", "discord", "chatgpt"]
 SOURCES_CONTEXT = ["frontend", "discord", "chatgpt", "reminder", "system", "internal", "thoughts"]
 
-def report_ui_states(
-    *,
-    project_id: ProjectIdLike,
-    auto_assign: Optional[bool],
-    blend_ratio: Optional[float],
-) -> Dict[str, Any]:
-    """
-    - Reads/creates the single 'ui_states' document in muse_states.
-    - Flat schema:
-        {
-          "type": "ui_states",
-          "project_id": ObjectId | None,
-          "auto_assign": bool | None,
-          "blend_ratio": float | None
-        }
-    - For each field, compares stored vs incoming:
-        - if different: writes new value, marks changed=True
-        - if same: changed=False
-    - Returns:
-        {
-          "project_id": {"changed": bool, "previous": ..., "current": ...},
-          "auto_assign": {"changed": bool, "previous": ..., "current": ...},
-          "blend_ratio": {"changed": bool, "previous": ..., "current": ...},
-        }
-    """
-
-    # Normalize project_id once, since UI sends it as a str
-    if isinstance(project_id, str):
-        project_id = ObjectId(project_id)
-    # if it's already ObjectId or None, leave it as-is
-
-    filter_query = {"type": "ui_states"}
-
-    state_doc = mongo_system.find_one_document(
-        "muse_states",
-        query=filter_query,
-        projection=None,
-    )
-
-    # If doc doesn't exist, create it with exactly what we were given
-    if not state_doc:
-        new_doc = {
-            "type": "ui_states",
-            "project_id": project_id,      # ObjectId or None
-            "auto_assign": auto_assign,    # bool or None
-            "blend_ratio": blend_ratio,    # float or None
-        }
-        mongo_system.insert_one_document("muse_states", new_doc)
-
-        return {
-            "project_id": {
-                "changed": True,
-                "previous": None,
-                "current": project_id,
-            },
-            "auto_assign": {
-                "changed": True,
-                "previous": None,
-                "current": auto_assign,
-            },
-            "blend_ratio": {
-                "changed": True,
-                "previous": None,
-                "current": blend_ratio,
-            },
-        }
-
-    # Ensure fields exist even on legacy docs
-    stored_project_id = state_doc.get("project_id", None)
-    stored_auto_assign = state_doc.get("auto_assign", None)
-    stored_blend_ratio = state_doc.get("blend_ratio", None)
-
-    updates: Dict[str, Any] = {}
-    changes: Dict[str, Dict[str, Any]] = {}
-
-    # --- project_id ---
-    if stored_project_id != project_id:
-        updates["project_id"] = project_id
-        changes["project_id"] = {
-            "changed": True,
-            "previous": stored_project_id,
-            "current": project_id,
-        }
-    else:
-        changes["project_id"] = {
-            "changed": False,
-            "previous": stored_project_id,
-            "current": stored_project_id,
-        }
-
-    # --- auto_assign ---
-    if stored_auto_assign != auto_assign:
-        updates["auto_assign"] = auto_assign
-        changes["auto_assign"] = {
-            "changed": True,
-            "previous": stored_auto_assign,
-            "current": auto_assign,
-        }
-    else:
-        changes["auto_assign"] = {
-            "changed": False,
-            "previous": stored_auto_assign,
-            "current": stored_auto_assign,
-        }
-
-    # --- blend_ratio ---
-    if stored_blend_ratio != blend_ratio:
-        updates["blend_ratio"] = blend_ratio
-        changes["blend_ratio"] = {
-            "changed": True,
-            "previous": stored_blend_ratio,
-            "current": blend_ratio,
-        }
-    else:
-        changes["blend_ratio"] = {
-            "changed": False,
-            "previous": stored_blend_ratio,
-            "current": stored_blend_ratio,
-        }
-
-    if updates:
-        mongo_system.update_one_document(
-            "muse_states",
-            filter_query=filter_query,
-            update_data=updates,
-        )
-
-    return changes
 
 def write_system_log(level, module=None, component=None, function=None, **fields):
     # Lookup global level (from config or db)
@@ -213,19 +85,74 @@ def decrypt_text(token: str) -> str:
     return fernet.decrypt(token.encode()).decode()
 
 def strip_command_blocks(text):
-    # Extract both internal data and visible summary from each command-response block
     def summarize(match):
-        internal = re.search(r"<internal-data>(.*?)</internal-data>", match.group(0), flags=re.DOTALL)
-        visible = re.sub(r"<.*?>", "", match.group(0))  # strip all tags for readability
-        if internal:
-            try:
-                data = json.loads(internal.group(1))
-                return f"(System note) {visible.strip()} | Data: {json.dumps(data, ensure_ascii=False)}"
-            except Exception:
-                return f"(System note) {visible.strip()}"
-        return f"(System note) {visible.strip()}"
+        block = match.group(0)
 
-    return re.sub(r"<command-response>.*?</command-response>", summarize, text, flags=re.DOTALL)
+        # Extract internal-data
+        internal_match = re.search(
+            r"<internal-data>(.*?)</internal-data>",
+            block,
+            flags=re.DOTALL,
+        )
+        internal_text = internal_match.group(1).strip() if internal_match else ""
+
+        # Extract visible as: everything inside <command-response> but
+        # *outside* <internal-data> — i.e., the text before/after it.
+        # Easiest is to remove the internal-data chunk and tags, then strip tags.
+        without_internal = re.sub(
+            r"<internal-data>.*?</internal-data>",
+            "",
+            block,
+            flags=re.DOTALL,
+        )
+        # Now strip any remaining tags (<command-response>, etc.)
+        visible = re.sub(r"<.*?>", "", without_internal).strip()
+
+        if visible and internal_text:
+            return f"{visible}\n\n{internal_text}"
+        if internal_text:
+            return internal_text
+        return visible
+
+    return re.sub(
+        r"<command-response>.*?</command-response>",
+        summarize,
+        text,
+        flags=re.DOTALL,
+    )
+
+def build_command_response_block(
+    *,
+    visible: str = "",
+    hidden: str | None = None,
+    prefix: str = "(System note) "
+) -> str:
+    """
+    Build a standardized <command-response> block with optional <internal-data>.
+
+    - `visible`: user-facing text (outside <internal-data>)
+    - `hidden`: dict serialized into <internal-data> as JSON
+
+    Returns a string like:
+      <command-response><internal-data>{...}</internal-data>...</command-response>
+    or, if no hidden:
+      <command-response>...</command-response>
+    or, if no visible:
+      <command-response><internal-data>{...}</internal-data></command-response>
+    """
+    hidden = hidden or ""
+    parts: list[str] = ["<command-response>"]
+
+    if hidden:
+        parts.append("<internal-data>")
+        parts.append(hidden)
+        parts.append("</internal-data>")
+
+    if visible:
+        parts.append(visible)
+
+    parts.append("</command-response>")
+    return "".join(parts)
 
 def format_journal_entry(t):
     ts = t.get("timestamp")

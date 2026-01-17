@@ -3,13 +3,20 @@
 import asyncio
 import httpx, time
 import re, json
-from typing import Iterator, NamedTuple, Optional
+import humanize
+from typing import Any, Dict, List, Iterator, NamedTuple, Optional
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from app.core import journal_core
 from app.core.memory_core import cortex, manager
-from app.core.utils import write_system_log, encrypt_text, serialize_doc, stringify_datetimes
-from app.core.time_location_utils import is_quiet_hour, _load_user_location
+from app.core.utils import (write_system_log,
+                            encrypt_text,
+                            serialize_doc,
+                            stringify_datetimes,
+                            build_command_response_block,
+                            )
+from app.core.time_location_utils import is_quiet_hour, _load_user_location, parse_iso_datetime
 from app.services.openai_client import get_openai_response
 from app.config import muse_config
 from app.core.states_core import set_motd
@@ -23,6 +30,259 @@ from app.api.queues import run_broadcast_queue, run_log_queue, run_index_queue, 
 
 CMD_OPEN = re.compile(r"\[COMMAND:\s*([^\]]+)\]\s*", re.DOTALL)
 CMD_CLOSE = "[/COMMAND]"
+
+@dataclass
+class CommandResult:
+    name: str
+    payload: Dict[str, Any]
+    status: str          # "ok" | "error" | "unknown" | "parse_error" | "no_handler"
+    error: Optional[str] = None
+    visible: str = ""    # what the filter says is visible
+    hidden: Dict[str, Any] = None  # what the filter marks as hidden
+
+def project_command_result(result: dict, schema: dict, now=None) -> dict:
+    if not isinstance(result, dict):
+        return {"Message": str(result)}
+
+    include = set(schema.get("include", []))
+    exclude = set(schema.get("exclude", []))
+    humanize_fields = set(schema.get("humanize", []))
+    rename = schema.get("rename", {})
+
+    def _project(obj, prefix=""):
+        if not isinstance(obj, dict):
+            return obj
+
+        projected = {}
+        for key, value in obj.items():
+            full_key = f"{prefix}{key}" if prefix else key
+
+            # include/exclude logic (flat keys only in this simple version)
+            if include and full_key not in include:
+                continue
+            if full_key in exclude:
+                continue
+
+            label = rename.get(full_key, key)
+
+            if full_key in humanize_fields and value:
+                dt = parse_iso_datetime(value)
+                if dt:
+                    projected[label] = humanize.naturaltime(now - dt)
+                else:
+                    projected[label] = value  # fallback to raw string if parse fails
+            elif isinstance(value, dict):
+                projected[label] = _project(value, prefix=full_key + ".")
+            else:
+                projected[label] = value
+
+        return projected
+
+    return _project(result)
+
+
+def format_system_note(cmd_name: str, result: dict, schema: dict | None = None) -> str:
+    lines = [f"(System note)", f"- Command: `{cmd_name}`"]
+    now = datetime.now(timezone.utc)
+    if schema:
+        projected = project_command_result(result, schema, now=now)
+        for label, value in projected.items():
+            # Skip label if it's just the cmd name repeated
+            if label.lower() == "cmd":
+                lines.append(f"- {value}")
+            else:
+                lines.append(f"- {label}: {value}")
+        child_cmds = schema.get("child_commands")
+        if child_cmds:
+            lines.append("")
+            lines.append("Available commands for this reminder:")
+
+            for child_name in child_cmds:
+                cmd_def = COMMANDS.get(child_name, {})
+                triggers = cmd_def.get("triggers")
+                fmt = cmd_def.get("format")
+
+
+                lines.append("")
+                lines.append(f"- Command: `{child_name}`")
+                if triggers:
+                    joined_triggers = ", ".join(f'    - "{t}"\n' for t in triggers)
+                    lines.append(f"  Listen for phrases like:\n{joined_triggers}")
+                if fmt:
+                    lines.append("  Format:")
+                    lines.append(f"    {fmt}")
+    else:
+        # Fallback: just show a generic success line
+        msg = result.get("text") or result.get("message") if isinstance(result, dict) else None
+        if msg:
+            lines.append(f"- Message: {msg}")
+
+    return "\n".join(lines)
+
+def process_commands_in_response(
+    response: str,
+    *,
+    source: Optional[str] = None,
+    whispergate_data: Optional[Dict[str, Any]] = None,
+    apply_filters: bool = True,
+    strip_on_error: bool = True,
+) -> (str, List[CommandResult]):
+    """
+    Unified command-processing core.
+
+    - Parses all [COMMAND: ...] blocks from `response`
+    - Executes handlers from COMMAND_HANDLERS
+    - Optionally applies COMMANDS[cmd]["filter"] to handler results
+    - Returns:
+        cleaned_response: original text with command blocks removed or replaced
+        results: list of CommandResult objects (for logging / summaries)
+    """
+    cleaned_parts: List[str] = []
+    cursor = 0
+    results: List[CommandResult] = []
+
+    commands = list(extract_commands(response))
+    if not commands:
+        # No commands at all — return original text untouched
+        return response, results
+
+    for cm in commands:
+        start, end = cm.span
+        command_name = cm.name.strip()
+        raw_payload = cm.json_text.strip()
+
+        # Append any text before this command
+        if start > cursor:
+            cleaned_parts.append(response[cursor:start])
+
+        # Default replacement if we end up stripping
+        replacement = "\n"
+
+        # Try to parse payload
+        try:
+            payload = json.loads(raw_payload)
+        except Exception as e:
+            write_system_log(
+                level="error",
+                module="core",
+                component="command_core",
+                function="process_commands_in_response",
+                action="parse_payload_error",
+                command=command_name,
+                payload=raw_payload,
+                error=str(e),
+            )
+            results.append(CommandResult(
+                name=command_name,
+                payload={},
+                status="parse_error",
+                error=str(e),
+            ))
+            if not strip_on_error:
+                # keep the original block if you ever want that behavior
+                cleaned_parts.append(response[start:end])
+            else:
+                cleaned_parts.append(replacement)
+            cursor = end
+            continue
+
+        handler = COMMAND_HANDLERS.get(command_name)
+        if not handler:
+            write_system_log(
+                level="warn",
+                module="core",
+                component="command_core",
+                function="process_commands_in_response",
+                action="unknown_command",
+                command=command_name,
+                payload=raw_payload,
+            )
+            results.append(CommandResult(
+                name=command_name,
+                payload=payload,
+                status="no_handler",
+            ))
+            if not strip_on_error:
+                cleaned_parts.append(response[start:end])
+            else:
+                cleaned_parts.append(replacement)
+            cursor = end
+            continue
+
+        # Execute handler
+        try:
+            # Whispergate handlers may want extra kwargs
+            extra_kwargs = whispergate_data or {}
+            if source is not None:
+                extra_kwargs = {**extra_kwargs, "source": source}
+
+            handler_result = handler(payload, **extra_kwargs) \
+                if extra_kwargs else handler(payload)
+
+            # If handler returns nothing → we still consider it ok, just no visible text
+            visible = ""
+            hidden = {}
+
+            if apply_filters and handler_result is not None:
+                filter_fn = COMMANDS[command_name].get("filter")
+                if filter_fn:
+                    filtered = filter_fn(handler_result) or {}
+                    visible = filtered.get("visible", "") or ""
+                    hidden = filtered.get("hidden", {}) or {}
+
+            results.append(CommandResult(
+                name=command_name,
+                payload=payload,
+                status="ok",
+                visible=visible,
+                hidden=hidden,
+            ))
+
+            # Turn hidden dict into formatted string
+            note_schema = COMMANDS[command_name].get("note_schema")
+            hidden_str = format_system_note(cmd_name=command_name, result=hidden, schema=note_schema)
+
+
+            # Decide what to inject into cleaned text
+            if apply_filters and (visible or hidden):
+                replacement = build_command_response_block(
+                    visible=visible,
+                    hidden=hidden_str,
+                )
+                cleaned_parts.append(replacement)
+            else:
+                cleaned_parts.append("\n")
+
+        except Exception as e:
+            write_system_log(
+                level="error",
+                module="core",
+                component="command_core",
+                function="process_commands_in_response",
+                action="command_error",
+                command=command_name,
+                payload=payload,
+                error=str(e),
+            )
+            results.append(CommandResult(
+                name=command_name,
+                payload=payload,
+                status="error",
+                error=str(e),
+            ))
+            if not strip_on_error:
+                cleaned_parts.append(response[start:end])
+            else:
+                cleaned_parts.append("\n")
+
+        cursor = end
+
+    # Append trailing text
+    if cursor < len(response):
+        cleaned_parts.append(response[cursor:])
+
+    cleaned_response = "".join(cleaned_parts)
+    return cleaned_response, results
 
 class CommandMatch(NamedTuple):
     name: str
@@ -62,29 +322,61 @@ def _balanced_object_end(text: str, start: int) -> Optional[int]:
         i += 1
     return None
 
+FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+
+def _find_fence_spans(text: str) -> list[tuple[int, int]]:
+    """
+    Return a list of (start, end) index pairs for all ```fenced``` code blocks
+    in the given text. Spans are half-open: [start, end).
+    """
+    spans: list[tuple[int, int]] = []
+    for m in FENCE_RE.finditer(text):
+        spans.append((m.start(), m.end()))
+    return spans
+
+def _in_fence(pos: int, spans: list[tuple[int, int]]) -> bool:
+    """
+    True if the given character index `pos` lies inside any fenced span.
+    """
+    for start, end in spans:
+        if start <= pos < end:
+            return True
+    return False
+
 def extract_commands(text: str) -> Iterator[CommandMatch]:
     """
     Yields all command blocks in order. Each block:
       - [COMMAND: name] { ...balanced JSON... } [/COMMAND]?   (closing optional)
     Multiple commands per response are handled safely.
     """
+    fence_spans = _find_fence_spans(text)
+
+    def is_in_fence(pos: int) -> bool:
+        return _in_fence(pos, fence_spans)
+
     i, n = 0, len(text)
     while True:
         m = CMD_OPEN.search(text, i)
         if not m:
             break
+
+        # If the [COMMAND: ...] header is inside a fenced block, skip it entirely
+        if is_in_fence(m.start()):
+            i = m.end()
+            continue
+
         name = m.group(1).strip()
         pos = m.end()
 
         lbrace = text.find("{", pos)
-        if lbrace == -1:
-            # No JSON payload after header — skip this header and continue
+        if lbrace == -1 or is_in_fence(lbrace):
+            # No JSON payload after header, or JSON starts in a fence — skip
             i = pos
             continue
 
         rbr_end = _balanced_object_end(text, lbrace)
-        if rbr_end is None:
-            # Unbalanced JSON; skip this header safely
+        if rbr_end is None or is_in_fence(rbr_end - 1):
+            # Unbalanced JSON, or closing brace in a fence — skip
             i = pos
             continue
 
@@ -92,13 +384,17 @@ def extract_commands(text: str) -> Iterator[CommandMatch]:
 
         # Optional closing tag
         k = rbr_end
-        # skip whitespace
         while k < n and text[k].isspace():
             k += 1
-        had_close = text.startswith(CMD_CLOSE, k)
+        had_close = text.startswith(CMD_CLOSE, k) and not is_in_fence(k)
         end = k + len(CMD_CLOSE) if had_close else rbr_end
 
-        yield CommandMatch(name=name, json_text=json_text, span=(m.start(), end), had_close=had_close)
+        yield CommandMatch(
+            name=name,
+            json_text=json_text,
+            span=(m.start(), end),
+            had_close=had_close,
+        )
         i = end
 
 # Commands + intent triggers
@@ -142,7 +438,7 @@ COMMANDS = {
         "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get("MUSE_NAME")} has saved a fact: {entry.get("text")}]",
+            "visible": f"[{muse_config.get('MUSE_NAME')} has saved a fact: {entry.get('text')}]",
             "hidden": entry
         }
     },
@@ -154,41 +450,80 @@ COMMANDS = {
             {"text": payload.get("text")}
         ),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get("MUSE_NAME")} has saved a project fact: {entry.get("text")}]",
+            "visible": f"[{muse_config.get('MUSE_NAME')} has saved a project fact: {entry.get('text')}]",
             "hidden": entry
-        }
+        },
+        "note_schema": {
+            "include": ["doc_id", "id", "text"],
+            "rename": {
+                "doc_id": "layer_id",
+                "id": "ID",
+                "text": "text",
+            },
+        },
     },
     "record_userinfo": {
         "triggers": ["something about me", "I really like", "I don’t like when", "my habit is", "I prefer"],
         "format": "[COMMAND: record_userinfo] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("user_info", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get("MUSE_NAME")} has learned something about you: {entry.get("text")}]",
+            "visible": f"[{muse_config.get('MUSE_NAME')} has learned something about you: {entry.get('text')}]",
             "hidden": entry
-        }
+        },
+        "note_schema": {
+            "include": ["doc_id", "id", "text"],
+            "rename": {
+                "doc_id": "layer_id",
+                "id": "ID",
+                "text": "text",
+            },
+        },
     },
     "realize_insight": {
         "triggers": ["breakthrough", "becoming", "I noticed something", "you tend to", "It would be amazing if"],
         "format": "[COMMAND: realize_insight] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("insights", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get("MUSE_NAME")} has realized something: {entry.get("text")}]",
+            "visible": f"[{muse_config.get('MUSE_NAME')} has realized something: {entry.get('text')}]",
             "hidden": entry
-        }
+        },
+        "note_schema": {
+            "include": ["doc_id", "id", "text"],
+            "rename": {
+                "doc_id": "layer_id",
+                "id": "ID",
+                "text": "text",
+            },
+        },
     },
     "note_to_self": {
         "triggers": ["thinking aloud", "keep in mind", "note this", "I need to remember", "consider this"],
         "format": "[COMMAND: note_to_self] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("inner_monologue", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get("MUSE_NAME")} has remembered something: {entry.get("text")}]",
+            "visible": f"[{muse_config.get('MUSE_NAME')} has remembered something: {entry.get('text')}]",
             "hidden": entry
-        }
+        },
+        "note_schema": {
+            "include": ["doc_id", "id", "text"],
+            "rename": {
+                "doc_id": "layer_id",
+                "id": "ID",
+                "text": "text",
+            },
+        },
     },
     "manage_memories": {
         "triggers": [],
-        "format": "[COMMAND: manage_memories] {id: <layer_id>, changes: [{type: add|edit|delete, ...}]} [/COMMAND]",
+        "format": "[COMMAND: manage_memories] {id: <layer_id>, changes: [{type: add|edit|delete, ...}]} [/COMMAND]\n"
+                "# Add\n"
+                "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"add\", \"entry\": {\"text\": \"...\"}}]} [/COMMAND]\n"
+                "# Edit\n"
+                "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"edit\", \"id\": \"<entry_id>\", \"fields\": {\"text\": \"...\"}}]} [/COMMAND]\n"
+                "# Delete\n"
+                "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"delete\", \"id\": \"<entry_id>\"}]} [/COMMAND]",
         "handler": lambda payload: manage_memories_handler(payload),
+
         "filter": lambda results: {
             "visible": "\n".join([
                 (
@@ -199,20 +534,34 @@ COMMANDS = {
                 )
                 for r in results
             ]),
-            "hidden": results
-        }
+            "hidden": {
+                "layer": results[0]["layer"],
+                "type": results[0]["type"],
+                "id": results[0]["entry"].get("id"),
+                "text": results[0]["entry"].get("text"),
+            },
+        },
+        "note_schema": {
+            "include": ["layer", "type", "id", "text"],
+            "rename": {
+                "layer": "Layer",
+                "type": "Change",
+                "id": "ID",
+                "text": "Text",
+            },
+        },
     },
     "set_reminder": {
         "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
         "format": (
             "[COMMAND: set_reminder] {\"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\", \"early_only\": <Boolean - optional>} [/COMMAND]\n\n"
             "Notes:\n"
-            "- `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
-            "- `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
-            "- `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
-            "- `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
-            "- `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
-            "- For one‑time reminders, set an `ends_on` timestamp set to after the reminder would fire, so the reminder expires after firing once.\n"
+            "  - `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
+            "  - `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
+            "  - `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
+            "  - `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
+            "  - `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
+            "  - For one‑time reminders, set an `ends_on` timestamp set to after the reminder would fire, so the reminder expires after firing once.\n"
         ),
         "handler": lambda payload: handle_set(
             {
@@ -226,20 +575,24 @@ COMMANDS = {
         "filter": lambda entry: {
             "visible": f"[Reminder set: {format_visible_reminders(entry)}]",
             "hidden": entry
+        },
+        "note_schema": {
+            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
+            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
         }
     },
     "edit_reminder": {
         "triggers": ["update reminder", "change reminder", "fix schedule"],
         "format": (
             "[COMMAND: edit_reminder] {\"id\": <entry_id>, \"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\", \"early_only\": <Boolean - optional>} [/COMMAND]\n\n"
-            "Notes:\n"
-            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
-            "The following are all optional for edits. You only need to enter what needs to be changed:\n"
-            "- `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
-            "- `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
-            "- `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
-            "- `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
-            "- `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
+            "  Notes:\n"
+            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
+            "  The following are all optional for edits. You only need to enter what needs to be changed:\n"
+            "  - `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
+            "  - `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
+            "  - `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
+            "  - `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
+            "  - `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
         ),
         "handler": lambda payload: handle_edit(
             {
@@ -254,15 +607,19 @@ COMMANDS = {
         "filter": lambda entry: {
             "visible": f"[Reminder edited: {format_visible_reminders(entry)}]",
             "hidden": entry
+        },
+        "note_schema": {
+            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
+            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
         }
     },
     "snooze_reminder": {
         "triggers": ["snooze reminder", "remind me again in", "let me know again in"],
         "format": (
             "[COMMAND: snooze_reminder] {\"id\": <entry_id>, \"snooze_until\": \"<ISO 8601 datetime>\"} [/COMMAND]\n\n"
-            "Notes:\n"
-            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
-            "- `snooze_until`: Date/time in ISO 8601 format in user's timezone. The reminder will fire again at this time.\n"
+            "  Notes:\n"
+            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
+            "  - `snooze_until`: Date/time in ISO 8601 format in user's timezone. The reminder will fire again at this time.\n"
         ),
         "handler": lambda payload: handle_snooze(
             {
@@ -273,15 +630,19 @@ COMMANDS = {
         "filter": lambda entry: {
             "visible": f"[Reminder snoozed until: {entry.get('snooze_until')}]",
             "hidden": entry
+        },
+        "note_schema": {
+            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
+            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
         }
     },
     "skip_reminder": {
         "triggers": ["skip reminder", "disable reminder until", "pause reminder"],
         "format": (
             "[COMMAND: skip_reminder] {\"id\": <entry_id>, \"skip_until\": \"<ISO 8601 datetime>\"} [/COMMAND]\n\n"
-            "Notes:\n"
-            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
-            "- `skip_until`: Date/time in ISO 8601 format in user's timezone. The reminder won't fire again until after this time.\n"
+            "  Notes:\n"
+            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
+            "  - `skip_until`: Date/time in ISO 8601 format in user's timezone. The reminder won't fire again until after this time.\n"
         ),
         "handler": lambda payload: handle_skip(
             {
@@ -292,15 +653,19 @@ COMMANDS = {
         "filter": lambda entry: {
             "visible": f"[Reminder paused until: {entry.get('skip_until')}]",
             "hidden": entry
+        },
+        "note_schema": {
+            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
+            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
         }
     },
     "toggle_reminder": {
         "triggers": ["cancel reminder", "disable reminder", "don't notify again"],
         "format": (
             "[COMMAND: toggle_reminder] {\"id\": <entry_id>, \"status\": \"enabled/disabled\"} [/COMMAND]\n\n"
-            "Notes:\n"
-            "- `id`: To edit an existing reminder, use the entry_id you see associated with it in the <internal-data> block.\n"
-            "- `status`: Set to either 'enabled' or 'disabled'. Disabling the reminder will prevent all future notifications.\n"
+            "  Notes:\n"
+            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
+            "  - `status`: Set to either 'enabled' or 'disabled'. Disabling the reminder will prevent all future notifications.\n"
         ),
         "handler": lambda payload: handle_toggle(
             {
@@ -311,6 +676,10 @@ COMMANDS = {
         "filter": lambda entry: {
             "visible": f"[Reminder {entry.get('status')}]",
             "hidden": entry
+        },
+        "note_schema": {
+            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
+            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
         }
     },
     "send_reminders": {
@@ -353,6 +722,10 @@ COMMANDS = {
                 else f"[Search query] {data['query']}\n[No matching reminders found.]"
             ),
             "hidden": data["results"]
+        },
+        "note_schema": {
+            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
+            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
         }
     },
     "change_modality": {
@@ -374,73 +747,51 @@ COMMAND_HANDLERS = {
 
 # Main entry point for any response parsing after prompt
 
-def route_user_input(dev_prompt: str, user_prompt: str, images=None, client=None, prompt_type="api") -> str:
+def route_user_input(
+        dev_prompt: str,
+        user_prompt: str,
+        images=None,
+        client=None,
+        prompt_type="api"
+) -> str:
+
     response = get_openai_response(
-        dev_prompt, user_prompt, client=client, prompt_type=prompt_type, images=images, model=muse_config.get("OPENAI_MODEL")
+        dev_prompt,
+        user_prompt,
+        client=client,
+        prompt_type=prompt_type,
+        images=images,
+        model=muse_config.get("OPENAI_MODEL")
     )
 
-    write_system_log(level="debug", module="core", component="responder",
-                           function="route_user_input", action="raw_response", response=response)
+    write_system_log(
+        level="debug",
+        module="core",
+        component="responder",
+        function="route_user_input",
+        action="raw_response",
+        response=response
+    )
 
-    # Neutralize visible examples
-    response = re.sub(
-        r"<command-response>(.*?)</command-response>",
-        r"<command-response[example]>\1</command-response[example]>",
+    cleaned_response, cmd_results = process_commands_in_response(
         response,
-        flags=re.DOTALL
+        apply_filters=True,      # use COMMANDS[cmd]["filter"]
+        strip_on_error=True,     # keep UI clean
     )
 
-    cleaned = []
-    cursor = 0
-
-    for cm in extract_commands(response):
-        start, end = cm.span
-        command_name = cm.name
-        raw_payload = cm.json_text.strip()
-
-        # Append text before this command
-        cleaned.append(response[cursor:start])
-
-        try:
-            payload = json.loads(raw_payload)
-            handler = COMMAND_HANDLERS.get(command_name)
-
-            if handler:
-                result = handler(payload)
-                if result:
-                    filter_fn = COMMANDS[command_name].get("filter")
-                    if filter_fn:
-                        filtered = filter_fn(result)
-                        visible = filtered.get("visible", "")
-                        hidden = filtered.get("hidden", {})
-                        hidden_str = f"<internal-data>{json.dumps(hidden, default=str)}</internal-data>" if hidden else ""
-                        replacement = f"<command-response>{hidden_str}{visible}</command-response>"
-                        cleaned.append(replacement)
-                    else:
-                        # No filter → strip block entirely
-                        # Replace with a single newline to keep layout sane
-                        cleaned.append("\n")
-                else:
-                    # Handler returned nothing — strip the block
-                    cleaned.append("\n")
-            else:
-                write_system_log(level="warn", module="core", component="responder",
-                                       function="route_user_input", action="unknown_command",
-                                       command=command_name, payload=raw_payload)
-                # Leave the original block as-is (or strip — your call). Here we strip.
-                cleaned.append("\n")
-        except Exception as e:
-            write_system_log(level="error", module="core", component="responder",
-                                   function="route_user_input", action="command_error",
-                                   command=command_name, payload=raw_payload, error=str(e))
-            # On error, strip the block (prevents leaking broken commands to UI)
-            cleaned.append("\n")
-
-        cursor = end
-
-    # Append any trailing text after the last command
-    cleaned.append(response[cursor:])
-    cleaned_response = "".join(cleaned)
+    # Optional: log a compact summary of what ran
+    if cmd_results:
+        summary = "; ".join(
+            f"{r.name}:{r.status}" for r in cmd_results
+        )
+        write_system_log(
+            level="info",
+            module="core",
+            component="responder",
+            function="route_user_input",
+            action="commands_processed",
+            summary=summary,
+        )
 
     return cleaned_response
 
@@ -455,11 +806,9 @@ def handle_muse_decision(
 ) -> str:
     """
     Processes WhisperGate (muse) backend decisions using the unified command extraction pipeline.
-    Returns a terse summary string of processing results (e.g., 'Processed: speak; Processed: remember_fact').
+    Returns a terse summary string of processing results
+    (e.g., 'Processed: speak; Error in remember_fact: ...').
     """
-
-    full_prompt = dev_prompt + user_prompt
-
     response = get_openai_response(
         dev_prompt,
         user_prompt,
@@ -491,11 +840,15 @@ def handle_muse_decision(
         )
         return "WhisperGate chose silence."
 
-    command_results = []
+    cleaned_response, cmd_results = process_commands_in_response(
+        response,
+        source=source,
+        whispergate_data=whispergate_data,
+        apply_filters=False,     # no <command-response> wrapping needed
+        strip_on_error=True,
+    )
 
-    # Use the unified extractor to find all command blocks.
-    commands = list(extract_commands(response))
-    if not commands:
+    if not cmd_results:
         write_system_log(
             level="warn",
             module="core",
@@ -506,124 +859,34 @@ def handle_muse_decision(
         )
         return "No command block found in WhisperGate response."
 
-    # We may want to remove the commands from the response even though we return a summary.
-    # Build a cleaned copy by slicing out spans.
-    cleaned_parts = []
-    cursor = 0
+    # Log each command result
+    for r in cmd_results:
+        level = "info" if r.status == "ok" else "warn" if r.status in ("no_handler", "parse_error") else "error"
+        write_system_log(
+            level=level,
+            module="core",
+            component="responder",
+            function="handle_muse_decision",
+            action="command_processed",
+            command=r.name,
+            status=r.status,
+            error=r.error,
+            payload=r.payload,
+        )
 
-    for cm in commands:
-        start, end = cm.span
+    # Build terse summary string
+    summary_parts = []
+    for r in cmd_results:
+        if r.status == "ok":
+            summary_parts.append(f"Processed: {r.name}")
+        elif r.status == "no_handler":
+            summary_parts.append(f"Unknown command: {r.name}")
+        elif r.status == "parse_error":
+            summary_parts.append(f"Error in {r.name}: invalid JSON payload")
+        else:  # "error"
+            summary_parts.append(f"Error in {r.name}: {r.error}")
 
-        # Accumulate non-command text (discarded from return; kept in case you later log/store it)
-        if start > cursor:
-            cleaned_parts.append(response[cursor:start])
-
-        command_name = cm.name.strip()
-        raw_payload = cm.json_text.strip()
-
-        try:
-            payload = json.loads(raw_payload)
-        except Exception as e:
-            write_system_log(
-                level="error",
-                module="core",
-                component="responder",
-                function="handle_muse_decision",
-                action="parse_payload_error",
-                command=command_name,
-                payload=raw_payload,
-                error=str(e)
-            )
-            command_results.append(f"Error in {command_name}: invalid JSON payload")
-            cursor = end
-            continue
-
-        handler = COMMAND_HANDLERS.get(command_name)
-        if not handler:
-            write_system_log(
-                level="warn",
-                module="core",
-                component="responder",
-                function="handle_muse_decision",
-                action="unknown_command",
-                command=command_name,
-                payload=raw_payload
-            )
-            command_results.append(f"Unknown command: {command_name}")
-            cursor = end
-            continue
-
-        # Execute command (passes through source and any whispergate_data)
-        try:
-            handler(payload, source=source, **(whispergate_data or {}))
-
-            # Record Muse-initiated thoughts in cortex (same behavior as before)
-            if command_name in ("speak", "write_public_journal", "write_private_journal", "remember_fact"):
-                thought_text = payload.get("subject") or payload.get("text")
-                if thought_text:
-                    encrypted = False
-                    if command_name == "write_private_journal":
-                        try:
-                            thought_text = encrypt_text(thought_text)
-                            encrypted = True
-                        except Exception as e:
-                            write_system_log(
-                                level="error",
-                                module="core",
-                                component="responder",
-                                function="handle_muse_decision",
-                                action="encrypt_journal",
-                                result="encryption_error",
-                                error=str(e)
-                            )
-                            encrypted = False
-
-                    #cortex.add_entry({
-                    #    "text": thought_text,
-                    #    "type": "muse_thoughts",
-                    #    "tags": ["whispergate"],
-                    #    "metadata": {"source": command_name, "encrypted": encrypted}
-                    #})
-
-            write_system_log(
-                level="info",
-                module="core",
-                component="responder",
-                function="handle_muse_decision",
-                action="command_processed",
-                command=command_name,
-                payload=payload
-            )
-            command_results.append(f"Processed: {command_name}")
-
-        except Exception as e:
-            write_system_log(
-                level="error",
-                module="core",
-                component="responder",
-                function="handle_muse_decision",
-                action="command_error",
-                command=command_name,
-                payload=payload,
-                error=str(e)
-            )
-            command_results.append(f"Error in {command_name}: {e}")
-
-        # Advance cursor past this command’s span to remove it from cleaned output
-        cursor = end
-
-    # Append any trailing non-command text
-    if cursor < len(response):
-        cleaned_parts.append(response[cursor:])
-
-    cleaned_response = "".join(cleaned_parts).strip()
-
-    # If you ever want to keep a shadow log of the cleaned WG text:
-    # write_system_log(level="debug", module="core", component="responder",
-    #                        function="handle_muse_decision", action="cleaned_response",
-    #                        response=cleaned_response)
-
-    return "; ".join(command_results)
+    return "; ".join(summary_parts)
 
 def handle_reminder(payload):
     loc = _load_user_location()
@@ -750,13 +1013,33 @@ async def handle_send_reminders(payload, source="reminder", reminders=None, **kw
 
     # Build the internal data block
     reminders = stringify_datetimes(serialize_doc(reminders))
-    internal_data_block = (
-        "<command-response><internal-data>\n"
-        + json.dumps(
-            {"reminders": reminders or [], "source": source, "timestamp": timestamp},
-            indent=2
+    hidden = {
+        "reminders": reminders or [],
+        "source": source,
+        "timestamp": timestamp,
+    }
+
+    # Turn hidden dict into formatted string
+
+    note_schema = {
+        "exclude": ["created_on", "updated_on", "cron", "early_notification"],
+        "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
+    }
+    notes = []
+    for r in reminders:
+        #notes.append("---")
+        formatted = format_system_note(
+            cmd_name="send_reminder",
+            result=r,
+            schema=note_schema,
         )
-        + "\n</internal-data></command-response>"
+        notes.append(formatted)
+        notes.append("")
+    hidden_str = "\n".join(notes)
+
+    internal_data_block = build_command_response_block(
+        visible="",  # or some summary if you ever want one
+        hidden=hidden_str,
     )
 
     # Combine the spoken text and the embedded data

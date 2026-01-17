@@ -490,7 +490,7 @@ class PromptBuilder:
                 f"- If the user says something like {joined_triggers}, respond as normal but also include:\n  {format_str}")
 
         if listener_lines:
-            listener_block = "[Intent Listener]\n" + "\n\n".join(listener_lines)
+            listener_block = "[Muse Commands]\n" + "\n\n".join(listener_lines)
             listener_block += (
                 "\n\nPlease ensure all [COMMAND: ...] blocks are returned in **strict JSON format**:\n"
                 "- Always include the outer curly braces `{}`\n"
@@ -548,7 +548,8 @@ class PromptBuilder:
             weather_desc = weather_data['weather_desc']
             weather_temp = weather_data['weather_temp']
             weather_feels = weather_data['weather_feels']
-            weather_string = f"-Current Weather-: {weather_main} ({weather_desc}) - Temp {weather_temp}°F ({weather_feels})"
+            wind_desc = weather_data['wind_desc']
+            weather_string = f"-Current Weather-: {weather_main} ({weather_desc}) - Temp {weather_temp}°F ({weather_feels}) - Wind: {wind_desc}"
         else:
             weather_string = f"-Current Weather-: Weather data unavailable"
 
@@ -604,10 +605,11 @@ class PromptBuilder:
         dt = updated_on.astimezone(ZoneInfo("UTC"))
         htime = humanize.naturaltime(updated_on, when=now_utc)
         instructions = (
-            "The UI / Frontend you use to communicate has a place, just under your photo, where\n"
-            "you may place your thoughts, words of wisdom, inspiration, a joke, or even a flirt.\n"
-            "If you choose to set a message there, keep it short and sweet.\n"
-            "[COMMAND: set_motd] {text: \"...your message ...\"} [/COMMAND]"
+            "The UI / Frontend you use to communicate has a place, just under Iris's photo, where\n"
+            "she may place thoughts, words of wisdom, inspiration, a joke, or even a flirt.\n"
+            "If you choose to change a message there, keep it short and sweet.\n"
+            "[COMMAND: set_motd] {text: \"...your message ...\"} [/COMMAND]\n"
+            "If you are just referencing the MOTD, just mention the existing text, do not run the COMMAND."
         )
         display_block = (
             f"[ MOTD / UI Message to {muse_config.get('USER_NAME')} ]\n"
