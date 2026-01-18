@@ -3,7 +3,7 @@
 
 import React, { useState } from "react";
 import { CandleHolderLit } from "@/utils/messageActions";
-import { Tags, Eye, EyeOff, EyeClosed, DoorClosed, DoorClosedLocked, Shredder, SquareX, BookMarked } from "lucide-react";
+import { Tags, Eye, EyeOff, EyeClosed, DoorClosed, DoorClosedLocked, Shredder, SquareX, BookMarked, History } from "lucide-react";
 
 
 export default function MessageActions({
@@ -23,6 +23,7 @@ export default function MessageActions({
   setTagDialogOpen,
   projectDialogOpen,       // message_id or null
   setProjectDialogOpen,
+  mode
 }) {
   // Local input state for new tag field
   const [newTag, setNewTag] = useState("");
@@ -81,6 +82,8 @@ export default function MessageActions({
             className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           />
         </button>
+        {/* Divider between clusters */}
+        <span className="mx-1 h-3 border-l self-center border-neutral-400" aria-hidden="true" />
         {/* Private toggle */}
         <button
           onClick={() => onTogglePrivate(msg.message_id, !isPrivate)}
@@ -108,6 +111,22 @@ export default function MessageActions({
         >
           {isDeleted ? <SquareX size={18} /> : <Shredder size={18} />}
         </button>
+        {mode === "history" && (
+          <>
+            <span
+              className="mx-1 h-3 border-l self-center border-neutral-400"
+              aria-hidden="true"
+            />
+            <button
+              onClick={() => onContinueFromHere(msg)}
+              title="Continue conversation from here"
+              className="transition-colors text-neutral-400 hover:text-purple-300"
+              style={{ background: "none", border: "none", cursor: "pointer" }}
+            >
+              <History size={18} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* --- Tag Dialog --- */}

@@ -20,6 +20,13 @@ const formatTimestamp = (utcString) => {
   return dt.toLocaleString();
 };
 
+const renderRawMarkdown = (raw) => {
+  if (!raw) return "";
+  return md.render(raw);
+};
+
+
+
 const renderWithCustomTags = (raw) => {
   if (!raw) return "";
 
@@ -93,6 +100,7 @@ const MessageItem = React.forwardRef(function MessageItem({
   projectDialogOpen,
   setProjectDialogOpen,
   museName,
+  mode,
 }, ref) {
   if (!msg) return <div>[No message]</div>;
     let renderedHTML = "";
@@ -158,6 +166,7 @@ const MessageItem = React.forwardRef(function MessageItem({
             setTagDialogOpen={setTagDialogOpen}
             projectDialogOpen={projectDialogOpen}
             setProjectDialogOpen={setProjectDialogOpen}
+            mode={mode}
           />
         </div>
         <div className="flex flex-wrap gap-1 mt-1 ml-2">
