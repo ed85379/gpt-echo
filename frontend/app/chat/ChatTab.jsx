@@ -64,6 +64,7 @@ const ChatTab = (
   const visibleMessages = messages.slice(-MAX_RENDERED_MESSAGES);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
+  const mode = "chat";
   // "Bind" each handler to local state
   const onDelete = (message_id, markDeleted) =>
     handleDelete(setMessages, message_id, markDeleted);
@@ -601,13 +602,14 @@ const ChatTab = (
             setProjectDialogOpen={setProjectDialogOpen}
             museName={museName}
             onDelete={onDelete}
-              onTogglePrivate={onTogglePrivate}
-              onToggleHidden={onToggleHidden}
-              onToggleRemembered={onToggleRemembered}
-              onSetProject={onSetProject}
-              onClearProject={onClearProject}
-              onAddTag={onAddTag}
-              onRemoveTag={onRemoveTag}
+            onTogglePrivate={onTogglePrivate}
+            onToggleHidden={onToggleHidden}
+            onToggleRemembered={onToggleRemembered}
+            onSetProject={onSetProject}
+            onClearProject={onClearProject}
+            onAddTag={onAddTag}
+            onRemoveTag={onRemoveTag}
+            mode={mode}
           />
         );
       })}

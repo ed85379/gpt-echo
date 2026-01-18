@@ -3,8 +3,9 @@ import { useState, useEffect, useRef } from "react";
 import ProjectsPanel from "./ProjectsPanel";
 
 const TABS = [
-  { key: "muse", label: "Muse" },
   { key: "projects", label: "Projects" },
+  { key: "muse", label: "Muse" },
+  { key: "games", label: "Games" },
   { key: "files", label: "Files" }
 ];
 
@@ -43,7 +44,7 @@ export default function TabbedToolPanel(
     handlePinToggle
   }
 ) {
-  const [activeTab, setActiveTab] = useState("muse");
+  const [activeTab, setActiveTab] = useState("projects");
 
   return (
     <div className="flex flex-col bg-neutral-950 rounded-b-xl shadow-inner overflow-hidden h-full">
@@ -65,12 +66,6 @@ export default function TabbedToolPanel(
         ))}
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === "muse" && (
-          <div>
-            {/* Placeholder content */}
-            <p className="text-neutral-300">Muse info/tools go here.</p>
-          </div>
-        )}
         {activeTab === "projects" && (
           <ProjectsPanel
             projects={projects}
@@ -92,6 +87,17 @@ export default function TabbedToolPanel(
             filesError={filesError}
             handlePinToggle={handlePinToggle}
           />
+        )}
+        {activeTab === "muse" && (
+          <div>
+            {/* Placeholder content */}
+            <p className="text-neutral-300">Muse info/tools go here.</p>
+          </div>
+        )}
+        {activeTab === "games" && (
+          <div>
+            <p className="text-neutral-300">Game tools including RP</p>
+          </div>
         )}
         {activeTab === "files" && (
           <div>

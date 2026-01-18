@@ -54,6 +54,7 @@ const HistoryTab = () => {
   const [projectDialogOpen, setProjectDialogOpen] = useState(null)
   const { museProfile, museProfileLoading } = useConfig();
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
+  const mode = "history";
     // "Bind" each handler to local state
   const onDelete = (message_id, markDeleted) =>
     handleDelete(setMessages, message_id, markDeleted);
@@ -242,13 +243,14 @@ const HistoryTab = () => {
                     setProjectDialogOpen={setProjectDialogOpen}
                     museName={museName}
                     onDelete={onDelete}
-                      onTogglePrivate={onTogglePrivate}
-                      onToggleHidden={onToggleHidden}
-                      onToggleRemembered={onToggleRemembered}
-                      onSetProject={onSetProject}
-                      onClearProject={onClearProject}
-                      onAddTag={onAddTag}
-                      onRemoveTag={onRemoveTag}
+                    onTogglePrivate={onTogglePrivate}
+                    onToggleHidden={onToggleHidden}
+                    onToggleRemembered={onToggleRemembered}
+                    onSetProject={onSetProject}
+                    onClearProject={onClearProject}
+                    onAddTag={onAddTag}
+                    onRemoveTag={onRemoveTag}
+                    mode={mode}
                   />
                 );
               })}
