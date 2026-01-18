@@ -125,7 +125,7 @@ def build_command_response_block(
     *,
     visible: str = "",
     hidden: str | None = None,
-    prefix: str = "(System note) "
+    #prefix: str = "(System note) "
 ) -> str:
     """
     Build a standardized <command-response> block with optional <internal-data>.
@@ -216,6 +216,8 @@ def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", pu
         name = muse_config.get("USER_NAME") or "User"
     elif role == "muse":
         name = muse_config.get("MUSE_NAME") or "Muse"
+    elif role == "system":
+        name = "System"
     else:
         name = role.capitalize() if role else "Unknown"
 
@@ -306,12 +308,19 @@ def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", pu
     if remembered:
         meta_parts.append(rem_note)
 
-    if meta_parts:
-        footer_line = " ".join(meta_parts)
-        return f"{header_line}\n{body_line}\n{footer_line}"
+    if role != "system":
+        if meta_parts:
+            footer_line = " ".join(meta_parts)
+            return f"{header_line}\n{body_line}\n{footer_line}"
+        else:
+            # No timestamp / project — just header + body
+            return f"{header_line}\n{body_line}"
     else:
-        # No timestamp / project — just header + body
-        return f"{header_line}\n{body_line}"
+        if time_str:
+            system_header = f"[System message @ {time_str}]"
+        else:
+            system_header = "[System message]"
+        return f"{system_header}\n{body_line}"
 
 def serialize_doc(doc):
     if isinstance(doc, dict):

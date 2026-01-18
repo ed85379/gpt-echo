@@ -402,24 +402,24 @@ COMMANDS = {
     "write_public_journal": {
         "triggers": ["public journal", "log this publicly", "write this down for others"],
         "format": "[COMMAND: write_public_journal] {subject, emotional_tone, tags, source_article_url} [/COMMAND]",
-        "handler": lambda payload, **kwargs: handle_journal_command(payload, entry_type="public", **kwargs)
+        "handler": lambda payload, **kwargs: asyncio.create_task(handle_journal_command(payload, entry_type="public", **kwargs))
     },
     "write_private_journal": {
         "triggers": ["write private journal"],
         "format": "[COMMAND: write_private_journal] {subject, emotional_tone, tags, source_article_url} [/COMMAND]",
-        "handler": lambda payload, **kwargs: handle_journal_command(payload, entry_type="private", **kwargs)
+        "handler": lambda payload, **kwargs: asyncio.create_task(handle_journal_command(payload, entry_type="private", **kwargs))
     },
     "set_motd": {
-        "triggers": [],  # Intentionally blank — only invoked programmatically
+        "triggers": [],  # Intentionally blank — only invoked by the muse
         "format": "[COMMAND: set_motd] {text: \"... your message here ...\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: handle_set_motd(payload),
+        "handler": lambda payload, **kwargs: asyncio.create_task(handle_set_motd(payload, **kwargs)),
         "filter": lambda result: {
             "visible": "",
             "hidden": result
         }
     },
     "speak": {
-        "triggers": [],  # Intentionally blank — only invoked programmatically
+        "triggers": [],  # Intentionally blank — only by the muse
         "format": "[COMMAND: speak] {subject} [/COMMAND]",
         "handler": lambda payload, **kwargs: asyncio.create_task(handle_speak_command(payload, **kwargs))
     },
@@ -924,13 +924,26 @@ def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay
     print("WebSocket send gave up after retries.")
     return False
 
-def handle_set_motd(payload):
+async def handle_set_motd(payload, source=None):
     text = payload.get("text", "")
     if set_motd(text):
+        if source:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            try:
+                await log_queue.put({
+                    "role": "system",
+                    "message": f"New MOTD set by {source} — {text}",
+                    "source": source,
+                    "timestamp": timestamp,
+                    "skip_index": True
+                })
+            except Exception as e:
+                print(f"Logging error: {e}")
         return {
             "cmd": f"{muse_config.get("MUSE_NAME")} has set a new MOTD",
             "text": text,
         }
+
     else:
         return {
             "cmd": "set_motd",
@@ -961,7 +974,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     await log_queue.put({
         "role": "muse",
         "message": response,
-        "source": source,
+        "source": "frontend", # hard-coded to ignore source, so these will always be in SOURCES_CHAT
         "timestamp": timestamp
     })
     return ""
@@ -1071,11 +1084,11 @@ async def handle_send_reminders(payload, source="reminder", reminders=None, **kw
 
     return ""
 
-def handle_journal_command(payload, entry_type="public", source=None):
+async def handle_journal_command(payload, entry_type="public", source=None):
     subject = payload.get("subject", "Untitled")
     mood = payload.get("emotional_tone", "reflective")
     tags = payload.get("tags", [])
-    source = "muse"
+    source = "whispergate"
 
     dev_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
 
@@ -1089,6 +1102,18 @@ def handle_journal_command(payload, entry_type="public", source=None):
         entry_type=entry_type,
         source=source
     )
+    timestamp = datetime.now(timezone.utc).isoformat()
+    excerpt = response[:160].rsplit(" ", 1)[0] + "…"
+    await log_queue.put({
+        "role": "system",
+        "text": (
+                f"New journal entry by Iris — {entry_type} — “{subject}”"
+                + (f"\nExcerpt: {excerpt}" if excerpt else "")
+        ),
+        "source": source,
+        "timestamp": timestamp,
+        "skip_index": True
+    })
 
 def manage_memories_handler(payload):
     doc_id = payload["id"]

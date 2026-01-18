@@ -22,7 +22,7 @@ def run_whispergate():
     dev_prompt, user_prompt = prompt_profiles.build_whispergate_prompt()
     print("Prompt built. Sending to model...")
 
-    response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="frontend")
+    response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_config.get("OPENAI_WHISPER_MODEL"), source="whispergate")
     #print("WhisperGate prompt:", prompt)
     write_system_log(level="info", module="core", component="initiator", function="run_whispergate",
                            action="whispergate_response", response=response)
