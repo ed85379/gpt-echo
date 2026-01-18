@@ -87,7 +87,7 @@ def build_api_prompt(user_input, **kwargs):
         proj_code_intensity=project_code_intensity
     )
     #builder.add_time()
-    builder.build_ui_state_system_message(active_project_report, project_name)
+    builder.build_state_system_message(active_project_report, project_name)
     #builder.add_monologue_reminder()
     #builder.add_identity_reminders(["identity_reminder"])
     footer = f"[{timestamp}] {project_meta}[Source: {source_name}]"

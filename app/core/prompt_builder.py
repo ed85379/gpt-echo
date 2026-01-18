@@ -309,13 +309,13 @@ class PromptBuilder:
             formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)
             self.segments["conversation_context"] = f"[Recent Context]\n\n{formatted}"
 
-    def build_ui_state_system_message(
+    def build_state_system_message(
         self,
         active_project_report: dict,
         project_name: str | None = None,
     ) -> None:
         """
-        Inspect ui_states_report and, if anything deserves ceremony,
+        Inspect states_report and, if anything deserves ceremony,
         write a short system message into self.segments["system_messages"].
 
         Right now:
@@ -591,7 +591,7 @@ class PromptBuilder:
 
     def build_motd_block(self):
         loc = time_location_utils._load_user_location()
-        filter_query = {"type": "ui_states"}
+        filter_query = {"type": "states"}
         projection = {"pollstates.motd": 1, "_id": 0}
         motddoc = mongo_system.find_one_document("muse_states",
                                                  query=filter_query,

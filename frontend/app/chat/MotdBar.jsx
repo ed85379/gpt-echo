@@ -4,8 +4,8 @@ import { useConfig } from '@/hooks/ConfigContext';
 
 export default function MotdBar({}) {
   const { museProfile, uiStates, uiPollstates } = useConfig();
-  const { ui_states, muse_profile, muse_config } = uiPollstates || {};
-const motd = ui_states?.pollstates?.motd?.text ?? "";
+  const { states, muse_profile, muse_config } = uiPollstates || {};
+const motd = states?.pollstates?.motd?.text ?? "";
 const museName =
   muse_profile?.find((s) => s.section === "name")?.content ?? "Muse";
 

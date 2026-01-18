@@ -6,7 +6,7 @@ from app.databases.mongo_connector import mongo_system
 from app.config import muse_config
 
 def set_active_project(project_id: str):
-    filter_query = {"type": "ui_states"}
+    filter_query = {"type": "states"}
 
     state_doc = mongo_system.find_one_document(
         "muse_states",
@@ -17,7 +17,7 @@ def set_active_project(project_id: str):
     # If doc doesn't exist, create it with exactly what we were given
     if not state_doc:
         new_doc = {
-            "type": "ui_states",
+            "type": "states",
             "project_id": project_id,
             "global": { "auto_assign": True, "blend_ratio": 0.5 }
         }
@@ -64,7 +64,7 @@ def set_active_project(project_id: str):
 
 def set_states(project_id: str, updates: dict) -> bool:
     """
-    Partially update ui_states.per_project[project_id] with the given fields.
+    Partially update states.per_project[project_id] with the given fields.
 
     Example:
       project_id = "68743eebc6c3ad0a405db259"
@@ -85,7 +85,7 @@ def set_states(project_id: str, updates: dict) -> bool:
     # Just $set these fields; no $setOnInsert, no upsert
     result = mongo_system.update_one_document(
         "muse_states",
-        {"type": "ui_states"},
+        {"type": "states"},
         set_fields,
     )
 
@@ -101,7 +101,7 @@ def set_motd(text: str):
     now = datetime.now(timezone.utc)
     result = mongo_system.update_one_document(
         "muse_states",
-        {"type": "ui_states"},
+        {"type": "states"},
         {"pollstates.motd.text": text, "pollstates.motd.updated_on": now},
     )
 

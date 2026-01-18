@@ -1,17 +1,13 @@
 from fastapi import FastAPI, APIRouter, Request, UploadFile, File, BackgroundTasks
 import asyncio
-from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 import os
 import json
-from openai import OpenAI
 from datetime import datetime, timezone
 from app import config
 from bson import ObjectId
 from app.config import muse_config
 from fastapi.middleware.cors import CORSMiddleware
-from collections import defaultdict
-from app.services.tts_core import synthesize_speech, stream_speech
-from app.core.muse_profile import muse_profile
 from app.core.prompt_profiles import build_api_prompt
 from app.core.muse_responder import route_user_input
 from app.interfaces.websocket_server import router as websocket_router
@@ -21,15 +17,14 @@ from app.databases.memory_indexer import build_index, build_memory_index
 from app.core.states_core import set_active_project
 from app.core import utils
 from app.core.files_core import get_all_message_ids_for_files
-from app.api.routers.config_api import router as config_router
+from app.api.routers.system_api import config_router, uipolling_router, states_router
+from app.api.routers.muse_presence_api import profile_router, tts_router
 from app.api.routers.messages_api import router as messages_router
 from app.api.routers.cortex_api import router as cortex_router
 from app.api.routers.memory_api import router as memory_router
 from app.api.routers.import_api import router as import_router
 from app.api.routers.projects_api import router as projects_router
 from app.api.routers.files_api import router as files_router
-from app.api.routers.states_api import router as states_router
-from app.api.routers.uipolling_api import router as uipolling_router
 from app.services.openai_client import api_openai_client, audio_openai_client
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 
@@ -50,6 +45,8 @@ app.include_router(projects_router)
 app.include_router(files_router)
 app.include_router(states_router)
 app.include_router(uipolling_router)
+app.include_router(profile_router)
+app.include_router(tts_router)
 
 
 
@@ -128,47 +125,6 @@ async def create_journal_entry(request: Request):
     save_journal_index(journal_index)
 
     return JSONResponse(content={"status": "success", "message": "Journal entry created.", "filename": filename}, status_code=201)
-
-@app.get("/api/muse_profile")
-async def get_muse_profile():
-    sections = muse_profile.all_sections()
-    grouped = defaultdict(list)
-    for section in sections:
-        typ = section.get("section")
-        # Convert ObjectId to str and remove or replace _id
-        section = dict(section)  # Ensure it’s a dict
-        if "_id" in section:
-            section["_id"] = str(section["_id"])
-        grouped[typ].append(section)
-    return grouped
-
-
-@app.post("/api/tts")
-async def tts(request: Request):
-    data = await request.json()
-    text = data.get("text", "")
-    if not text:
-        return JSONResponse(status_code=400, content={"error": "No text provided"})
-
-    try:
-        path = synthesize_speech(text)
-        return FileResponse(path, media_type="audio/mpeg")
-    except Exception as e:
-        print("TTS error:", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-@app.post("/api/tts/stream")
-async def stream_tts(request: Request):
-    data = await request.json()
-    text = data.get("text", "")
-    if not text:
-        return JSONResponse({"error": "Missing 'text' in request body"}, status_code=400)
-
-    async def audio_stream():
-        async for chunk in stream_speech(text):
-            yield chunk
-
-    return StreamingResponse(audio_stream(), media_type="audio/mpeg")
 
 
 @app.post("/api/talk")
