@@ -4,9 +4,9 @@ from app.services.tts_core import synthesize_speech, stream_speech
 from collections import defaultdict
 from app.core.muse_profile import muse_profile
 
-profile_router = APIRouter(prefix="/api/muse_presence", tags=["muse_profile"])
+profile_router = APIRouter(prefix="/api/muse_profile", tags=["muse_profile"])
 
-@profile_router.get("/profile")
+@profile_router.get("/")
 async def get_muse_profile():
     sections = muse_profile.all_sections()
     grouped = defaultdict(list)
