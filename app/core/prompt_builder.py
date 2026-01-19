@@ -592,13 +592,13 @@ class PromptBuilder:
     def build_motd_block(self):
         loc = time_location_utils._load_user_location()
         filter_query = {"type": "states"}
-        projection = {"pollstates.motd": 1, "_id": 0}
+        projection = {"motd": 1, "_id": 0}
         motddoc = mongo_system.find_one_document("muse_states",
                                                  query=filter_query,
                                                  projection=projection
                                                  )
-        text = motddoc["pollstates"]["motd"]["text"]
-        updated_on = motddoc["pollstates"]["motd"]["updated_on"]
+        text = motddoc["motd"]["text"]
+        updated_on = motddoc["motd"]["updated_on"]
         if updated_on.tzinfo is None:
             updated_on = updated_on.replace(tzinfo=timezone.utc)
         now_utc = datetime.now(timezone.utc)

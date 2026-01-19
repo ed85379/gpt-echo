@@ -4,7 +4,7 @@ from app.config import muse_config
 from app.databases.mongo_connector import mongo_system, mongo
 from app.core.time_location_utils import reload_user_location
 from app.core.utils import serialize_doc
-from app.core.states_core import set_states
+from app.core.states_core import set_states, extract_pollable_states
 
 config_router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -47,12 +47,12 @@ states_router = APIRouter(prefix="/api/states", tags=["states"])
 @states_router.get("/")
 def get_states():
     filter_query = {"type": "states"}
-    projection = {"pollstates": 0}
+
 
     state_doc = mongo_system.find_one_document(
         "muse_states",
         query=filter_query,
-        projection=projection,
+        projection=None,
     )
 
     if not state_doc:
@@ -69,6 +69,38 @@ def get_states():
     state_doc.pop("_id", None)
     return state_doc
 
+@states_router.get("/{project_id}")
+def get_per_project_states(project_id: str):
+    filter_query = {"type": "states"}
+    projection = {"_id": 0, "projects.per_project": 1}
+
+    per_projects_doc = mongo_system.find_one_document(
+        "muse_states",
+        query=filter_query,
+        projection=projection
+    )
+
+    # No states doc or no projects/per_project yet → implicit defaults
+    if not per_projects_doc:
+        return {
+            "auto_assign": True,
+            "blend_ratio": 0.5
+        }
+
+    per_projects_doc = serialize_doc(per_projects_doc)
+
+    # Walk safely down the nested structure
+    projects = per_projects_doc.get("projects", {})
+    per_project = projects.get("per_project", {})
+    project_state = per_project.get(project_id, {})
+
+    auto_assign = project_state.get("auto_assign", True)
+    blend_ratio = project_state.get("blend_ratio", 0.5)
+
+    return {
+        "auto_assign": auto_assign,
+        "blend_ratio": blend_ratio
+    }
 
 @states_router.patch("/{project_id}")
 async def set_project_states(project_id: str, request: Request):
@@ -81,14 +113,8 @@ uipolling_router = APIRouter(prefix="/api/uipolling", tags=["uipolling"])
 
 @uipolling_router.get("/")
 def get_ui_polling_state():
-    # 1) states: anything under pollstates
-    states = mongo_system.find_one_document(
-        "muse_states",
-        {"type": "states"},
-        projection={"pollstates": 1, "_id": 0},
-    ) or {}
-
-    pollstates = states.get("pollstates", {}) or {}
+    # 1) states: anything with pollable: true
+    states = extract_pollable_states()
 
     # 2) muse_profile: any section with pollable: true
     profile_docs = mongo.find_documents(
@@ -101,9 +127,7 @@ def get_ui_polling_state():
     config_docs = muse_config.as_dict(pollable_only=True)
 
     return {
-        "states": {
-            "pollstates": pollstates
-        },
+        "states": states,
         "muse_profile": profile_docs,
         "config": config_docs,
     }

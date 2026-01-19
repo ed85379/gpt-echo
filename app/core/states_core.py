@@ -1,25 +1,53 @@
 
-from bson import ObjectId
+
 from datetime import datetime, timezone
 from typing import Dict, Any
 from app.databases.mongo_connector import mongo_system
 from app.config import muse_config
 
+
+
+def extract_pollable_states() -> dict:
+    """
+    From the full `states` doc, return only the top-level fields
+    whose value is a dict with `pollable: True`.
+    """
+    states_doc = mongo_system.find_one_document(
+        "muse_states",
+        {"type": "states"},
+        projection=None,
+    ) or {}
+
+    if not states_doc:
+        return {}
+
+    pollable = {}
+    for key, value in states_doc.items():
+        # skip metadata / type markers
+        if key in ("_id", "type", "user_id"):
+            continue
+
+        if isinstance(value, dict) and value.get("pollable") is True:
+            pollable[key] = value
+
+    return pollable
+
 def set_active_project(project_id: str):
     filter_query = {"type": "states"}
+    projection = {"projects": 1}
 
     state_doc = mongo_system.find_one_document(
         "muse_states",
         query=filter_query,
-        projection=None,
+        projection=projection,
     )
 
     # If doc doesn't exist, create it with exactly what we were given
     if not state_doc:
         new_doc = {
             "type": "states",
-            "project_id": project_id,
-            "global": { "auto_assign": True, "blend_ratio": 0.5 }
+            "projects.project_id": project_id,
+            "projects.default_project_settings": { "auto_assign": True, "blend_ratio": 0.5 }
         }
         mongo_system.insert_one_document("muse_states", new_doc)
 
@@ -32,14 +60,14 @@ def set_active_project(project_id: str):
         }
 
     # Ensure fields exist even on legacy docs
-    stored_project_id = state_doc.get("project_id", None)
+    stored_project_id = state_doc.get("projects.project_id", None)
 
     updates: Dict[str, Any] = {}
     changes: Dict[str, Dict[str, Any]] = {}
 
     # --- project_id ---
     if stored_project_id != project_id:
-        updates["project_id"] = project_id
+        updates["projects.project_id"] = project_id
         changes["project_id"] = {
             "changed": True,
             "previous": stored_project_id,
@@ -76,7 +104,7 @@ def set_states(project_id: str, updates: dict) -> bool:
         return False
 
     # Build the per_project.* keys
-    per_project_prefix = f"per_project.{project_id}"
+    per_project_prefix = f"projects.per_project.{project_id}"
     set_fields = {
         f"{per_project_prefix}.{k}": v
         for k, v in updates.items()
@@ -102,7 +130,7 @@ def set_motd(text: str):
     result = mongo_system.update_one_document(
         "muse_states",
         {"type": "states"},
-        {"pollstates.motd.text": text, "pollstates.motd.updated_on": now},
+        {"motd.text": text, "motd.updated_on": now},
     )
 
     return bool(result)
