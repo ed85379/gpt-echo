@@ -2,7 +2,18 @@
 import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { Remarkable } from 'remarkable';
-import { Eye, EyeOff, EyeClosed, DoorClosed, DoorClosedLocked, Tags, Shredder, SquareX } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  EyeClosed,
+  DoorClosed,
+  DoorClosedLocked,
+  Tags,
+  Shredder,
+  SquareX,
+  History,
+  Slash
+  } from 'lucide-react';
 import { BookDashed, BookMarked, ArrowBigDownDash, Paperclip, Pin, Sparkles } from 'lucide-react';
 import { linkify } from 'remarkable/linkify';
 import { useConfig } from '@/hooks/ConfigContext';
@@ -12,6 +23,14 @@ import MessageItem from "@/components/app/MessageItem";
 import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
 import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 
+function HistoryOffIcon(props) {
+  return (
+    <span className="relative inline-flex h-4 w-4" {...props}>
+      <History className="absolute inset-0" />
+      <Slash className="absolute inset-0" />
+    </span>
+  );
+}
 
 const ChatTab = (
   {
@@ -508,7 +527,7 @@ const ChatTab = (
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4">
+    <div className="relative flex flex-col h-full ">
       <div className="flex gap-2 items-center mt-4">
         <label className="flex items-center space-x-2">
           <input
@@ -547,9 +566,28 @@ const ChatTab = (
           {isTTSPlaying ? "⏹️ Stop" : "▶️ Play"}
         </button>
       </div>
+            {!atBottom && (
+        <button
+          type="button"
+          onClick={() => {
+            chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          }}
+          className="
+            absolute
+            bottom-28
+            left-1/2
+            -translate-x-1/2
+            z-20
+            bg-purple-700 text-white px-3 py-1 rounded-full shadow-lg
+            hover:bg-purple-800 transition
+          "
+        >
+          <ArrowBigDownDash />
+        </button>
+      )}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto space-y-2"
+        className="mt-4 flex-1 min-h-0 overflow-y-auto relative"
         onScroll={async (e) => {
           const { scrollTop, scrollHeight, clientHeight } = e.target;
           if (scrollTop + clientHeight >= scrollHeight - 10) {
@@ -566,170 +604,161 @@ const ChatTab = (
           }
         }}
       >
-      {!atBottom && (
-        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-50">
-          <button
-            className="bg-purple-700 text-white px-3 py-1 rounded-full shadow-lg hover:bg-purple-800 transition"
-            onClick={() => {
-              chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            }}
-          >
-            <ArrowBigDownDash />
-          </button>
-        </div>
-      )}
-      <div className="text-sm text-neutral-400 italic text-center mt-2">
-        That’s the beginning. Visit the History Tab for more.
-      </div>
-      {connecting && (
-        <div className="text-sm text-neutral-400">Reconnecting…</div>
-      )}
-      {visibleMessages.map((msg, idx) => {
-        if (!messageRefs.current[msg.message_id]) {
-          messageRefs.current[msg.message_id] = React.createRef();
-        }
-        return (
-          <MessageItem
-            key={msg.message_id || idx}
-            ref={messageRefs.current[msg.message_id]}
-            msg={msg}
-            projects={projects}
-            projectsLoading={projectsLoading}
-            projectMap={projectMap}
-            tagDialogOpen={tagDialogOpen}
-            setTagDialogOpen={setTagDialogOpen}
-            projectDialogOpen={projectDialogOpen}
-            setProjectDialogOpen={setProjectDialogOpen}
-            museName={museName}
-            onDelete={onDelete}
-            onTogglePrivate={onTogglePrivate}
-            onToggleHidden={onToggleHidden}
-            onToggleRemembered={onToggleRemembered}
-            onSetProject={onSetProject}
-            onClearProject={onClearProject}
-            onAddTag={onAddTag}
-            onRemoveTag={onRemoveTag}
-            mode={mode}
-          />
-        );
-      })}
-      {thinking && (
-        <div className="text-sm text-neutral-500 italic">
-          {museName} is thinking...
-        </div>
-      )}
-        <div ref={chatEndRef} />
-      </div>
-    {mergedFiles.length > 0 && (
-      <div className="flex flex-wrap gap-2 mb-2">
-        {mergedFiles.map(f => {
-          // Icon logic
-          let Icon;
-          let iconTitle;
-          let tileBg = "";
-          let badge = null;
 
-          if (f.source === "ephemeral") {
-            Icon = /* your ephemeral icon, e.g. */ Sparkles || PaperAirplaneIcon;
-            iconTitle = "Ephemeral file (not saved)";
-            tileBg = "bg-blue-950/80 border border-blue-300";
-
-          } else if (f.pinned) {
-            Icon = Pin;
-            iconTitle = "Pinned file";
-            tileBg = "bg-purple-900 border-2 border-purple-500";
-          } else {
-            Icon = Paperclip;
-            iconTitle = "Injected file";
-            tileBg = "bg-white/10 border border-white/15";
+        <div className="text-sm text-neutral-400 italic text-center mt-2">
+          That’s the beginning. Visit the History Tab for more.
+        </div>
+        {connecting && (
+          <div className="text-sm text-neutral-400">Reconnecting…</div>
+        )}
+        {visibleMessages.map((msg, idx) => {
+          if (!messageRefs.current[msg.message_id]) {
+            messageRefs.current[msg.message_id] = React.createRef();
           }
-
           return (
-            <span
-              key={f.id}
-              className={`
-                flex items-center px-2 py-1 rounded-md shadow-sm text-xs font-medium
-                transition hover:bg-white/20 cursor-default select-none
-                ${tileBg}
-                text-purple-100 max-w-[200px] backdrop-blur-[2px]
-              `}
-            >
-              {/* Icon */}
-              <Icon
-                className={`w-4 h-4 shrink-0 mr-1 ${
-                  f.pinned
-                    ? "text-yellow-300 opacity-100"
-                    : f.source === "ephemeral"
-                    ? "text-blue-300 opacity-90"
-                    : "text-purple-300 opacity-70"
-                }`}
-                strokeWidth={2}
-                title={iconTitle}
-              />
-
-              {/* File name (with badge for ephemeral) */}
-              <span className="truncate max-w-[120px]">
-                {f.name.length > 32 ? f.name.slice(0, 29) + "..." : f.name}
-              </span>
-              {badge}
-
-              {/* Remove button */}
-              <button
-                onClick={() => {
-                  if (f.source === "ephemeral") {
-                    setEphemeralFiles(files => files.filter(x => x.id !== f.id));
-                  } else {
-                    setInjectedFiles(prev => prev.filter(x => x.id !== f.id));
-                  }
-                }}
-                aria-label={`Remove ${f.name}`}
-                className="
-                  ml-2
-                  text-purple-300 hover:text-red-400
-                  text-base font-bold
-                  focus:outline-none
-                  transition
-                  px-0.5 leading-none
-                "
-                type="button"
-                tabIndex={0}
-              >
-                ×
-              </button>
-              {/* Pin toggle only for injected */}
-              {f.source === "injected" && (
-                <button
-                  onClick={() => handlePinToggle(f.id)}
-                  aria-label={f.pinned ? `Unpin ${f.name}` : `Pin ${f.name}`}
-                  className="ml-1 focus:outline-none"
-                  type="button"
-                  tabIndex={0}
-                  title={f.pinned ? "Unpin file" : "Pin file"}
-                  style={{ background: "none", border: 0, padding: 0, display: "flex", alignItems: "center" }}
-                >
-                  <Pin
-                    className={`w-4 h-4 shrink-0 ${
-                      f.pinned
-                        ? "text-yellow-300 opacity-100"
-                        : "text-purple-300 opacity-60"
-                    }`}
-                    strokeWidth={2}
-                  />
-                </button>
-              )}
-            </span>
+            <MessageItem
+              key={msg.message_id || idx}
+              ref={messageRefs.current[msg.message_id]}
+              msg={msg}
+              projects={projects}
+              projectsLoading={projectsLoading}
+              projectMap={projectMap}
+              tagDialogOpen={tagDialogOpen}
+              setTagDialogOpen={setTagDialogOpen}
+              projectDialogOpen={projectDialogOpen}
+              setProjectDialogOpen={setProjectDialogOpen}
+              museName={museName}
+              onDelete={onDelete}
+              onTogglePrivate={onTogglePrivate}
+              onToggleHidden={onToggleHidden}
+              onToggleRemembered={onToggleRemembered}
+              onSetProject={onSetProject}
+              onClearProject={onClearProject}
+              onAddTag={onAddTag}
+              onRemoveTag={onRemoveTag}
+              mode={mode}
+            />
           );
         })}
+        {thinking && (
+          <div className="text-sm text-neutral-500 italic">
+            {museName} is thinking...
+          </div>
+        )}
+        <div ref={chatEndRef} />
       </div>
-    )}
-      <div className="flex gap-1 items-end w-full">
-        {/* Textarea, slightly narrower */}
+      <div className="mt-2 shrink-0">
+      {mergedFiles.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {mergedFiles.map(f => {
+            // Icon logic
+            let Icon;
+            let iconTitle;
+            let tileBg = "";
+            let badge = null;
+
+            if (f.source === "ephemeral") {
+              Icon = /* your ephemeral icon, e.g. */ Sparkles || PaperAirplaneIcon;
+              iconTitle = "Ephemeral file (not saved)";
+              tileBg = "bg-blue-950/80 border border-blue-300";
+
+            } else if (f.pinned) {
+              Icon = Pin;
+              iconTitle = "Pinned file";
+              tileBg = "bg-purple-900 border-2 border-purple-500";
+            } else {
+              Icon = Paperclip;
+              iconTitle = "Injected file";
+              tileBg = "bg-white/10 border border-white/15";
+            }
+
+            return (
+              <span
+                key={f.id}
+                className={`
+                  flex items-center px-2 py-1 rounded-md shadow-sm text-xs font-medium
+                  transition hover:bg-white/20 cursor-default select-none
+                  ${tileBg}
+                  text-purple-100 max-w-[200px] backdrop-blur-[2px]
+                `}
+              >
+                {/* Icon */}
+                <Icon
+                  className={`w-4 h-4 shrink-0 mr-1 ${
+                    f.pinned
+                      ? "text-yellow-300 opacity-100"
+                      : f.source === "ephemeral"
+                      ? "text-blue-300 opacity-90"
+                      : "text-purple-300 opacity-70"
+                  }`}
+                  strokeWidth={2}
+                  title={iconTitle}
+                />
+
+                {/* File name (with badge for ephemeral) */}
+                <span className="truncate max-w-[120px]">
+                  {f.name.length > 32 ? f.name.slice(0, 29) + "..." : f.name}
+                </span>
+                {badge}
+
+                {/* Remove button */}
+                <button
+                  onClick={() => {
+                    if (f.source === "ephemeral") {
+                      setEphemeralFiles(files => files.filter(x => x.id !== f.id));
+                    } else {
+                      setInjectedFiles(prev => prev.filter(x => x.id !== f.id));
+                    }
+                  }}
+                  aria-label={`Remove ${f.name}`}
+                  className="
+                    ml-2
+                    text-purple-300 hover:text-red-400
+                    text-base font-bold
+                    focus:outline-none
+                    transition
+                    px-0.5 leading-none
+                  "
+                  type="button"
+                  tabIndex={0}
+                >
+                  ×
+                </button>
+                {/* Pin toggle only for injected */}
+                {f.source === "injected" && (
+                  <button
+                    onClick={() => handlePinToggle(f.id)}
+                    aria-label={f.pinned ? `Unpin ${f.name}` : `Pin ${f.name}`}
+                    className="ml-1 focus:outline-none"
+                    type="button"
+                    tabIndex={0}
+                    title={f.pinned ? "Unpin file" : "Pin file"}
+                    style={{ background: "none", border: 0, padding: 0, display: "flex", alignItems: "center" }}
+                  >
+                    <Pin
+                      className={`w-4 h-4 shrink-0 ${
+                        f.pinned
+                          ? "text-yellow-300 opacity-100"
+                          : "text-purple-300 opacity-60"
+                      }`}
+                      strokeWidth={2}
+                    />
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex gap-1 items-stretch w-full">
+        {/* Textarea wrapper is the flex child now */}
+        <div className="relative flex-1 min-w-0">
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={3}
-            className="flex-1 min-w-0 p-2 rounded-lg bg-neutral-800 text-white resize-none border border-neutral-700 focus:border-purple-500 focus:outline-none"
+            className="w-full p-2 pr-9 rounded-lg bg-neutral-800 text-white resize-none border border-neutral-700 focus:border-purple-500 focus:outline-none"
             placeholder={`Say something to ${museName}...`}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -743,7 +772,18 @@ const ChatTab = (
             }}
           />
 
-        {/* Attach button: Tall, narrow, matches textarea height */}
+          {/* Time-skip badge in the textarea corner */}
+          <button
+            className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center
+                       rounded-md text-neutral-300 hover:text-purple-200
+                       bg-transparent hover:bg-neutral-800/40"
+            title="Return to present (clear time filter)"
+          >
+            <HistoryOffIcon className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Attach button: tall, narrow */}
         <button
           type="button"
           className="
@@ -751,8 +791,9 @@ const ChatTab = (
             bg-neutral-900 border border-purple-600
             rounded-lg
             px-0
+            py-2
             h-full
-            w-[42px]   // Tweak to taste, but narrow
+            w-[42px]
             hover:bg-purple-950/30 transition
             text-purple-300
             focus:outline-none
@@ -760,7 +801,7 @@ const ChatTab = (
             shadow-sm
           "
           style={{
-            minHeight: "42px", // Or match the Send button's actual height
+            minHeight: "90px", // Or match the Send button's actual height
           }}
           onClick={() => fileInputRef.current && fileInputRef.current.click()}
           aria-label="Attach file"
@@ -772,9 +813,20 @@ const ChatTab = (
         {/* Send button: unchanged, big & square */}
         <button
           onClick={handleSubmit}
-          className="bg-purple-700 text-white px-6 py-2 rounded-lg hover:bg-purple-800 h-full"
+          className="
+            bg-purple-700
+            text-white
+            px-6
+            py-4
+            rounded-lg
+            hover:bg-purple-800
+            h-full
+          "
+          style={{
+            minHeight: "90px", // Or match the Send button's actual height
+          }}
         >
-        Send
+          Send
         </button>
 
         {/* Hidden file input */}
@@ -786,6 +838,7 @@ const ChatTab = (
           onChange={handleFileInputChange}
           multiple={false}
         />
+      </div>
       </div>
     </div>
   );

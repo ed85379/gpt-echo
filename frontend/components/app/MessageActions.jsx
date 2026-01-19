@@ -3,8 +3,28 @@
 
 import React, { useState } from "react";
 import { CandleHolderLit } from "@/utils/messageActions";
-import { Tags, Eye, EyeOff, EyeClosed, DoorClosed, DoorClosedLocked, Shredder, SquareX, BookMarked, History } from "lucide-react";
+import {
+  Tags,
+  Eye,
+  EyeOff,
+  EyeClosed,
+  DoorClosed,
+  DoorClosedLocked,
+  Shredder,
+  SquareX,
+  BookMarked,
+  History,
+  Slash
+  } from "lucide-react";
 
+function HistoryOffIcon(props) {
+  return (
+    <span className="relative inline-flex h-4 w-4" {...props}>
+      <History className="absolute inset-0" />
+      <Slash className="absolute inset-0" />
+    </span>
+  );
+}
 
 export default function MessageActions({
   msg,
@@ -23,7 +43,8 @@ export default function MessageActions({
   setTagDialogOpen,
   projectDialogOpen,       // message_id or null
   setProjectDialogOpen,
-  mode
+  mode,
+  onReturnToThisMoment
 }) {
   // Local input state for new tag field
   const [newTag, setNewTag] = useState("");
@@ -111,20 +132,22 @@ export default function MessageActions({
         >
           {isDeleted ? <SquareX size={18} /> : <Shredder size={18} />}
         </button>
-        {mode === "history" && (
+        {mode === "history" && !isDeleted && !isHidden && (
           <>
             <span
               className="mx-1 h-3 border-l self-center border-neutral-400"
               aria-hidden="true"
             />
-            <button
-              onClick={() => onContinueFromHere(msg)}
-              title="Continue conversation from here"
-              className="transition-colors text-neutral-400 hover:text-purple-300"
-              style={{ background: "none", border: "none", cursor: "pointer" }}
-            >
-              <History size={18} />
-            </button>
+            {onReturnToThisMoment && (
+              <button
+                onClick={() => onReturnToThisMoment(msg)}
+                title="Return to this moment..."
+                className="transition-colors text-neutral-400 hover:text-purple-300"
+                style={{ background: "none", border: "none", cursor: "pointer" }}
+              >
+                <History size={18} />
+              </button>
+            )}
           </>
         )}
       </div>

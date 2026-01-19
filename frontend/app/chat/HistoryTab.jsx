@@ -38,7 +38,9 @@ function getMonthRange(date) {
   return { start, end };
 }
 
-const HistoryTab = () => {
+const HistoryTab = ({
+    onReturnToThisMoment
+  }) => {
   const [source, setSource] = useState("Frontend");
   const [calendarStatus, setCalendarStatus] = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
@@ -251,6 +253,7 @@ const HistoryTab = () => {
                     onAddTag={onAddTag}
                     onRemoveTag={onRemoveTag}
                     mode={mode}
+                    onReturnToThisMoment={onReturnToThisMoment}
                   />
                 );
               })}

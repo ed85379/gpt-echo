@@ -18,8 +18,13 @@ export default function ChatPage() {
   const [projects, setProjects] = useState([]);
   const [projectMap, setProjectMap] = useState({});
   const { uiStates, loading: uiStatesLoading } = useConfig();
-  const initialProjectId = uiStates?.project_id ?? "";
+  const initialProjectId = uiStates?.projects?.project_id ?? "";
   const motd = uiStates?.motd?.text ?? "";
+
+  const handleReturnToThisMoment = (msg) => {
+    // later: set anchor_id from msg.message_id, etc.
+    setActiveTab("chat");
+  };
 
   const fetchProjects = async () => {
     const res = await fetch("/api/projects");
@@ -51,10 +56,10 @@ export default function ChatPage() {
   useEffect(() => {
     if (!uiStatesLoading && uiStates) {
       // 1) Selected project id (cursor)
-      const currentProjectId = uiStates.project_id ?? "";
+      const currentProjectId = uiStates.projects.project_id ?? "";
       setSelectedProjectId(currentProjectId);
-      const perProject = uiStates.per_project ?? {};
-      const globalPrefs = uiStates.global ?? {};
+      const perProject = uiStates.projects.per_project ?? {};
+      const globalPrefs = uiStates.projects.default_project_settings ?? {};
 
       // 2) Focus / blend ratio
       const projectPrefs = currentProjectId? perProject[currentProjectId] ?? {} : {};
@@ -85,7 +90,7 @@ export default function ChatPage() {
       setInjectedFiles([]);
       return;
     }
-    // Fetch project doc itself (if you want more than just name/id)
+    // 1. Load project metadata
     fetch(`/api/projects/${selectedProjectId}`)
       .then(res => res.json())
       .then(data => {
@@ -93,6 +98,19 @@ export default function ChatPage() {
 
         setInjectedFiles([]);
       });
+
+    // 2. Load effective UI state for this project
+    fetch(`/api/states/${selectedProjectId}`)
+      .then(res => res.json())
+      .then(state => {
+        if (typeof state.auto_assign === "boolean") {
+          setAutoAssign(state.auto_assign);
+        }
+        if (typeof state.blend_ratio === "number") {
+          setFocus(state.blend_ratio);
+        }
+      });
+
   }, [selectedProjectId]);
 
   // Fetch files for this project (special endpoint)
@@ -234,7 +252,9 @@ export default function ChatPage() {
 
       {activeTab === "history" && (
         <div className="flex-1 px-6">
-          <HistoryTab />
+          <HistoryTab
+            onReturnToThisMoment={handleReturnToThisMoment}
+          />
         </div>
       )}
     </div>

@@ -101,6 +101,7 @@ const MessageItem = React.forwardRef(function MessageItem({
   setProjectDialogOpen,
   museName,
   mode,
+  onReturnToThisMoment
 }, ref) {
   if (!msg) return <div>[No message]</div>;
     let renderedHTML = "";
@@ -167,6 +168,7 @@ const MessageItem = React.forwardRef(function MessageItem({
             projectDialogOpen={projectDialogOpen}
             setProjectDialogOpen={setProjectDialogOpen}
             mode={mode}
+            onReturnToThisMoment={onReturnToThisMoment}
           />
         </div>
         <div className="flex flex-wrap gap-1 mt-1 ml-2">
