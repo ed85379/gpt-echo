@@ -95,7 +95,7 @@ def format_system_note(cmd_name: str, result: dict, schema: dict | None = None) 
         child_cmds = schema.get("child_commands")
         if child_cmds:
             lines.append("")
-            lines.append("Available commands for this reminder:")
+            lines.append("Available related commands:")
 
             for child_name in child_cmds:
                 cmd_def = COMMANDS.get(child_name, {})
@@ -412,11 +412,18 @@ COMMANDS = {
     "set_motd": {
         "triggers": [],  # Intentionally blank — only invoked by the muse
         "format": "[COMMAND: set_motd] {text: \"... your message here ...\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_set_motd(payload, **kwargs)),
+        "handler": lambda payload, **kwargs: handle_set_motd(payload, **kwargs),
         "filter": lambda result: {
             "visible": "",
             "hidden": result
-        }
+        },
+        "note_schema": {
+            "include": ["cmd", "text"],
+            "rename": {
+                "cmd": "Note",
+                "text": "MOTD",
+            },
+        },
     },
     "speak": {
         "triggers": [],  # Intentionally blank — only by the muse
@@ -924,19 +931,19 @@ def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay
     print("WebSocket send gave up after retries.")
     return False
 
-async def handle_set_motd(payload, source=None):
+def handle_set_motd(payload, source=None):
     text = payload.get("text", "")
     if set_motd(text):
         if source:
             timestamp = datetime.now(timezone.utc).isoformat()
             try:
-                await log_queue.put({
+                asyncio.create_task(log_queue.put({
                     "role": "system",
                     "message": f"New MOTD set by {source} — {text}",
                     "source": source,
                     "timestamp": timestamp,
                     "skip_index": True
-                })
+                }))
             except Exception as e:
                 print(f"Logging error: {e}")
         return {
@@ -1106,7 +1113,7 @@ async def handle_journal_command(payload, entry_type="public", source=None):
     excerpt = response[:160].rsplit(" ", 1)[0] + "…"
     await log_queue.put({
         "role": "system",
-        "text": (
+        "message": (
                 f"New journal entry by Iris — {entry_type} — “{subject}”"
                 + (f"\nExcerpt: {excerpt}" if excerpt else "")
         ),
