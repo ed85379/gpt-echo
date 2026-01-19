@@ -36,6 +36,7 @@ SOURCES_CHAT = ["frontend", "discord", "chatgpt"]
 SOURCES_CONTEXT = ["frontend", "discord", "chatgpt", "reminder", "system", "internal", "thoughts"]
 
 
+
 def write_system_log(level, module=None, component=None, function=None, **fields):
     # Lookup global level (from config or db)
     if LOG_LEVELS[level] < LOG_LEVELS[muse_config.get("LOG_VERBOSITY")]:
@@ -170,6 +171,28 @@ def format_journal_entry(t):
 
     body = t.get("text", "")
     return f"Date: {date_str}\n{body}"
+
+
+def is_conversation_active():
+    """
+    Return True if there has been frontend chat activity within the last `minutes`.
+    Used by Whispergate to decide whether 'speak' should be offered.
+    """
+    collection = muse_config.get("MONGO_CONVERSATION_COLLECTION")
+    docs = mongo.find_logs(
+        collection_name=collection,
+        query={"source": "frontend"},
+        limit=1,
+        sort_field="timestamp",
+        ascending=False,  # newest first
+    )
+    if not docs:
+        return False
+    last_ts = docs[0]["timestamp"]
+    now = datetime.utcnow()
+    minutes = 10
+    return (now - last_ts) <= timedelta(minutes=minutes)
+
 
 def build_project_lookup():
     projects = mongo.find_documents(

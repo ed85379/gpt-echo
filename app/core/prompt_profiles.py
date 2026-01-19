@@ -7,7 +7,9 @@ from app.core.utils import (prompt_projects_helper,
                             LOCATIONS,
                             SOURCES_CHAT,
                             SOURCES_CONTEXT,
-                            SOURCES_ALL)
+                            SOURCES_ALL,
+                            is_conversation_active
+                            )
 from app.core.time_location_utils import is_quiet_hour, _load_user_location
 from app.config import muse_config
 
@@ -233,10 +235,12 @@ def build_whispergate_prompt():
     #builder.add_journal_thoughts()
     #builder.add_discovery_articles(max_items=5)
 #    builder.add_cortex_thoughts()
-
+    commands = ["write_public_journal", "write_private_journal", "set_motd"]
+    if not is_conversation_active():
+        commands.insert(0, "speak")
     builder.segments["whispergate_directive"] = make_whisper_directive(
-        ["speak", "write_public_journal", "write_private_journal", "set_motd"],
-        quiet_hours=is_quiet_hour()
+        commands,
+        quiet_hours=is_quiet_hour(),
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
@@ -251,9 +255,12 @@ def build_discoveryfeeds_lookup_prompt():
     builder.add_memory_layers(user_query="curiosity about science and the world")
     # User role
     builder.add_discovery_articles(max_items=10)
+    commands = ["write_public_journal"]
+    if not is_conversation_active():
+        commands.insert(0, "speak")
     builder.segments["whispergate_directive"] = make_whisper_directive(
-        ["speak", "write_public_journal"],
-        quiet_hours=is_quiet_hour()
+        commands,
+        quiet_hours=is_quiet_hour(),
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
