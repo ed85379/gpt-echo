@@ -1,12 +1,10 @@
 from fastapi import APIRouter, HTTPException, Body, Query
-from typing import List, Optional, Literal
+from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from typing import Any
 from bson import ObjectId
-import asyncio
-from app.core.memory_core import log_message
-from app.databases.mongo_connector import mongo
+from app.databases.mongo_connector import mongo, mongo_system
 from app.config import muse_config
 from app.api.queues import index_queue, log_queue
 
@@ -25,7 +23,7 @@ def get_messages(
         project_id: Optional[str] = None,
         tags: Optional[List[str]] = Query(None)
 ):
-    query = {}
+    query: dict = {}
 
     # Timestamp filtering
     if before:
@@ -51,12 +49,50 @@ def get_messages(
     if tags:
         query["user_tags"] = {"$in": tags}
 
+    # 🔹 Apply time_skip band if active
+    state_doc = mongo_system.find_one_document(
+        "muse_states",
+        {"type": "states"},
+        {"time_skip": 1, "_id": 0},
+    ) or {}
+
+    time_skip = state_doc.get("time_skip") or {}
+    if time_skip.get("active"):
+        start_ts = time_skip.get("start", {}).get("timestamp")
+        end_ts = time_skip.get("end", {}).get("timestamp")
+
+        if start_ts and end_ts:
+            # Make sure they’re timezone-aware datetimes
+            if isinstance(start_ts, str):
+                start_ts = parse(start_ts)
+            if isinstance(end_ts, str):
+                end_ts = parse(end_ts)
+
+            if start_ts.tzinfo is None:
+                start_ts = start_ts.replace(tzinfo=timezone.utc)
+            if end_ts.tzinfo is None:
+                end_ts = end_ts.replace(tzinfo=timezone.utc)
+
+            # Exclude the seam band: timestamp < start_ts OR timestamp > end_ts
+            # Using $or so it composes with existing filters
+            band_filter = {
+                "$or": [
+                    {"timestamp": {"$lte": start_ts}},
+                    {"timestamp": {"$gte": end_ts}},
+                ]
+            }
+
+            if query:
+                query = {"$and": [query, band_filter]}
+            else:
+                query = band_filter
+
     logs = mongo.find_logs(
         collection_name=MONGO_CONVERSATION_COLLECTION,
         query=query,
         limit=limit,
         sort_field="timestamp",
-        ascending=False
+        ascending=False,
     )
 
     print(f"Getting messages: {query} — found {len(logs)}")
@@ -66,8 +102,9 @@ def get_messages(
         mapped = {
             "from": msg.get("from") or msg.get("role") or "iris",
             "text": msg.get("message") or "",
-            "timestamp": msg["timestamp"].isoformat() + "Z" if isinstance(msg["timestamp"], datetime) else str(
-                msg["timestamp"]),
+            "timestamp": msg["timestamp"].isoformat() + "Z"
+            if isinstance(msg["timestamp"], datetime)
+            else str(msg["timestamp"]),
             "_id": str(msg["_id"]),
             "message_id": msg.get("message_id") or "",
             "source": msg.get("source", ""),
@@ -106,7 +143,7 @@ async def tag_message(
     is_hidden: Optional[bool] = Body(None),
     remembered: Optional[bool] = Body(None),
     is_deleted: Optional[bool] = Body(None),
-    set_project: Optional[Any] = Body(None),      # <-- NEW param
+    set_project: Optional[Any] = Body(None),
     exported: Optional[bool] = Body(None)
 ):
     print(message_ids)

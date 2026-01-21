@@ -34,17 +34,17 @@ function HistoryOffIcon(props) {
 
 const ChatTab = (
   {
-      setSpeaking,
-      selectedProjectId,
-      focus,
-      autoAssign,
-      injectedFiles,
-      files,
-      setInjectedFiles,
-      handlePinToggle,
-      ephemeralFiles,
-      setEphemeralFiles,
-      handleEphemeralUpload
+    setSpeaking,
+    selectedProjectId,
+    focus,
+    autoAssign,
+    injectedFiles,
+    files,
+    setInjectedFiles,
+    handlePinToggle,
+    ephemeralFiles,
+    setEphemeralFiles,
+    handleEphemeralUpload
   }
 ) => {
   const [messages, setMessages] = useState([]);
@@ -66,6 +66,7 @@ const ChatTab = (
   const [scrollToMessageId, setScrollToMessageId] = useState(null);
   const [scrollTargetNode, setScrollTargetNode] = useState(null);
   const [atBottom, setAtBottom] = useState(true);
+
   const chatEndRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -73,8 +74,14 @@ const ChatTab = (
   const audioSourceRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const messageRefs = useRef({});
-  const { museProfile, museProfileLoading } = useConfig();
+  const { museProfile, museProfileLoading, uiPollstates } = useConfig();
+  const { states } = uiPollstates || {};
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
+  const [timeSkipOverride, setTimeSkipOverride] = useState(null);
+  const timeSkipActive =
+  timeSkipOverride !== null
+    ? timeSkipOverride
+    : Boolean(states?.time_skip?.active);
   const INITIAL_RENDERED_MESSAGES = 10;  // On reload, after chat, etc.
   const ACTIVE_WINDOW_LIMIT = 10;         // After new message
   const SCROLLBACK_LIMIT = 30;            // After scroll up
@@ -189,6 +196,35 @@ const ChatTab = (
     return dt.toLocaleString(); // Respects user timezone/locales
   };
 
+  async function handleClearTimeSkip() {
+    try {
+      // optimistic UI: flip it *now*
+      setTimeSkipOverride(false);
+
+      await fetch("/api/time_skip/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      loadMessages()
+      // optional: once the next poll confirms, you can clear override
+      // setTimeSkipOverride(null);
+    } catch (err) {
+      console.error("Error clearing time skip:", err);
+      // if you want to be fancy, roll back:
+      setTimeSkipOverride(null);
+    }
+  }
+  useEffect(() => {
+    if (timeSkipOverride === null) return;
+
+    const backendActive = Boolean(states?.time_skip?.active);
+
+    // if backend has caught up with our optimistic value, drop override
+    if (backendActive === timeSkipOverride) {
+      setTimeSkipOverride(null);
+    }
+  }, [states?.time_skip?.active, timeSkipOverride]);
+
   const loadMessages = async (before = null) => {
     setLoadingMore(true);
 
@@ -201,7 +237,7 @@ const ChatTab = (
       prevScrollTop = scrollContainerRef.current.scrollTop;
     }
 
-    let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=reminder&sources=discovery&sources=whispergate`;
+    let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=chatgpt&sources=reminder&sources=discovery&sources=whispergate`;
     if (before) url += `&before=${encodeURIComponent(before)}`;
     const res = await fetch(url);
     const data = await res.json();
@@ -566,7 +602,7 @@ const ChatTab = (
           {isTTSPlaying ? "⏹️ Stop" : "▶️ Play"}
         </button>
       </div>
-            {!atBottom && (
+        {!atBottom && (
         <button
           type="button"
           onClick={() => {
@@ -773,14 +809,17 @@ const ChatTab = (
           />
 
           {/* Time-skip badge in the textarea corner */}
-          <button
-            className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center
-                       rounded-md text-neutral-300 hover:text-purple-200
-                       bg-transparent hover:bg-neutral-800/40"
-            title="Return to present (clear time filter)"
-          >
-            <HistoryOffIcon className="h-4 w-4" />
-          </button>
+          {timeSkipActive && (
+            <button
+              className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center
+                         rounded-md text-neutral-300 hover:text-purple-200
+                         bg-transparent hover:bg-neutral-800/40"
+              title="Return to present (clear time filter)"
+              onClick={handleClearTimeSkip}
+            >
+              <HistoryOffIcon className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Attach button: tall, narrow */}

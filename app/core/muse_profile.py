@@ -16,6 +16,16 @@ class MuseProfile:
             .find({"section": {"$in": sections}})
         )
 
+    def get_pollable(self):
+        """Return a list of section docs set pollable: true."""
+        return list(
+            mongo.find_documents(
+                PROFILE_COLLECTION,
+                {"pollable": True},
+                projection={"section": 1, "content": 1, "_id": 0},
+            )
+        )
+
     def get_sections_except(self, exceptions):
         """Return all section docs *not* in the exceptions list."""
         return list(

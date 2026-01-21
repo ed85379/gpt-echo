@@ -39,10 +39,13 @@ SEGMENT_MANIFEST = [
 ]
 
 def build_api_prompt(user_input, **kwargs):
+    loc = _load_user_location()
     builder = PromptBuilder()
     muse_name = muse_config.get("MUSE_NAME")
     # Set variables for certain builder segments
     timestamp = kwargs.get("timestamp", "")
+    ts_utc = datetime.fromisoformat(timestamp)
+    local_timestamp = ts_utc.astimezone(ZoneInfo(loc.timezone)).strftime("%Y-%m-%d %H:%M:%S")
     source = kwargs.get("source", "")
     source_name = LOCATIONS.get(source, source or "Unknown Source")
     author_name = muse_config.get("USER_NAME", "Unknown Person")
@@ -92,7 +95,7 @@ def build_api_prompt(user_input, **kwargs):
     builder.build_state_system_message(active_project_report, project_name)
     #builder.add_monologue_reminder()
     #builder.add_identity_reminders(["identity_reminder"])
-    footer = f"[{timestamp}] {project_meta}[Source: {source_name}]"
+    footer = f"[{local_timestamp}] {project_meta}[Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt += f"\n\nRight now - {muse_config.get("USER_NAME")} said:\n{user_input}\n{footer}\n\n{muse_name}:"
@@ -159,9 +162,13 @@ def build_journal_prompt(subject=None, payload=None, entry_type="public"):
     return dev_prompt, user_prompt
 
 def build_discord_prompt(user_input, muse_config, **kwargs):
+    loc = _load_user_location()
     builder = PromptBuilder(destination="discord")
     # Set variables for certain builder segments
+    muse_name = muse_config.get("MUSE_NAME")
     timestamp = kwargs.get("timestamp", "")
+    ts_utc = datetime.fromisoformat(timestamp)
+    local_timestamp = ts_utc.astimezone(ZoneInfo(loc.timezone)).strftime("%Y-%m-%d %H:%M:%S")
     source = kwargs.get("source", "discord")
     source_name = LOCATIONS.get(source, source or "Unknown Source")
     author_name = kwargs.get("author_name")
@@ -180,12 +187,11 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
                                projects_in_focus=[],
                                blend_ratio=0.0,
                                public=True)
-    #builder.add_monologue_reminder()
     builder.add_formatting_instructions()
-    footer = f"[{timestamp}] [Source: {source_name}]"
+    footer = f"[{local_timestamp}] [Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt += f"\n\n[Discord] {kwargs.get("author_name")} said:\n{user_input}\n{footer}\n\n[Discord] {muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\n[Discord] {kwargs.get("author_name")} said:\n{user_input}\n{footer}\n\n[Discord] {muse_name}:"
     return dev_prompt, user_prompt
 
 def build_check_reminders_prompt(reminders):

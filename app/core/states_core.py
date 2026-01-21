@@ -1,11 +1,38 @@
-
-
+# states_core.py
 from datetime import datetime, timezone
 from typing import Dict, Any
-from app.databases.mongo_connector import mongo_system
+import asyncio
+import humanize
 from app.config import muse_config
+from app.api.queues import log_queue
+from app.databases.mongo_connector import mongo_system, mongo
+from app.databases.memory_indexer import assign_message_id
 
 
+SOURCES_CHAT = ["frontend", "discord", "chatgpt"]
+
+STATES_COLLECTION = "muse_states"
+STATES_DOC = "states"
+
+def get_states_doc():
+    filter_query = {"type": STATES_DOC}
+    states_doc = mongo_system.find_one_document(
+        STATES_COLLECTION,
+        query=filter_query,
+        projection=None,
+    )
+    return states_doc
+
+def get_per_project_states():
+    filter_query = {"type": STATES_DOC}
+    projection = {"_id": 0, "projects.per_project": 1}
+
+    per_projects_doc = mongo_system.find_one_document(
+        STATES_COLLECTION,
+        query=filter_query,
+        projection=projection
+    )
+    return per_projects_doc
 
 def extract_pollable_states() -> dict:
     """
@@ -13,8 +40,8 @@ def extract_pollable_states() -> dict:
     whose value is a dict with `pollable: True`.
     """
     states_doc = mongo_system.find_one_document(
-        "muse_states",
-        {"type": "states"},
+        STATES_COLLECTION,
+        {"type": STATES_DOC},
         projection=None,
     ) or {}
 
@@ -24,7 +51,7 @@ def extract_pollable_states() -> dict:
     pollable = {}
     for key, value in states_doc.items():
         # skip metadata / type markers
-        if key in ("_id", "type", "user_id"):
+        if key in ("_id", "type"):
             continue
 
         if isinstance(value, dict) and value.get("pollable") is True:
@@ -33,11 +60,11 @@ def extract_pollable_states() -> dict:
     return pollable
 
 def set_active_project(project_id: str):
-    filter_query = {"type": "states"}
+    filter_query = {"type": STATES_DOC}
     projection = {"projects": 1}
 
     state_doc = mongo_system.find_one_document(
-        "muse_states",
+        STATES_COLLECTION,
         query=filter_query,
         projection=projection,
     )
@@ -60,7 +87,7 @@ def set_active_project(project_id: str):
         }
 
     # Ensure fields exist even on legacy docs
-    stored_project_id = state_doc.get("projects.project_id", None)
+    stored_project_id = (state_doc.get("projects") or {}).get("project_id")
 
     updates: Dict[str, Any] = {}
     changes: Dict[str, Dict[str, Any]] = {}
@@ -82,7 +109,7 @@ def set_active_project(project_id: str):
 
     if updates:
         mongo_system.update_one_document(
-            "muse_states",
+            STATES_COLLECTION,
             filter_query=filter_query,
             update_data=updates,
         )
@@ -90,9 +117,9 @@ def set_active_project(project_id: str):
     return changes
 
 
-def set_states(project_id: str, updates: dict) -> bool:
+def set_project_states(project_id: str, updates: dict) -> bool:
     """
-    Partially update states.per_project[project_id] with the given fields.
+    Partially update states.projects.per_project[project_id] with the given fields.
 
     Example:
       project_id = "68743eebc6c3ad0a405db259"
@@ -112,8 +139,8 @@ def set_states(project_id: str, updates: dict) -> bool:
 
     # Just $set these fields; no $setOnInsert, no upsert
     result = mongo_system.update_one_document(
-        "muse_states",
-        {"type": "states"},
+        STATES_COLLECTION,
+        {"type": STATES_DOC},
         set_fields,
     )
 
@@ -128,9 +155,154 @@ def set_motd(text: str):
         return False
     now = datetime.now(timezone.utc)
     result = mongo_system.update_one_document(
-        "muse_states",
-        {"type": "states"},
+        STATES_COLLECTION,
+        {"type": STATES_DOC},
         {"motd.text": text, "motd.updated_on": now},
     )
 
     return bool(result)
+
+async def create_time_skip(message_id: str):
+        time_start_mid = message_id
+        # Find timestamp from message_id
+        start_msg = mongo.find_one_document(
+            "muse_conversations",
+            { "message_id": time_start_mid },
+            { "timestamp": 1, "project_id": 1, "_id": 0 }
+        )
+        if not start_msg:
+            return  # or raise/log, but don’t continue
+        # Pull the timestamp for the states doc
+        start_ts = start_msg.get("timestamp")
+        # Pull the project_id for setting the active project
+        project_id = start_msg.get("project_id")
+
+        # Generate end message_id and message
+        end_timestamp = datetime.now(timezone.utc)
+        htime = humanize.naturaltime(start_ts, when=end_timestamp)
+        source = "system"
+        role = "system"
+        message = (
+            f"{muse_config.get('USER_NAME')} has returned to a previous conversation from {htime}.\n"
+            "The previous messages will appear to be from the past, but consider them directly preceding "
+            "the following messages."
+        )
+        # Build msg dict to get the end message_id
+        msg = {
+            "source": source,
+            "role": role,
+            "timestamp": end_timestamp,
+            "message": message,
+        }
+        time_end_mid = assign_message_id(msg)
+
+        # Create the message in the Mongo conversation log
+        try:
+            await log_queue.put({
+                "role": role,
+                "message": message,
+                "source": source,
+                "timestamp": end_timestamp,
+                "skip_index": True
+            })
+        except Exception as e:
+            print(f"Logging error: {e}")
+
+        # Add time_skip anchor state doc
+        set_fields = {
+            "time_skip.pollable": True,
+            "time_skip.start.message_id": time_start_mid,
+            "time_skip.start.timestamp": start_ts,
+            "time_skip.end.message_id": time_end_mid,
+            "time_skip.end.timestamp": end_timestamp,
+            "time_skip.active": True
+        }
+        mongo_system.update_one_document(
+            STATES_COLLECTION,
+            {"type": STATES_DOC},
+            set_fields,
+        )
+
+        # Set the active project_id for the UI
+        if project_id is not None:
+            mongo_system.update_one_document(
+                STATES_COLLECTION,
+                {"type": STATES_DOC},
+                {"projects.project_id": str(project_id)},
+            )
+        return True
+
+def get_active_time_skip_window(excluded_project_ids=None):
+    """
+    Return (active, start_ts, end_ts) for the current time_skip,
+    after applying the auto-expire rule.
+    """
+    state = mongo_system.find_one_document(
+        STATES_COLLECTION,
+        {"type": STATES_DOC},
+        {"time_skip": 1, "_id": 0},
+    )
+    time_skip = (state or {}).get("time_skip") or {}
+    if not time_skip.get("active"):
+        return False, None, None
+
+    start_ts = time_skip.get("start", {}).get("timestamp")
+    end_ts = time_skip.get("end", {}).get("timestamp")
+    if not end_ts:
+        return False, None, None
+
+    # Hard-coded freshness limit to match Chat scrollback
+    EXPIRE_AFTER_N = 30
+    query =  {
+            "timestamp": {"$gt": end_ts},
+            "is_deleted": {"$ne": True},
+            "is_hidden": {"$ne": True},
+            "source": {"$in": SOURCES_CHAT}
+    }
+    if excluded_project_ids:
+        excluded = list(excluded_project_ids)
+        query["$or"] = [
+            # Single-linked: project_id not in excluded
+            {"project_id": {"$nin": excluded}},
+            # Unattached: no project_id field at all
+            {"project_id": {"$exists": False}},
+            # Multi-linked: at least one linked project is *not* excluded
+            {"project_ids": {"$elemMatch": {"$nin": excluded}}},
+        ]
+
+    recent_count = mongo.count_logs(
+        "muse_conversations",
+        query,
+    )
+    print(f"DEBUG: RECENT COUNT: {recent_count}")
+
+    if recent_count > EXPIRE_AFTER_N:
+        clear_time_skip()
+        return False, None, None
+
+    return True, start_ts, end_ts
+
+def clear_time_skip():
+    # 1) Grab current time_skip block
+    state = mongo_system.find_one_document(
+        STATES_COLLECTION,
+        {"type": STATES_DOC},
+        {"time_skip": 1, "_id": 0},
+    )
+    time_skip = (state or {}).get("time_skip", {})
+    end_mid = time_skip.get("end", {}).get("message_id")
+
+    # 2) Clear the active flag
+    mongo_system.update_one_document(
+        STATES_COLLECTION,
+        {"type": STATES_DOC},
+        {"time_skip.active": False},
+    )
+
+    # 3) Soft-delete the end system message, if present
+    if end_mid:
+        mongo.update_one_document(
+            "muse_conversations",
+            {"message_id": end_mid},
+            {"is_deleted": True},
+        )

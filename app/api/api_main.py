@@ -17,7 +17,7 @@ from app.databases.memory_indexer import build_index, build_memory_index
 from app.core.states_core import set_active_project
 from app.core import utils
 from app.core.files_core import get_all_message_ids_for_files
-from app.api.routers.system_api import config_router, uipolling_router, states_router
+from app.api.routers.system_api import config_router, uipolling_router, states_router, time_skip_router
 from app.api.routers.muse_presence_api import profile_router, tts_router
 from app.api.routers.messages_api import router as messages_router
 from app.api.routers.cortex_api import router as cortex_router
@@ -47,6 +47,7 @@ app.include_router(states_router)
 app.include_router(uipolling_router)
 app.include_router(profile_router)
 app.include_router(tts_router)
+app.include_router(time_skip_router)
 
 
 

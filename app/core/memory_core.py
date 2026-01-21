@@ -12,7 +12,6 @@ from bson.errors import InvalidId
 from sentence_transformers import SentenceTransformer, util
 from croniter import croniter
 from app import config
-#from app.api.api_main import QDRANT_COLLECTION
 from app.config import muse_config
 from app.core.utils import write_system_log, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
 from app.core.time_location_utils import align_cron_for_croniter
@@ -22,6 +21,7 @@ from app.services.openai_client import get_openai_autotags
 from app.databases import memory_indexer
 from app.api.queues import index_memory_queue
 from app.databases.qdrant_connector import delete_point, search_collection
+from app.core.states_core import get_active_time_skip_window
 
 # </editor-fold>
 
@@ -168,61 +168,98 @@ def get_excluded_project_ids(public: bool = False) -> set:
     )
     return {p["_id"] for p in projects}
 
-def get_immediate_context(n=10,
-                          hours=4,
-                          sources=None,
-                          public: bool = False,
-                          anchor_message_id: str | None = None,
-                          ):
+def get_immediate_context(
+    n: int = 10,
+    hours: int = 4,
+    sources=None,
+    public: bool = False,
+    anchor_message_id: str | None = None,
+):
     """
     Return a list of messages, starting from a moment and working backward.
     - Accepts anchor_message_id to start the search, otherwise starts with "now".
     TODO:
-    - Add anchor_id functionality for "Continue from here..." feature.
-    - Add scene_id functionality for Roleplays other other types of bounded sessions.
+    - Add scene_id functionality for Roleplays or other types of bounded sessions.
     """
+
+    # 1) Establish "now" (or anchored "now")
     if anchor_message_id is not None:
         anchor_message_query = {"message_id": anchor_message_id}
-        anchor = mongo.find_one_document(collection_name="muse_conversations",
-                                         query=anchor_message_query
-                                         )
+        anchor = mongo.find_one_document(
+            collection_name="muse_conversations",
+            query=anchor_message_query,
+        )
         if not anchor:
             raise ValueError(f"No message found for id={anchor_message_id}")
         now = anchor["timestamp"]
     else:
         now = datetime.utcnow()
 
-    since = now - timedelta(hours=hours)
-    excluded_project_ids = get_excluded_project_ids(public=public)
     convo_count = n
     overfetch_limit = convo_count * 2
+
     if sources is None:
         sources = utils.SOURCES_CHAT
-    query = {
-        "timestamp": {"$gte": since},
-        "is_hidden": {"$ne": True},  # Exclude hidden messages
-        "is_deleted": {"$ne": True}  # Exclude deleted
+    sources_list = list(sources)
 
+    excluded_project_ids = get_excluded_project_ids(public=public)
+
+    # Ask states_core what time looks like right now (sync version)
+    active_skip, skip_start, skip_end = get_active_time_skip_window(
+        excluded_project_ids=excluded_project_ids
+    )
+
+    # 2) Base query: visibility + sources (+ public)
+    base_query: dict = {
+        "is_hidden": {"$ne": True},
+        "is_deleted": {"$ne": True},
+        "source": {"$in": sources_list},
     }
     if public:
-        query["is_private"] = {"$ne": True}
+        base_query["is_private"] = {"$ne": True}
 
-    query["source"] = {"$in": list(sources)}
+    # 3) Time clause: rolling window OR seam carve-out
+    if active_skip and skip_start and skip_end:
+        # Time-skip active: carve out the gap, no "since" filter
+        time_clause: dict = {
+            "$or": [
+                {"timestamp": {"$lte": skip_start}},
+                {"timestamp": {"$gte": skip_end}},
+            ]
+        }
+    else:
+        # Normal flow: use the rolling window
+        since = now - timedelta(hours=hours)
+        time_clause: dict = {"timestamp": {"$gte": since}}
 
+    # 4) Project exclusions as their own clause
+    project_clause = None
     if excluded_project_ids:
-        query["$or"] = [
-            {"project_id": {"$nin": list(excluded_project_ids)}},  # Single-linked
-            {"project_id": {"$exists": False}},  # Unattached
-            {"project_ids": {"$exists": True, "$nin": list(excluded_project_ids)}}  # Multi-linked: at least one visible
-        ]
-        # This way, messages with *no* project_id are always included, unless otherwise filtered
+        excluded = list(excluded_project_ids)
+        project_clause = {
+            "$or": [
+                {"project_id": {"$nin": excluded}},   # Single-linked
+                {"project_id": {"$exists": False}},   # Unattached
+                # If you really still need project_ids (multi-link), keep this;
+                # otherwise you can drop it now that you've simplified the model.
+                {"project_ids": {"$exists": True, "$nin": excluded}},
+            ]
+        }
 
+    # 5) Combine everything with $and so clauses compose instead of overwrite
+    clauses = [base_query, time_clause]
+    if project_clause is not None:
+        clauses.append(project_clause)
+
+    final_query = {"$and": clauses}
+
+    # 6) Fetch + post-filter to n conversational messages
     raw_messages = mongo.find_logs(
         collection_name="muse_conversations",
-        query=query,
+        query=final_query,
         limit=overfetch_limit,
         sort_field="timestamp",
-        ascending=False
+        ascending=False,
     )
 
     selected = []

@@ -1,11 +1,22 @@
 from fastapi import APIRouter, HTTPException, Body, Request
 from typing import Any
-from app.config import muse_config
-from app.databases.mongo_connector import mongo_system, mongo
 from app.core.time_location_utils import reload_user_location
 from app.core.utils import serialize_doc
-from app.core.states_core import set_states, extract_pollable_states
+from app.config import muse_config
+from app.core.muse_profile import muse_profile
+from app.core.states_core import (
+    set_project_states,
+    extract_pollable_states,
+    get_states_doc,
+    get_per_project_states,
+    create_time_skip,
+    clear_time_skip
+    )
 
+# --------------------------
+# /api/config
+# --------------------------
+# <editor-fold desc="config">
 config_router = APIRouter(prefix="/api/config", tags=["config"])
 
 @config_router.get("/")
@@ -41,21 +52,19 @@ def revert_config_value(key: str):
     else:
         return {"status": "not_found", "key": key}
 
-# States
+# </editor-fold>
+
+# --------------------------
+# /api/states
+# --------------------------
+# <editor-fold desc="states">
 states_router = APIRouter(prefix="/api/states", tags=["states"])
 
 @states_router.get("/")
 def get_states():
-    filter_query = {"type": "states"}
+    states_doc = get_states_doc()
 
-
-    state_doc = mongo_system.find_one_document(
-        "muse_states",
-        query=filter_query,
-        projection=None,
-    )
-
-    if not state_doc:
+    if not states_doc:
         # No doc yet → just return implicit defaults for the UI
         return {
             "type": "states",
@@ -64,21 +73,14 @@ def get_states():
             "project_id": None,
         }
 
-    state_doc = serialize_doc(state_doc)
+    state_doc = serialize_doc(states_doc)
     # Drop Mongo’s identity; keep only what the UI actually uses
-    state_doc.pop("_id", None)
-    return state_doc
+    states_doc.pop("_id", None)
+    return states_doc
 
 @states_router.get("/{project_id}")
-def get_per_project_states(project_id: str):
-    filter_query = {"type": "states"}
-    projection = {"_id": 0, "projects.per_project": 1}
-
-    per_projects_doc = mongo_system.find_one_document(
-        "muse_states",
-        query=filter_query,
-        projection=projection
-    )
+def get_project_state(project_id: str):
+    per_projects_doc = get_per_project_states()
 
     # No states doc or no projects/per_project yet → implicit defaults
     if not per_projects_doc:
@@ -103,12 +105,17 @@ def get_per_project_states(project_id: str):
     }
 
 @states_router.patch("/{project_id}")
-async def set_project_states(project_id: str, request: Request):
+async def set_project_states_endpoint(project_id: str, request: Request):
     data = await request.json()
-    success = set_states(project_id, data)
+    success = set_project_states(project_id, data)
     return {"status": "ok" if success else "not found"}
 
-# UI Polling
+# </editor-fold>
+
+# --------------------------
+# /api/uipolling
+# --------------------------
+# <editor-fold desc="uipolling">
 uipolling_router = APIRouter(prefix="/api/uipolling", tags=["uipolling"])
 
 @uipolling_router.get("/")
@@ -117,11 +124,7 @@ def get_ui_polling_state():
     states = extract_pollable_states()
 
     # 2) muse_profile: any section with pollable: true
-    profile_docs = mongo.find_documents(
-        "muse_profile",
-        {"pollable": True},
-        projection={"section": 1, "content": 1, "_id": 0},
-    )
+    profile_docs = muse_profile.get_pollable()
 
     # 3) config: any setting with pollable: true
     config_docs = muse_config.as_dict(pollable_only=True)
@@ -132,5 +135,29 @@ def get_ui_polling_state():
         "config": config_docs,
     }
 
+# </editor-fold>
 
+# --------------------------
+# /api/timeskip
+# --------------------------
+# <editor-fold desc="timeskip">
+time_skip_router = APIRouter(prefix="/api/time_skip", tags=["time_skip"])
+
+
+@time_skip_router.post("/clear")
+def clear_time_skip_button():
+    clear_time_skip()
+    return {"success": True}
+
+
+@time_skip_router.post("/{message_id}")
+async def set_time_skip(message_id: str):
+    ok = await create_time_skip(message_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Anchor message not found")
+    return {"success": True}
+
+
+
+# </editor-fold>
 

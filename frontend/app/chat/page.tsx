@@ -21,9 +21,22 @@ export default function ChatPage() {
   const initialProjectId = uiStates?.projects?.project_id ?? "";
   const motd = uiStates?.motd?.text ?? "";
 
-  const handleReturnToThisMoment = (msg) => {
-    // later: set anchor_id from msg.message_id, etc.
+
+  const handleReturnToThisMoment = async (message_id: string) => {
+    const res = await fetch(`/api/time_skip/${message_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) {
+      console.error("Failed to set time skip");
+      return;
+    }
+
+
+    // optional: maybe navigate back to Chat tab
     setActiveTab("chat");
+
   };
 
   const fetchProjects = async () => {

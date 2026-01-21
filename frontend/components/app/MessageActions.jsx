@@ -140,7 +140,7 @@ export default function MessageActions({
             />
             {onReturnToThisMoment && (
               <button
-                onClick={() => onReturnToThisMoment(msg)}
+                onClick={() => onReturnToThisMoment(msg.message_id)}
                 title="Return to this moment..."
                 className="transition-colors text-neutral-400 hover:text-purple-300"
                 style={{ background: "none", border: "none", cursor: "pointer" }}
