@@ -1,20 +1,16 @@
 # utils.py
-
-import os
 from datetime import datetime, timedelta, timezone
-from dateutil.parser import isoparse
 import re, json, humanize
 from bson import ObjectId
 from charset_normalizer import from_bytes
 from cryptography.fernet import Fernet
 from zoneinfo import ZoneInfo
-from typing import Optional, Dict, Any, Union
+from typing import Union
 from nanoid import generate
 from app.config import muse_config
 from app.core.text_filters import get_text_filter_config, filter_text
 from app.databases.mongo_connector import mongo, mongo_system
-from app.core import time_location_utils
-from app.core.time_location_utils import get_formatted_datetime, _load_user_location, parse_iso_datetime
+from app.core.time_location_utils import get_formatted_datetime, _load_user_location
 
 ProjectIdLike = Union[str, ObjectId, None]
 

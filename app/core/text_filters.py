@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import re
-from typing import Iterable, Literal, Optional
+from typing import Iterable, Literal
 from dataclasses import dataclass, field
 from enum import Enum
 

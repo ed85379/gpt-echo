@@ -1,12 +1,9 @@
 # prompt_builder.py
 import json
-import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from bson import ObjectId
 import humanize
 from app.core import memory_core, journal_core, discovery_core, utils, time_location_utils
-from app.core.memory_core import cortex
 from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
 from app.databases.mongo_connector import mongo, mongo_system

@@ -6,7 +6,7 @@ import hashlib
 import pymongo
 from sentence_transformers import SentenceTransformer
 from app.config import muse_config
-from app.core import utils, memory_core
+from app.core import utils
 from app.databases import qdrant_connector, graphdb_connector
 
 MONGO_URI = muse_config.get("MONGO_URI")

@@ -4,12 +4,10 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from dateutil import parser
 from croniter import croniter
-from openai import OpenAI
 from app.config import muse_config
 from app.core.utils import write_system_log
 from app.core.time_location_utils import get_quiet_hours_end_today, get_last_user_activity_timestamp, _load_user_location
 from app.core.muse_responder import handle_muse_decision
-from app.core.memory_core import cortex
 from app.core import prompt_profiles
 from app.core.reminders_core import handle_edit, search_for_timely_reminders
 from app.services.openai_client import continuity_openai_client

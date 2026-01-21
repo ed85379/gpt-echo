@@ -4,7 +4,6 @@ import requests
 import feedparser
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from bs4 import BeautifulSoup
 import re
 import requests
 from bs4 import BeautifulSoup
