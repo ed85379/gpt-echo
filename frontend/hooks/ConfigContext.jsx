@@ -15,7 +15,7 @@ export function ConfigProvider({ children }) {
   const [statesLoading, setStatesLoading] = useState(true);
   const [pollstatesLoading, setPollstatesLoading] = useState(true);
 
-  const POLL_MS = 60_000; // 1 minute; change to 300_000 for 5 minutes
+  const POLL_MS = 10_000; // 1 minute; change to 300_000 for 5 minutes
 
   // --- helpers ---
 
