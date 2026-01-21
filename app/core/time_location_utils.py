@@ -145,7 +145,11 @@ def sun_moon_snapshot():
 
     # moon up/down
     mrise = moonrise(observer, date=date, tzinfo=tzinfo)
-    mset = moonset(observer, date=date, tzinfo=tzinfo)
+    try:
+        mset = moonset(observer, date=date, tzinfo=tzinfo)
+    except Exception as e:
+        print(f"⚠️ Failed to get moonset: {e}")
+        mset = "unknown"
 
     if mrise and mset:
         moon_up = mrise <= now <= mset
