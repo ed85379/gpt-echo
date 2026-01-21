@@ -54,7 +54,10 @@ const HistoryTab = ({
   const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectDialogOpen, setProjectDialogOpen] = useState(null)
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const hasTags = availableTags.length > 0;
   const { museProfile, museProfileLoading } = useConfig();
+
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
   const mode = "history";
     // "Bind" each handler to local state
@@ -158,35 +161,69 @@ const HistoryTab = ({
             )}
           </select>
         </label>
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-sm text-neutral-300">Filter by tag:</span>
-          {availableTags.map(tagObj => (
-            <button
-              key={tagObj.tag}
-              className={`px-3 py-1 rounded-full text-xs transition-all
-                ${tagFilter.includes(tagObj.tag)
-                  ? "bg-purple-700 text-white font-semibold shadow"
-                  : "bg-neutral-800 text-purple-200 hover:bg-purple-800"}
-              `}
-              onClick={() => {
-                setTagFilter(tf =>
-                  tf.includes(tagObj.tag)
-                    ? tf.filter(t => t !== tagObj.tag)
-                    : [...tf, tagObj.tag]
-                );
-              }}
-            >
-              #{tagObj.tag}
-              <span className="ml-1 text-neutral-400">{tagObj.count}</span>
-            </button>
-          ))}
-          {tagFilter.length > 0 && (
-            <button
-              className="ml-2 px-2 py-1 bg-neutral-700 text-purple-200 rounded hover:bg-neutral-600"
-              onClick={() => setTagFilter([])}
-            >
-              Clear
-            </button>
+        <div className="mb-2">
+          {/* Label always visible at the top */}
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm text-neutral-300">Filter by tag:</span>
+          </div>
+
+          {/* Tag chips in a capped-height container */}
+          <div
+            className={`overflow-hidden transition-[max-height] duration-200 ${
+              tagsExpanded ? "max-h-none" : "max-h-14"
+            }`}
+          >
+            <div className="flex flex-wrap gap-2 items-center">
+              {availableTags.map(tagObj => (
+                <button
+                  key={tagObj.tag}
+                  className={`px-3 py-1 rounded-full text-xs transition-all
+                    ${
+                      tagFilter.includes(tagObj.tag)
+                        ? "bg-purple-700 text-white font-semibold shadow"
+                        : "bg-neutral-800 text-purple-200 hover:bg-purple-800"
+                    }
+                  `}
+                  onClick={() => {
+                    setTagFilter(tf =>
+                      tf.includes(tagObj.tag)
+                        ? tf.filter(t => t !== tagObj.tag)
+                        : [...tf, tagObj.tag]
+                    );
+                  }}
+                >
+                  #{tagObj.tag}
+                  <span className="ml-1 text-neutral-400">{tagObj.count}</span>
+                </button>
+              ))}
+
+              {tagFilter.length > 0 && (
+                <button
+                  className="px-2 py-1 bg-neutral-700 text-purple-200 rounded hover:bg-neutral-600 text-xs"
+                  onClick={() => setTagFilter([])}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Full-width rail with centered chevron */}
+          {hasTags && (
+            <div className="mt-1 flex items-center justify-center w-full">
+              <div className="h-px flex-1 bg-neutral-800" />
+              <button
+                type="button"
+                onClick={() => setTagsExpanded(v => !v)}
+                className="mx-2 flex items-center justify-center h-5 w-5 rounded-full
+                           bg-neutral-800 text-neutral-300 hover:bg-neutral-700
+                           hover:text-purple-200 text-xs border border-neutral-700"
+                title={tagsExpanded ? "Collapse tags" : "Show all tags"}
+              >
+                {tagsExpanded ? "▲" : "▼"}
+              </button>
+              <div className="h-px flex-1 bg-neutral-800" />
+            </div>
           )}
         </div>
       </div>
