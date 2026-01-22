@@ -521,7 +521,7 @@ COMMANDS = {
         },
     },
     "manage_memories": {
-        "triggers": [],
+        "triggers": ["edit that memory", "edit this memory", "update that memory", "delete that memory", "forget that"],
         "format": "[COMMAND: manage_memories] {id: <layer_id>, changes: [{type: add|edit|delete, ...}]} [/COMMAND]\n"
                 "# Add\n"
                 "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"add\", \"entry\": {\"text\": \"...\"}}]} [/COMMAND]\n"
