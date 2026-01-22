@@ -144,12 +144,16 @@ def sun_moon_snapshot():
     phase_name = describe_moon_phase(phase_val)
 
     # moon up/down
-    mrise = moonrise(observer, date=date, tzinfo=tzinfo)
+    try:
+        mrise = moonrise(observer, date=date, tzinfo=tzinfo)
+    except Exception as e:
+        print(f"⚠️ Failed to get moonrise: {e}")
+        mrise = False
     try:
         mset = moonset(observer, date=date, tzinfo=tzinfo)
     except Exception as e:
         print(f"⚠️ Failed to get moonset: {e}")
-        mset = "unknown"
+        mset = False
 
     if mrise and mset:
         moon_up = mrise <= now <= mset
