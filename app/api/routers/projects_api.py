@@ -2,7 +2,6 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
-from app.databases.mongo_connector import mongo
 from app.config import muse_config
 from app.core import projects_core
 from app.core.files_core import modify_file_project_link_core

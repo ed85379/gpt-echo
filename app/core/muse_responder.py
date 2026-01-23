@@ -916,7 +916,7 @@ def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay
     for attempt in range(1, retries + 1):
         try:
             response = httpx.post(
-                f"{muse_config.get('API_URL')}/internal/broadcast",
+                f"{muse_config.get('API_URL')}/api/muse/speak",
                 json=payload,
                 timeout=5
             )

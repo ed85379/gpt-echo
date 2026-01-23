@@ -33,7 +33,16 @@ def search_journal(query_vector, top_k=5):
 # Utilities
 # ----------------------
 
+def load_journal_index():
+    if JOURNAL_CATALOG_PATH.exists():
+        with open(JOURNAL_CATALOG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    else:
+        return []
 
+def save_journal_index(index):
+    with open(JOURNAL_CATALOG_PATH, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False, indent=2)
 
 def ensure_journal_dir():
     JOURNAL_DIR.mkdir(parents=True, exist_ok=True)

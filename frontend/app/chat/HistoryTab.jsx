@@ -7,7 +7,7 @@ import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX, BookMarked } from 'luc
 import { useConfig } from '@/hooks/ConfigContext';
 import { useMemo } from "react";
 import MessageItem from "@/components/app/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
+import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered, handleMultiAction } from "@/utils/messageActions";
 import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 
 
@@ -84,6 +84,10 @@ const HistoryTab = ({
 
   const onRemoveTag = (message_id, tag) =>
     removeTag(setMessages, message_id, tag);
+
+  const onMultiAction = (action, options) => {
+    handleMultiAction(setMessages, selectedMessageIds, action, options || {});
+  };
 
   const filteredMessages =
     tagFilter.length === 0

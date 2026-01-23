@@ -20,7 +20,16 @@ import { useConfig } from '@/hooks/ConfigContext';
 import { assignMessageId, toPythonIsoString, fileToBase64, trimMessages } from '@/utils/utils';
 import { useMemo } from "react";
 import MessageItem from "@/components/app/MessageItem";
-import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
+import MultiActionBar from "@/components/app/MultiActionBar"
+import ProjectPickerPanel from "@/components/app/ProjectPickerPanel"
+import TagPanel from "@/components/app/TagPanel"
+import {
+      handleDelete,
+      handleTogglePrivate,
+      handleToggleHidden,
+      handleToggleRemembered,
+      handleMultiAction
+   } from "@/utils/messageActions";
 import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
 
 function HistoryOffIcon(props) {
@@ -66,6 +75,11 @@ const ChatTab = (
   const [scrollToMessageId, setScrollToMessageId] = useState(null);
   const [scrollTargetNode, setScrollTargetNode] = useState(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
+  const [showProjectPanel, setShowProjectPanel] = useState(false);
+  const [showTagPanel, setShowTagPanel] = useState(null); // "add" | "remove" | null
+
 
   const chatEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -115,6 +129,48 @@ const ChatTab = (
 
   const onRemoveTag = (message_id, tag) =>
     removeTag(setMessages, message_id, tag);
+
+  const onMultiAction = (action, options = {}) => {
+    console.log("onMultiAction called with:", action);
+    switch (action) {
+      case "set_project":
+        console.log(">>> setting showProjectPanel = true");
+        setShowProjectPanel(true);
+        break;
+      case "add_tags":
+        console.log(">>> setting showTagPanel = 'add'");
+        setShowTagPanel("add");
+        break;
+      case "remove_tags":
+        console.log(">>> setting showTagPanel = 'remove'");
+        setShowTagPanel("remove");
+        break;
+      default:
+        // simple actions go straight through
+        handleMultiAction(setMessages, selectedMessageIds, action, options);
+    }
+  };
+
+  const handleConfirmProject = (project_id) => {
+    setShowProjectPanel(false);
+    handleMultiAction(setMessages, selectedMessageIds, "set_project", {
+      project_id,
+    });
+  };
+
+  const handleConfirmTagsAdd = (tagsToAdd) => {
+    setShowTagPanel(null);
+    handleMultiAction(setMessages, selectedMessageIds, "add_tags", {
+      tagsToAdd,
+    });
+  };
+
+  const handleConfirmTagsRemove = (tagsToRemove) => {
+    setShowTagPanel(null);
+    handleMultiAction(setMessages, selectedMessageIds, "remove_tags", {
+      tagsToRemove,
+    });
+  };
 
   const handleFileInputChange = (e) => {
     const file = e.target.files[0];
@@ -477,7 +533,7 @@ const ChatTab = (
     setScrollToBottom(true);
 
     // 3. Send the message to the backend, including timestamp
-    await fetch("/api/talk", {
+    await fetch("/api/muse/talk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -564,43 +620,81 @@ const ChatTab = (
 
   return (
     <div className="relative flex flex-col h-full ">
-      <div className="flex gap-2 items-center mt-4">
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={autoTTS}
-            onChange={(e) => setAutoTTS(e.target.checked)}
-            disabled={thinking || connecting}
-          />
-          <span className="text-sm text-neutral-300">Auto-TTS</span>
-        </label>
-        <button
-          onClick={() => {
-            if (isTTSPlaying) {
-              // Stop current audio
-              if (audioSourceRef.current) {
-                try {
-                  audioSourceRef.current.stop();
-                } catch (e) {}
-                audioSourceRef.current = null;
+      <div className="flex items-center justify-between mt-4">
+        {/* Left side: Auto-TTS controls */}
+        <div className="flex gap-2 items-center">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={autoTTS}
+              onChange={(e) => setAutoTTS(e.target.checked)}
+              disabled={thinking || connecting}
+            />
+            <span className="text-sm text-neutral-300">Auto-TTS</span>
+          </label>
+          <button
+            onClick={() => {
+              if (isTTSPlaying) {
+                if (audioSourceRef.current) {
+                  try {
+                    audioSourceRef.current.stop();
+                  } catch (e) {}
+                  audioSourceRef.current = null;
+                }
+                if (audioCtxRef.current) {
+                  try {
+                    audioCtxRef.current.close();
+                  } catch (e) {}
+                  audioCtxRef.current = null;
+                }
+                setIsTTSPlaying(false);
+                setSpeaking(false);
+              } else if (lastTTS && !connecting) {
+                speak(lastTTS, () => setIsTTSPlaying(false));
               }
-              if (audioCtxRef.current) {
-                try {
-                  audioCtxRef.current.close();
-                } catch (e) {}
-                audioCtxRef.current = null;
-              }
-              setIsTTSPlaying(false);
-              setSpeaking(false);
-            } else if (lastTTS && !connecting) {
-              speak(lastTTS, () => setIsTTSPlaying(false));
+            }}
+            className="text-sm text-purple-300 hover:underline"
+            disabled={connecting || !lastTTS}
+          >
+            {isTTSPlaying ? "⏹️ Stop" : "▶️ Play"}
+          </button>
+        </div>
+
+        {/* Right side: Message actions */}
+
+        <MultiActionBar
+          multiSelectEnabled={multiSelectEnabled}
+          onToggleMultiSelect={setMultiSelectEnabled}
+          selectedCount={selectedMessageIds.length}
+          onAction={onMultiAction}
+          disabled={thinking || connecting}
+        />
+        {/* Overlay row for complex actions */}
+        {showProjectPanel && (
+          <div className="absolute right-0 top-0 mt-2 z-20 flex justify-end">
+            {console.log(">>> ProjectPickerPanel block is rendering")}
+            <ProjectPickerPanel
+              projects={projects}
+              onConfirm={handleConfirmProject}
+              onCancel={() => setShowProjectPanel(false)}
+            />
+          </div>
+        )}
+
+      {showTagPanel && (
+        <div className="absolute left-0 right-0 mt-2 z-20">
+          <TagPanel
+            mode={showTagPanel}
+            existingTags={existingTagsForSelection}
+            onConfirm={
+              showTagPanel === "add"
+                ? handleConfirmTagsAdd
+                : handleConfirmTagsRemove
             }
-          }}
-          className="text-sm text-purple-300 hover:underline"
-          disabled={connecting || !lastTTS}
-        >
-          {isTTSPlaying ? "⏹️ Stop" : "▶️ Play"}
-        </button>
+            onCancel={() => setShowTagPanel(null)}
+          />
+        </div>
+      )}
       </div>
         {!atBottom && (
         <button
@@ -623,7 +717,7 @@ const ChatTab = (
       )}
       <div
         ref={scrollContainerRef}
-        className="mt-4 flex-1 min-h-0 overflow-y-auto relative"
+        className="mt-4 flex-1 min-h-0 overflow-y-auto relative pt-12"
         onScroll={async (e) => {
           const { scrollTop, scrollHeight, clientHeight } = e.target;
           if (scrollTop + clientHeight >= scrollHeight - 10) {

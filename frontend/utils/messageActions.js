@@ -136,3 +136,105 @@ export function removeTag(setMessages, message_id, tag) {
     );
   });
 }
+
+export async function handleMultiAction(
+  setMessages,
+  selectedMessageIds,
+  action,
+  options = {}
+) {
+  const { project_id, tag } = options;
+
+  const body = { message_ids: selectedMessageIds };
+
+  switch (action) {
+    case "hide":
+      body.is_hidden = true;
+      break;
+    case "unhide":
+      body.is_hidden = false;
+      break;
+    case "delete":
+      body.is_deleted = true;
+      break;
+    case "undelete":
+      body.is_deleted = false;
+      break;
+    case "make_private":
+      body.is_private = true;
+      break;
+    case "make_public":
+      body.is_private = false;
+      break;
+    case "highlight":
+      body.remembered = true;
+      break;
+    case "unhighlight":
+      body.remembered = false;
+      break;
+    case "set_project":
+      body.set_project = project_id ?? false;
+      break;
+    case "add_tag":
+      body.add_user_tags = [tag];
+      break;
+    case "remove_tag":
+      body.remove_user_tags = [tag];
+      break;
+    default:
+      return;
+  }
+
+  const res = await fetch("/api/messages/tag", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    console.error("Bulk action failed");
+    return;
+  }
+
+  setMessages(prev =>
+    prev.map(m => {
+      if (!selectedMessageIds.includes(m.message_id)) return m;
+
+      switch (action) {
+        case "hide":
+          return { ...m, is_hidden: true };
+        case "unhide":
+          return { ...m, is_hidden: false };
+        case "delete":
+          return { ...m, is_deleted: true };
+        case "undelete":
+          return { ...m, is_deleted: false };
+        case "make_private":
+          return { ...m, is_private: true };
+        case "make_public":
+          return { ...m, is_private: false };
+        case "highlight":
+          return { ...m, remembered: true };
+        case "unhighlight":
+          return { ...m, remembered: false };
+        case "set_project":
+          setShowProjectPanel(true);
+          return { ...m, project_id };
+        case "add_tags":
+          return {
+            ...m,
+            user_tags: [...(m.user_tags || []), tag],
+          };
+        case "remove_tags":
+          return {
+            ...m,
+            user_tags: (m.user_tags || []).filter(t => t !== tag),
+          };
+        default:
+          return m;
+      }
+    })
+  );
+}
+
+

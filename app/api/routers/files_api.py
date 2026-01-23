@@ -1,16 +1,13 @@
 from fastapi import APIRouter, HTTPException, Body, Form, Query, UploadFile, File, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.status import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
-from typing import List, Optional, Literal
-from datetime import datetime, timezone, timedelta
-from dateutil.parser import parse
-import asyncio, os
+from typing import Optional
+from datetime import datetime
+import os
 from bson import ObjectId
 from app.databases.mongo_connector import mongo
 from app.config import muse_config
 from app.core import files_core
 from app.core.utils import serialize_doc
-from app.databases.memory_indexer import build_index
 from app.api.queues import index_queue
 
 
