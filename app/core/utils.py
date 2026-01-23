@@ -293,7 +293,7 @@ def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", pu
     remembered = e.get("remembered") or ""
     rem_note = ""
     if remembered:
-        rem_note = f"[Anchor memory (high priority)]"
+        rem_note = f"[Highlighted memory]"
 
     # --- Message text ---
     msg = e.get("message", "")

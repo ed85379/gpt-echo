@@ -185,7 +185,7 @@ const MessageItem = React.forwardRef(function MessageItem({
           ))}
           {isRemembered && (
             <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <CandleHolderLit size={14} className="inline" /> Remembered
+              <CandleHolderLit size={14} className="inline" /> Highlighted
             </span>
           )}
           {isPrivate && (
@@ -200,7 +200,7 @@ const MessageItem = React.forwardRef(function MessageItem({
           )}
           {isDeleted && (
             <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <Shredder size={14} className="inline" /> Recycled
+              <Shredder size={14} className="inline" /> Forgotten
             </span>
           )}
         </div>

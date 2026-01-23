@@ -95,7 +95,7 @@ export default function MessageActions({
         {/* Remembered toggle */}
         <button
           onClick={() => onToggleRemembered(msg.message_id, !isRemembered)}
-          title={isRemembered ? "Let memory fade" : "Mark as strong memory"}
+          title={isRemembered ? "Unhighlight message in memory" : "Highlight message in memory"}
           className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
         >
@@ -126,7 +126,7 @@ export default function MessageActions({
         {/* Delete */}
         <button
           onClick={() => onDelete(msg.message_id, !isDeleted)}
-          title={isDeleted ? "Undelete message" : "Delete message"}
+          title={isDeleted ? "Restore message" : "Forget message"}
           className="text-neutral-400 hover:text-red-400 transition-colors"
           style={{ background: "none", border: "none", cursor: "pointer" }}
         >
