@@ -14,7 +14,8 @@ import {
   SquareX,
   BookMarked,
   History,
-  Slash
+  Slash,
+  Check
   } from "lucide-react";
 
 function HistoryOffIcon(props) {
@@ -44,7 +45,10 @@ export default function MessageActions({
   projectDialogOpen,       // message_id or null
   setProjectDialogOpen,
   mode,
-  onReturnToThisMoment
+  onReturnToThisMoment,
+  multiSelectEnabled,
+  isSelected,
+  onToggleSelect
 }) {
   // Local input state for new tag field
   const [newTag, setNewTag] = useState("");
@@ -68,6 +72,30 @@ export default function MessageActions({
     (msg.user_tags || []).filter(
       t => t !== "private" && t !== "hidden" && t !== "deleted" && t !== "remembered" && t !== "project"
     ) || [];
+  const baseContainerClasses =
+  "absolute right-2 bottom-2 mb-1 mr-1 flex items-center justify-end gap-2";
+
+  if (multiSelectEnabled) {
+    const baseButtonClasses =
+      "w-5 h-5 rounded border flex items-center justify-center shadow-sm";
+    const unselectedClasses =
+      "border-purple-500 bg-neutral-800 hover:bg-neutral-700";
+    const selectedClasses =
+      "bg-purple-600 border-purple-300";
+
+    const buttonClasses =
+      baseButtonClasses +
+      " " +
+      (isSelected ? selectedClasses : unselectedClasses);
+
+    return (
+      <div className="absolute right-2 bottom-2 flex items-center justify-end gap-2">
+        <button className={buttonClasses} onClick={onToggleSelect}>
+          {isSelected && <Check className="w-3 h-3 text-white" />}
+        </button>
+      </div>
+    );
+  }
 
   // --- Render ---
   return (

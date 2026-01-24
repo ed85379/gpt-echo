@@ -5,29 +5,33 @@ import React, { useState } from "react";
 
 const ACTIONS = [
   { value: "", label: "Select action…" },
-  { value: "forget", label: "Forget messages" },
-  { value: "restore", label: "Restore messages" },
+  { value: "delete", label: "Forget messages" },
+  { value: "undelete", label: "Restore messages" },
   { value: "hide", label: "Hide messages" },
   { value: "unhide", label: "Unhide messages" },
-  { value: "private", label: "Set Private" },
-  { value: "public", label: "Set Public" },
+  { value: "make_private", label: "Set Private" },
+  { value: "make_public", label: "Set Public" },
+  { value: "highlight", label: "Highlight messages" },
+  { value: "unhighlight", label: "Unhighlight messages" },
   { value: "set_project", label: "Add to project…" },
   { value: "add_tags", label: "Add tags…" },
   { value: "remove_tags", label: "Remove tags…" },
 ];
 
 
-export default function MessageActionsBar({
+export default function MultiActionBar({
   multiSelectEnabled,
   onToggleMultiSelect,
   selectedCount,
   onAction,
-  disabled
+  disabled,
+  setShowProjectPanel,
+  setShowTagPanel
 }) {
   const [selectedAction, setSelectedAction] = useState("");
 
 
-  const hasSelection = selectedCount >= 0;
+  const hasSelection = selectedCount >= 1;
   const isDisabled = disabled || !multiSelectEnabled || !hasSelection;
   const canApply = !isDisabled && !!selectedAction;
 
@@ -51,11 +55,13 @@ export default function MessageActionsBar({
     onAction(selectedAction, {});
   };
 
+
+
   return (
     <div className="flex items-center gap-3">
       {/* Multi-select toggle */}
       <div className="flex items-center gap-2 text-sm text-neutral-300">
-        <span>Multi-select</span>
+        <span>Bulk actions</span>
 
         <button
           className={`relative inline-flex items-center w-12 h-6 rounded-full transition-colors duration-300 px-2

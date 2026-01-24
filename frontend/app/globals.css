@@ -26,6 +26,20 @@ body {
   /* Optional, for extreme edge cases: */
   hyphens: auto;
 }
+.prose p {
+  margin-top: 0.1em;
+  margin-bottom: 0.1em;
+}
+.prose ul,
+.prose ol {
+  margin-top: 0.2em;
+  margin-bottom: 0.2em;
+}
+
+.prose li {
+  margin-top: 0.15em;
+  margin-bottom: 0.15em;
+}
 .prose pre {
   background-color: #181028 !important;  /* Deep purple/neutral */
   color: #f3e8ff !important;             /* Light purple text */
@@ -54,6 +68,26 @@ body {
   padding: 0;
   border-radius: 0;
   font-size: 1em;
+}
+
+/* Make the DayPicker a bit more compact */
+.rdp-custom {
+  --rdp-cell-size: 1.8rem;      /* default is ~2.75rem */
+  --rdp-caption-font-size: 0.8rem;
+  --rdp-day-font-size: 0.75rem;
+}
+
+/* Optional: tighten spacing a bit */
+.rdp-custom .rdp-caption {
+  padding: 0.25rem 0.5rem;
+}
+
+.rdp-custom .rdp-head_cell {
+  padding: 0.15rem 0.25rem;
+}
+
+.rdp-custom .rdp-day {
+  padding: 0.1rem;
 }
 
 .file-list details[open] .chevron-right { display: none !important; }
@@ -155,6 +189,33 @@ body {
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+  /* Tighten typography just inside chat bubbles */
+    .prose.prose-invert {
+      /* paragraphs closer together */
+      --tw-prose-p: 0.3rem;
+      --tw-prose-p-margin: 0.25rem 0;
+
+      /* lists tighter */
+      --tw-prose-li-margin: 0.1rem 0;
+
+      /* headings smaller / closer if you ever use them */
+      --tw-prose-headings: 1.05em;
+    }
+
+    /* Or, if the CSS vars aren't wired, brute-force it: */
+    .prose.prose-invert p {
+      margin-top: 0.15rem;
+      margin-bottom: 0.15rem;
+    }
+
+    .prose.prose-invert pre {
+      margin-top: 0.25rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .prose.prose-invert code {
+      font-size: 1.1em;
+    }
 }
 
 @layer base {

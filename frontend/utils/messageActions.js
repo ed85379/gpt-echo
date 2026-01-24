@@ -1,3 +1,4 @@
+// utils/messageActions.js
 export function CandleHolderLit(props) {
   return (
     <svg
@@ -143,7 +144,7 @@ export async function handleMultiAction(
   action,
   options = {}
 ) {
-  const { project_id, tag } = options;
+  const { project_id, tagsToAdd = [], tagsToRemove = [] } = options;
 
   const body = { message_ids: selectedMessageIds };
 
@@ -175,11 +176,13 @@ export async function handleMultiAction(
     case "set_project":
       body.set_project = project_id ?? false;
       break;
-    case "add_tag":
-      body.add_user_tags = [tag];
+    case "add_tags":
+      if (!tagsToAdd.length) return;
+      body.add_user_tags = tagsToAdd;
       break;
-    case "remove_tag":
-      body.remove_user_tags = [tag];
+    case "remove_tags":
+      if (!tagsToRemove.length) return;
+      body.remove_user_tags = tagsToRemove;
       break;
     default:
       return;
@@ -218,18 +221,21 @@ export async function handleMultiAction(
         case "unhighlight":
           return { ...m, remembered: false };
         case "set_project":
-          setShowProjectPanel(true);
           return { ...m, project_id };
-        case "add_tags":
+        case "add_tags": {
+          if (!tagsToAdd.length) return m;
+          const existing = m.user_tags || [];
+          const merged = Array.from(new Set([...existing, ...tagsToAdd]));
+          return { ...m, user_tags: merged };
+        }
+        case "remove_tags": {
+          if (!tagsToRemove.length) return m;
+          const existing = m.user_tags || [];
           return {
             ...m,
-            user_tags: [...(m.user_tags || []), tag],
+            user_tags: existing.filter((t) => !tagsToRemove.includes(t)),
           };
-        case "remove_tags":
-          return {
-            ...m,
-            user_tags: (m.user_tags || []).filter(t => t !== tag),
-          };
+        }
         default:
           return m;
       }

@@ -9,7 +9,7 @@ import TabbedToolPanel from './TabbedToolPanel';
 
 const TABS = [
   { key: "chat", label: "Chat" },
-  { key: "history", label: "History" }
+  { key: "history", label: "History" },
 ];
 
 export default function ChatPage() {
@@ -192,7 +192,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full min-h-0">
       {/* Sub-tab selector */}
       <div className="flex gap-2 border-b border-neutral-800 px-6">
         {TABS.map(tab => (
@@ -214,8 +214,8 @@ export default function ChatPage() {
 
       {/* Sub-tab content */}
       {activeTab === "chat" && (
-        <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 h-full px-6">
-          <div className=" relative md:col-span-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 92px - 48px)" }}>
+        <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0 px-6">
+          <div className=" relative md:col-span-2 overflow-y-auto">
             <ChatTab
               setSpeaking={setSpeaking}
               speaking={speaking}
@@ -263,8 +263,9 @@ export default function ChatPage() {
         </div>
       )}
 
+
       {activeTab === "history" && (
-        <div className="flex-1 px-6">
+        <div className="flex-1 min-h-0 px-6 bg-neutral-950 text-white">
           <HistoryTab
             onReturnToThisMoment={handleReturnToThisMoment}
           />

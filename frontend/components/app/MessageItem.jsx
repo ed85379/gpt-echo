@@ -101,7 +101,10 @@ const MessageItem = React.forwardRef(function MessageItem({
   setProjectDialogOpen,
   museName,
   mode,
-  onReturnToThisMoment
+  onReturnToThisMoment,
+  multiSelectEnabled,
+  isSelected,
+  onToggleSelect,
 }, ref) {
   if (!msg) return <div>[No message]</div>;
     let renderedHTML = "";
@@ -112,7 +115,10 @@ const MessageItem = React.forwardRef(function MessageItem({
       console.error("Custom render error:", e, msg.message || msg.text);
     }
 
-
+  const handleClick = () => {
+    if (!multiSelectEnabled) return;
+    onToggleSelect();
+  };
 
   const effectiveRole = msg.from || msg.role || "";
   let displayName = "Other";
@@ -145,7 +151,15 @@ const MessageItem = React.forwardRef(function MessageItem({
       <div className={`${bubbleWidth} ${rightAlign ? "ml-auto" : ""}`}>
         <div className="text-xs text-neutral-400">{displayName}</div>
         <div className="text-xs text-neutral-500">{formatTimestamp(msg.timestamp)}</div>
-        <div className={`relative group text-sm px-3 py-2 rounded-lg whitespace-pre-wrap ${bubbleClass}`}>
+        <div className={`relative group text-sm px-3 py-2 rounded-lg whitespace-pre-wrap ${bubbleClass}
+          ${
+            isSelected && multiSelectEnabled
+            ? "ring-2 ring-purple-500 ring-offset-2 ring-offset-neutral-900"
+            : ""
+          }
+          `}
+          onClick={handleClick}
+        >
           <div
             className="prose prose-invert max-w-none"
             dangerouslySetInnerHTML={{ __html: renderedHTML }}
@@ -169,6 +183,9 @@ const MessageItem = React.forwardRef(function MessageItem({
             setProjectDialogOpen={setProjectDialogOpen}
             mode={mode}
             onReturnToThisMoment={onReturnToThisMoment}
+            multiSelectEnabled={multiSelectEnabled}
+            isSelected={isSelected}
+            onToggleSelect={onToggleSelect}
           />
         </div>
         <div className="flex flex-wrap gap-1 mt-1 ml-2">

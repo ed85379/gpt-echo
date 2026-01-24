@@ -177,7 +177,7 @@ const ConfigTab = () => {
   }
 
   return (
-    <div className="p-6 text-white bg-neutral-950 min-h-screen overflow-y-auto">
+    <div className="p-6 text-white bg-neutral-950 h-full flex flex-col min-h-0">
       <ConfigIntro />
       <div className="flex justify-between items-center mb-4">
         <input
@@ -203,59 +203,61 @@ const ConfigTab = () => {
       </div>
 
       {/* Cards for each category */}
-      <div className="grid gap-6">
-        {Object.entries(grouped).map(([category, entries]) => (
-          <div
-            key={category}
-            className="bg-neutral-900 rounded-xl shadow border border-purple-900/40 p-5"
-          >
-            <div className="font-semibold text-purple-300 text-base mb-3">
-              {category.charAt(0).toUpperCase() + category.slice(1)}
-              <span className="ml-2 text-xs text-neutral-400">({entries.length})</span>
-            </div>
-            <div className="divide-y divide-neutral-800">
-              {entries.length === 0 && (
-                <div className="text-neutral-500 text-sm italic py-2">
-                  No entries in this category.
-                </div>
-              )}
-              {entries.map(entry => (
-                <div
-                  key={entry.key}
-                  className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono text-purple-200 text-sm truncate">{entry.key}</div>
-                    {entry.description && (
-                      <div className="text-xs text-neutral-400 mt-1">{entry.description}</div>
-                    )}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="grid gap-6">
+          {Object.entries(grouped).map(([category, entries]) => (
+            <div
+              key={category}
+              className="bg-neutral-900 rounded-xl shadow border border-purple-900/40 p-5"
+            >
+              <div className="font-semibold text-purple-300 text-base mb-3">
+                {category.charAt(0).toUpperCase() + category.slice(1)}
+                <span className="ml-2 text-xs text-neutral-400">({entries.length})</span>
+              </div>
+              <div className="divide-y divide-neutral-800">
+                {entries.length === 0 && (
+                  <div className="text-neutral-500 text-sm italic py-2">
+                    No entries in this category.
                   </div>
-                  <div className="flex-1 min-w-0">{editMode ? renderInput(entry, category) : (
-                    <div className="mt-2">
-                      {typeof entry.value === "boolean" ? (
-                        <span className="text-xs text-neutral-400">
-                          {entry.value ? "Enabled" : "Disabled"}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-neutral-400">{String(entry.value)}</span>
+                )}
+                {entries.map(entry => (
+                  <div
+                    key={entry.key}
+                    className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-purple-200 text-sm truncate">{entry.key}</div>
+                      {entry.description && (
+                        <div className="text-xs text-neutral-400 mt-1">{entry.description}</div>
                       )}
                     </div>
-                  )}</div>
-                  {editMode && (
-                    <button
-                      className="ml-2 px-2 py-1 rounded bg-red-900 text-white text-xs self-start"
-                      disabled={saving[entry.key]}
-                      onClick={() => handleDelete(category, entry.key)}
-                      title="Revert to default"
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
-              ))}
+                    <div className="flex-1 min-w-0">{editMode ? renderInput(entry, category) : (
+                      <div className="mt-2">
+                        {typeof entry.value === "boolean" ? (
+                          <span className="text-xs text-neutral-400">
+                            {entry.value ? "Enabled" : "Disabled"}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-neutral-400">{String(entry.value)}</span>
+                        )}
+                      </div>
+                    )}</div>
+                    {editMode && (
+                      <button
+                        className="ml-2 px-2 py-1 rounded bg-red-900 text-white text-xs self-start"
+                        disabled={saving[entry.key]}
+                        onClick={() => handleDelete(category, entry.key)}
+                        title="Revert to default"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

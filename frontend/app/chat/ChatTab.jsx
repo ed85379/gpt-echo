@@ -130,6 +130,18 @@ const ChatTab = (
   const onRemoveTag = (message_id, tag) =>
     removeTag(setMessages, message_id, tag);
 
+  const clearSelectionAndExit = () => {
+    setSelectedMessageIds([]);
+    setMultiSelectEnabled(false);
+  };
+
+  const handleToggleMultiSelect = (enabled) => {
+    setMultiSelectEnabled(enabled);
+    if (!enabled) {
+      setSelectedMessageIds([]);
+    }
+  };
+
   const onMultiAction = (action, options = {}) => {
     console.log("onMultiAction called with:", action);
     switch (action) {
@@ -148,7 +160,16 @@ const ChatTab = (
       default:
         // simple actions go straight through
         handleMultiAction(setMessages, selectedMessageIds, action, options);
+        clearSelectionAndExit();
     }
+  };
+
+  const handleToggleSelect = (message_id) => {
+    setSelectedMessageIds((prev) =>
+      prev.includes(message_id)
+        ? prev.filter((id) => id !== message_id)
+        : [...prev, message_id]
+    );
   };
 
   const handleConfirmProject = (project_id) => {
@@ -156,6 +177,7 @@ const ChatTab = (
     handleMultiAction(setMessages, selectedMessageIds, "set_project", {
       project_id,
     });
+    clearSelectionAndExit();
   };
 
   const handleConfirmTagsAdd = (tagsToAdd) => {
@@ -163,6 +185,7 @@ const ChatTab = (
     handleMultiAction(setMessages, selectedMessageIds, "add_tags", {
       tagsToAdd,
     });
+    clearSelectionAndExit();
   };
 
   const handleConfirmTagsRemove = (tagsToRemove) => {
@@ -170,7 +193,21 @@ const ChatTab = (
     handleMultiAction(setMessages, selectedMessageIds, "remove_tags", {
       tagsToRemove,
     });
+    clearSelectionAndExit();
   };
+
+  const existingTagsForSelection = useMemo(() => {
+    if (!selectedMessageIds.length) return [];
+
+    const tagSet = new Set();
+
+    messages.forEach((msg) => {
+      if (!selectedMessageIds.includes(msg.message_id)) return;
+      (msg.user_tags || []).forEach((tag) => tagSet.add(tag));
+    });
+
+    return Array.from(tagSet).sort();
+  }, [messages, selectedMessageIds]);
 
   const handleFileInputChange = (e) => {
     const file = e.target.files[0];
@@ -664,14 +701,16 @@ const ChatTab = (
 
         <MultiActionBar
           multiSelectEnabled={multiSelectEnabled}
-          onToggleMultiSelect={setMultiSelectEnabled}
+          onToggleMultiSelect={handleToggleMultiSelect}
           selectedCount={selectedMessageIds.length}
           onAction={onMultiAction}
           disabled={thinking || connecting}
+          setShowProjectPanel={setShowProjectPanel}
+          setShowTagPanel={setShowTagPanel}
         />
         {/* Overlay row for complex actions */}
         {showProjectPanel && (
-          <div className="absolute right-0 top-0 mt-2 z-20 flex justify-end">
+          <div className="absolute right-0 top-12 mt-0 z-20 flex justify-end">
             {console.log(">>> ProjectPickerPanel block is rendering")}
             <ProjectPickerPanel
               projects={projects}
@@ -681,20 +720,20 @@ const ChatTab = (
           </div>
         )}
 
-      {showTagPanel && (
-        <div className="absolute left-0 right-0 mt-2 z-20">
-          <TagPanel
-            mode={showTagPanel}
-            existingTags={existingTagsForSelection}
-            onConfirm={
-              showTagPanel === "add"
-                ? handleConfirmTagsAdd
-                : handleConfirmTagsRemove
-            }
-            onCancel={() => setShowTagPanel(null)}
-          />
-        </div>
-      )}
+        {showTagPanel && (
+          <div className="absolute right-0 top-12 mt-0 z-20 flex justify-end">
+            <TagPanel
+              mode={showTagPanel}
+              existingTags={existingTagsForSelection}
+              onConfirm={
+                showTagPanel === "add"
+                  ? handleConfirmTagsAdd
+                  : handleConfirmTagsRemove
+              }
+              onCancel={() => setShowTagPanel(null)}
+            />
+          </div>
+        )}
       </div>
         {!atBottom && (
         <button
@@ -767,6 +806,9 @@ const ChatTab = (
               onAddTag={onAddTag}
               onRemoveTag={onRemoveTag}
               mode={mode}
+              multiSelectEnabled={multiSelectEnabled}
+              isSelected={selectedMessageIds.includes(msg.message_id)}
+              onToggleSelect={() => handleToggleSelect(msg.message_id)}
             />
           );
         })}

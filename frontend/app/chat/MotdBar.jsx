@@ -14,7 +14,7 @@ export default function MotdBar({}) {
   return (
     <div className="mt-1 w-full px-3 py-2 bg-black/80 rounded-b-xl">
       <p className="text-sm italic text-purple-200 text-center wrap">
-        {motd} - {museName}
+        {motd}
       </p>
     </div>
   );
