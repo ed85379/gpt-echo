@@ -253,6 +253,9 @@ const ChatTab = (
     }
   };
 
+
+   const [useLabRenderer, setUseLabRenderer] = React.useState(false);
+
   const ACCEPTED_TYPES = [
     ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".js", ".ts", ".py", ".java", ".c", ".cpp", ".cs", ".go", ".rb", ".php",
     ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"
@@ -696,7 +699,29 @@ const ChatTab = (
             {isTTSPlaying ? "⏹️ Stop" : "▶️ Play"}
           </button>
         </div>
-
+      {/*}
+      <div className="flex items-center justify-end px-2 py-1 text-xs text-neutral-400 gap-2">
+        <span>Renderer:</span>
+        <button
+          type="button"
+          className={`px-2 py-0.5 rounded ${
+            !useLabRenderer ? "bg-purple-700 text-white" : "bg-neutral-800"
+          }`}
+          onClick={() => setUseLabRenderer(false)}
+        >
+          Legacy
+        </button>
+        <button
+          type="button"
+          className={`px-2 py-0.5 rounded ${
+            useLabRenderer ? "bg-purple-700 text-white" : "bg-neutral-800"
+          }`}
+          onClick={() => setUseLabRenderer(true)}
+        >
+          Markdown Lab
+        </button>
+      </div>
+      */}
         {/* Right side: Message actions */}
 
         <MultiActionBar
@@ -780,38 +805,37 @@ const ChatTab = (
         {connecting && (
           <div className="text-sm text-neutral-400">Reconnecting…</div>
         )}
-        {visibleMessages.map((msg, idx) => {
-          if (!messageRefs.current[msg.message_id]) {
-            messageRefs.current[msg.message_id] = React.createRef();
-          }
-          return (
-            <MessageItem
-              key={msg.message_id || idx}
-              ref={messageRefs.current[msg.message_id]}
-              msg={msg}
-              projects={projects}
-              projectsLoading={projectsLoading}
-              projectMap={projectMap}
-              tagDialogOpen={tagDialogOpen}
-              setTagDialogOpen={setTagDialogOpen}
-              projectDialogOpen={projectDialogOpen}
-              setProjectDialogOpen={setProjectDialogOpen}
-              museName={museName}
-              onDelete={onDelete}
-              onTogglePrivate={onTogglePrivate}
-              onToggleHidden={onToggleHidden}
-              onToggleRemembered={onToggleRemembered}
-              onSetProject={onSetProject}
-              onClearProject={onClearProject}
-              onAddTag={onAddTag}
-              onRemoveTag={onRemoveTag}
-              mode={mode}
-              multiSelectEnabled={multiSelectEnabled}
-              isSelected={selectedMessageIds.includes(msg.message_id)}
-              onToggleSelect={() => handleToggleSelect(msg.message_id)}
-            />
-          );
-        })}
+          {visibleMessages.map((msg, idx) => {
+            if (!messageRefs.current[msg.message_id]) {
+              messageRefs.current[msg.message_id] = React.createRef();
+            }
+            const key = msg.message_id || idx;
+            const CommonProps = {
+              ref: messageRefs.current[msg.message_id],
+              msg,
+              projects,
+              projectsLoading,
+              projectMap,
+              tagDialogOpen,
+              setTagDialogOpen,
+              projectDialogOpen,
+              setProjectDialogOpen,
+              museName,
+              onDelete,
+              onTogglePrivate,
+              onToggleHidden,
+              onToggleRemembered,
+              onSetProject,
+              onClearProject,
+              onAddTag,
+              onRemoveTag,
+              mode,
+              multiSelectEnabled,
+              isSelected: selectedMessageIds.includes(msg.message_id),
+              onToggleSelect: () => handleToggleSelect(msg.message_id),
+            };
+            return <MessageItem key={key} {...CommonProps} />;
+          })}
         {thinking && (
           <div className="text-sm text-neutral-500 italic">
             {museName} is thinking...

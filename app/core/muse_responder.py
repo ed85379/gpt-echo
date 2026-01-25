@@ -445,7 +445,7 @@ COMMANDS = {
         "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get('MUSE_NAME')} has saved a fact: {entry.get('text')}]",
+            "visible": f"{muse_config.get('MUSE_NAME')} has saved a fact: {entry.get('text')}",
             "hidden": entry
         }
     },
@@ -457,7 +457,7 @@ COMMANDS = {
             {"text": payload.get("text")}
         ),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get('MUSE_NAME')} has saved a project fact: {entry.get('text')}]",
+            "visible": f"{muse_config.get('MUSE_NAME')} has saved a project fact: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -474,7 +474,7 @@ COMMANDS = {
         "format": "[COMMAND: record_userinfo] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("user_info", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get('MUSE_NAME')} has learned something about you: {entry.get('text')}]",
+            "visible": f"{muse_config.get('MUSE_NAME')} has learned something about you: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -491,7 +491,7 @@ COMMANDS = {
         "format": "[COMMAND: realize_insight] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("insights", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get('MUSE_NAME')} has realized something: {entry.get('text')}]",
+            "visible": f"{muse_config.get('MUSE_NAME')} has realized something: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -508,7 +508,7 @@ COMMANDS = {
         "format": "[COMMAND: note_to_self] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("inner_monologue", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"[{muse_config.get('MUSE_NAME')} has remembered something: {entry.get('text')}]",
+            "visible": f"{muse_config.get('MUSE_NAME')} has remembered something: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -534,10 +534,10 @@ COMMANDS = {
         "filter": lambda results: {
             "visible": "\n".join([
                 (
-                    f"[{muse_config.get('MUSE_NAME')} "
+                    f"{muse_config.get('MUSE_NAME')} "
                     f"{'added to' if r['type']=='add' else 'edited in' if r['type']=='edit' else 'deleted from' if r['type']=='delete' else 'updated in'} "
                     f"{r['layer'].replace('_', ' ').title()}: "
-                    f"{(r['entry'].get('text') or r['entry'].get('id', ''))}]"
+                    f"{(r['entry'].get('text') or r['entry'].get('id', ''))}"
                 )
                 for r in results
             ]),
@@ -580,7 +580,7 @@ COMMANDS = {
             }
         ),
         "filter": lambda entry: {
-            "visible": f"[Reminder set: {format_visible_reminders(entry)}]",
+            "visible": f"Reminder set: {format_visible_reminders(entry)}",
             "hidden": entry
         },
         "note_schema": {
@@ -612,7 +612,7 @@ COMMANDS = {
             }
         ),
         "filter": lambda entry: {
-            "visible": f"[Reminder edited: {format_visible_reminders(entry)}]",
+            "visible": f"Reminder edited: {format_visible_reminders(entry)}",
             "hidden": entry
         },
         "note_schema": {
@@ -635,7 +635,7 @@ COMMANDS = {
             }
         ),
         "filter": lambda entry: {
-            "visible": f"[Reminder snoozed until: {entry.get('snooze_until')}]",
+            "visible": f"Reminder snoozed until: {entry.get('snooze_until')}",
             "hidden": entry
         },
         "note_schema": {
@@ -658,7 +658,7 @@ COMMANDS = {
             }
         ),
         "filter": lambda entry: {
-            "visible": f"[Reminder paused until: {entry.get('skip_until')}]",
+            "visible": f"Reminder paused until: {entry.get('skip_until')}",
             "hidden": entry
         },
         "note_schema": {
@@ -681,7 +681,7 @@ COMMANDS = {
             }
         ),
         "filter": lambda entry: {
-            "visible": f"[Reminder {entry.get('status')}]",
+            "visible": f"Reminder {entry.get('status')}",
             "hidden": entry
         },
         "note_schema": {
