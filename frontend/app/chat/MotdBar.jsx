@@ -6,8 +6,7 @@ export default function MotdBar({}) {
   const { museProfile, uiStates, uiPollstates } = useConfig();
   const { states, muse_profile, muse_config } = uiPollstates || {};
   const motd = states?.motd?.text ?? "";
-  const museName =
-  muse_profile?.find((s) => s.section === "name")?.content ?? "Muse";
+  const museName = museProfile?.name?.[0]?.content ?? "Muse";
 
   if (!motd) return null;
 

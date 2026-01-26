@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Remarkable } from 'remarkable';
 import {
   Eye,
@@ -18,7 +18,6 @@ import { BookDashed, BookMarked, ArrowBigDownDash, Paperclip, Pin, Sparkles } fr
 import { linkify } from 'remarkable/linkify';
 import { useConfig } from '@/hooks/ConfigContext';
 import { assignMessageId, toPythonIsoString, fileToBase64, trimMessages } from '@/utils/utils';
-import { useMemo } from "react";
 import MessageItem from "@/components/app/MessageItem";
 import MultiActionBar from "@/components/app/MultiActionBar"
 import ProjectPickerPanel from "@/components/app/ProjectPickerPanel"
@@ -88,47 +87,74 @@ const ChatTab = (
   const audioSourceRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const messageRefs = useRef({});
-  const { museProfile, museProfileLoading, uiPollstates } = useConfig();
-  const { states } = uiPollstates || {};
+  const { museProfile, museProfileLoading, uiStates } = useConfig();
+  {/* }const { states } = uiPollstates || {}; */}
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
   const [timeSkipOverride, setTimeSkipOverride] = useState(null);
   const timeSkipActive =
   timeSkipOverride !== null
     ? timeSkipOverride
-    : Boolean(states?.time_skip?.active);
+    : Boolean(uiStates?.time_skip?.active);
   const INITIAL_RENDERED_MESSAGES = 10;  // On reload, after chat, etc.
   const ACTIVE_WINDOW_LIMIT = 10;         // After new message
   const SCROLLBACK_LIMIT = 30;            // After scroll up
   const MAX_RENDERED_MESSAGES = 30;      // Max after scroll loading "more"
   const MESSAGE_LIMIT = 10;              // How many to load per scroll/page
-  const visibleMessages = messages.slice(-MAX_RENDERED_MESSAGES);
+  const visibleMessages = React.useMemo(
+    () => messages.slice(-MAX_RENDERED_MESSAGES),
+    [messages, MAX_RENDERED_MESSAGES]
+  );
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
   const mode = "chat";
   // "Bind" each handler to local state
-  const onDelete = (message_id, markDeleted) =>
-    handleDelete(setMessages, message_id, markDeleted);
+  const onDelete = useCallback(
+    (message_id, markDeleted) =>
+      handleDelete(setMessages, message_id, markDeleted),
+    [setMessages]
+  );
 
-  const onTogglePrivate = (message_id, makePrivate) =>
-    handleTogglePrivate(setMessages, message_id, makePrivate);
+  const onTogglePrivate = useCallback(
+    (message_id, makePrivate) =>
+      handleDelete(setMessages, message_id, makePrivate),
+    [setMessages]
+  );
 
-  const onToggleHidden = (message_id, makeHidden) =>
-    handleToggleHidden(setMessages, message_id, makeHidden);
+  const onToggleHidden = useCallback(
+    (message_id, makeHidden) =>
+      handleToggleHidden(setMessages, message_id, makeHidden),
+    [setMessages]
+  );
 
-  const onToggleRemembered = (message_id, makeRemembered) =>
-    handleToggleRemembered(setMessages, message_id, makeRemembered);
+  const onToggleRemembered = useCallback(
+    (message_id, makeRemembered) =>
+      handleToggleRemembered(setMessages, message_id, makeRemembered),
+    [setMessages]
+  );
 
-  const onSetProject = (message_id, project_id) =>
-    setProject(setMessages, message_id, project_id);
+  const onSetProject = useCallback(
+    (message_id, project_id) =>
+      setProject(setMessages, message_id, project_id),
+    [setMessages]
+  );
 
-  const onClearProject = (message_id) =>
-    clearProject(setMessages, message_id);
+  const onClearProject = useCallback(
+    (message_id) =>
+      clearProject(setMessages, message_id),
+    [setMessages]
+  );
 
-  const onAddTag = (message_id, tag) =>
-    addTag(setMessages, message_id, tag);
+  const onAddTag = useCallback(
+    (message_id, tag) =>
+      addTag(setMessages, message_id, tag),
+    [setMessages]
+  );
 
-  const onRemoveTag = (message_id, tag) =>
-    removeTag(setMessages, message_id, tag);
+  const onRemoveTag = useCallback(
+    (message_id, tag) =>
+      removeTag(setMessages, message_id, tag),
+    [setMessages]
+  );
 
   const clearSelectionAndExit = () => {
     setSelectedMessageIds([]);
@@ -164,13 +190,13 @@ const ChatTab = (
     }
   };
 
-  const handleToggleSelect = (message_id) => {
+  const handleToggleSelect = useCallback((message_id) => {
     setSelectedMessageIds((prev) =>
       prev.includes(message_id)
         ? prev.filter((id) => id !== message_id)
         : [...prev, message_id]
     );
-  };
+  }, [setSelectedMessageIds]);
 
   const handleConfirmProject = (project_id) => {
     setShowProjectPanel(false);
@@ -313,13 +339,13 @@ const ChatTab = (
   useEffect(() => {
     if (timeSkipOverride === null) return;
 
-    const backendActive = Boolean(states?.time_skip?.active);
+    const backendActive = Boolean(uiStates?.time_skip?.active);
 
     // if backend has caught up with our optimistic value, drop override
     if (backendActive === timeSkipOverride) {
       setTimeSkipOverride(null);
     }
-  }, [states?.time_skip?.active, timeSkipOverride]);
+  }, [uiStates?.time_skip?.active, timeSkipOverride]);
 
   const loadMessages = async (before = null) => {
     setLoadingMore(true);
@@ -832,7 +858,7 @@ const ChatTab = (
               mode,
               multiSelectEnabled,
               isSelected: selectedMessageIds.includes(msg.message_id),
-              onToggleSelect: () => handleToggleSelect(msg.message_id),
+              onToggleSelect: handleToggleSelect,
             };
             return <MessageItem key={key} {...CommonProps} />;
           })}

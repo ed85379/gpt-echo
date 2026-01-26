@@ -90,7 +90,7 @@ export default function MessageActions({
 
     return (
       <div className="absolute right-2 bottom-2 flex items-center justify-end gap-2">
-        <button className={buttonClasses} onClick={onToggleSelect}>
+        <button className={buttonClasses} onClick={() => onToggleSelect(msg.message_id)}>
           {isSelected && <Check className="w-3 h-3 text-white" />}
         </button>
       </div>

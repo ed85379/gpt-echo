@@ -95,33 +95,32 @@ function MuseBlock({ museType, text }) {
 
 // --- 3. Main MessageItem ---
 
-const MessageItem = React.forwardRef(function MessageItem(
-  {
-    msg,
-    projects,
-    projectsLoading,
-    projectMap,
-    onSetProject,
-    onClearProject,
-    onAddTag,
-    onRemoveTag,
-    onTogglePrivate,
-    onToggleHidden,
-    onToggleRemembered,
-    onDelete,
-    tagDialogOpen,
-    setTagDialogOpen,
-    projectDialogOpen,
-    setProjectDialogOpen,
-    museName,
-    mode,
-    onReturnToThisMoment,
-    multiSelectEnabled,
-    isSelected,
-    onToggleSelect,
-  },
-  ref
-) {
+const MessageItem = React.memo(
+  React.forwardRef(function MessageItemInner(props, ref) {
+    const {
+      msg,
+      projects,
+      projectsLoading,
+      projectMap,
+      onSetProject,
+      onClearProject,
+      onAddTag,
+      onRemoveTag,
+      onTogglePrivate,
+      onToggleHidden,
+      onToggleRemembered,
+      onDelete,
+      tagDialogOpen,
+      setTagDialogOpen,
+      projectDialogOpen,
+      setProjectDialogOpen,
+      museName,
+      mode,
+      onReturnToThisMoment,
+      multiSelectEnabled,
+      isSelected,
+      onToggleSelect,
+    } = props;
   if (!msg) return <div>[No message]</div>;
 
   const rawText = msg.message || msg.text || "";
@@ -167,9 +166,8 @@ const MessageItem = React.forwardRef(function MessageItem(
 
   const handleClick = (e) => {
     if (!multiSelectEnabled) return;
-    // don’t steal clicks from buttons/links/summary inside
     if (e.target?.closest?.("button, a, summary")) return;
-    onToggleSelect && onToggleSelect();
+    onToggleSelect && onToggleSelect(msg.message_id);
   };
 
   const headingBase = "font-semibold text-purple-100";
@@ -457,6 +455,6 @@ const MessageItem = React.forwardRef(function MessageItem(
       </div>
     </div>
   );
-});
+}));
 
 export default MessageItem;

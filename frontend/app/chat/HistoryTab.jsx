@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX, BookMarked } from 'lucide-react';
@@ -86,30 +86,54 @@ const HistoryTab = ({
 
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
   const mode = "history";
-    // "Bind" each handler to local state
-  const onDelete = (message_id, markDeleted) =>
-    handleDelete(setMessages, message_id, markDeleted);
+  // "Bind" each handler to local state
+  const onDelete = useCallback(
+    (message_id, markDeleted) =>
+      handleDelete(setMessages, message_id, markDeleted),
+    [setMessages]
+  );
 
-  const onTogglePrivate = (message_id, makePrivate) =>
-    handleTogglePrivate(setMessages, message_id, makePrivate);
+  const onTogglePrivate = useCallback(
+    (message_id, makePrivate) =>
+      handleDelete(setMessages, message_id, makePrivate),
+    [setMessages]
+  );
 
-  const onToggleHidden = (message_id, makeHidden) =>
-    handleToggleHidden(setMessages, message_id, makeHidden);
+  const onToggleHidden = useCallback(
+    (message_id, makeHidden) =>
+      handleToggleHidden(setMessages, message_id, makeHidden),
+    [setMessages]
+  );
 
-  const onToggleRemembered = (message_id, makeRemembered) =>
-    handleToggleRemembered(setMessages, message_id, makeRemembered);
+  const onToggleRemembered = useCallback(
+    (message_id, makeRemembered) =>
+      handleToggleRemembered(setMessages, message_id, makeRemembered),
+    [setMessages]
+  );
 
-  const onSetProject = (message_id, project_id) =>
-    setProject(setMessages, message_id, project_id);
+  const onSetProject = useCallback(
+    (message_id, project_id) =>
+      setProject(setMessages, message_id, project_id),
+    [setMessages]
+  );
 
-  const onClearProject = (message_id) =>
-    clearProject(setMessages, message_id);
+  const onClearProject = useCallback(
+    (message_id) =>
+      clearProject(setMessages, message_id),
+    [setMessages]
+  );
 
-  const onAddTag = (message_id, tag) =>
-    addTag(setMessages, message_id, tag);
+  const onAddTag = useCallback(
+    (message_id, tag) =>
+      addTag(setMessages, message_id, tag),
+    [setMessages]
+  );
 
-  const onRemoveTag = (message_id, tag) =>
-    removeTag(setMessages, message_id, tag);
+  const onRemoveTag = useCallback(
+    (message_id, tag) =>
+      removeTag(setMessages, message_id, tag),
+    [setMessages]
+  );
 
   const onMultiAction = (action, options = {}) => {
     console.log("onMultiAction called with:", action);
@@ -133,13 +157,13 @@ const HistoryTab = ({
     }
   };
 
-  const handleToggleSelect = (message_id) => {
+  const handleToggleSelect = useCallback((message_id) => {
     setSelectedMessageIds((prev) =>
       prev.includes(message_id)
         ? prev.filter((id) => id !== message_id)
         : [...prev, message_id]
     );
-  };
+  }, [setSelectedMessageIds]);
 
   const clearSelectionAndExit = () => {
     setSelectedMessageIds([]);
@@ -572,7 +596,7 @@ const HistoryTab = ({
                       onReturnToThisMoment={onReturnToThisMoment}
                       multiSelectEnabled={multiSelectEnabled}
                       isSelected={selectedMessageIds.includes(msg.message_id)}
-                      onToggleSelect={() => handleToggleSelect(msg.message_id)}
+                      onToggleSelect={handleToggleSelect}
                     />
                   ))}
                 </div>
