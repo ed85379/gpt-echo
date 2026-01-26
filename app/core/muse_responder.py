@@ -752,6 +752,74 @@ COMMAND_HANDLERS = {
     name: cfg["handler"] for name, cfg in COMMANDS.items()
 }
 
+FENCE_PATTERN = re.compile(
+    r"(```.*?```|~~~.*?~~~)",
+    re.DOTALL
+)
+
+def normalize_muse_experience_tags(text: str) -> str:
+    """
+    Normalize <muse-experience> tags in non-fenced text only.
+
+    - Skips anything inside ```...``` or ~~~...~~~ fences
+    - Normalizes [] / () to <>
+    - Appends missing </muse-experience> if there’s an opening tag
+    """
+    if not isinstance(text, str):
+        return text
+
+    # Split into segments: text and fenced blocks
+    parts = []
+    last_end = 0
+
+    for m in FENCE_PATTERN.finditer(text):
+        # non-fenced chunk before this fence
+        if m.start() > last_end:
+            parts.append(("plain", text[last_end:m.start()]))
+        # the fenced chunk itself
+        parts.append(("fence", m.group(0)))
+        last_end = m.end()
+
+    # trailing non-fenced chunk
+    if last_end < len(text):
+        parts.append(("plain", text[last_end:]))
+
+    def _normalize_plain(chunk: str) -> str:
+        # 1) Normalize bracket types for open/close tags
+        chunk = re.sub(
+            r'[\[\(]\s*muse-experience\s*[\]\)]',
+            '<muse-experience>',
+            chunk,
+            flags=re.IGNORECASE,
+        )
+        chunk = re.sub(
+            r'[\[\(]\s*/\s*muse-experience\s*[\]\)]',
+            '</muse-experience>',
+            chunk,
+            flags=re.IGNORECASE,
+        )
+
+        # 2) Ensure closing tag if there’s an opening
+        open_tag_pattern = re.compile(r'<\s*muse-experience\s*>', re.IGNORECASE)
+        close_tag_pattern = re.compile(r'<\s*/\s*muse-experience\s*>', re.IGNORECASE)
+
+        has_open = bool(open_tag_pattern.search(chunk))
+        has_close = bool(close_tag_pattern.search(chunk))
+
+        if has_open and not has_close:
+            chunk = chunk.rstrip() + '\n</muse-experience>'
+
+        return chunk
+
+    normalized_parts = []
+    for kind, chunk in parts:
+        if kind == "plain":
+            normalized_parts.append(_normalize_plain(chunk))
+        else:
+            # fence: leave exactly as-is
+            normalized_parts.append(chunk)
+
+    return "".join(normalized_parts)
 # Main entry point for any response parsing after prompt
 
 def route_user_input(
@@ -770,6 +838,9 @@ def route_user_input(
         images=images,
         model=muse_config.get("OPENAI_MODEL")
     )
+
+    # Normalize muse-experience tags outside of fenced code blocks
+    response = normalize_muse_experience_tags(response)
 
     write_system_log(
         level="debug",
