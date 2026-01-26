@@ -5,8 +5,10 @@ from dateutil.parser import parse
 from typing import Any
 from bson import ObjectId
 from app.databases.mongo_connector import mongo, mongo_system
+from app.databases.memory_indexer import update_qdrant_metadata_for_messages
 from app.config import muse_config
 from app.api.queues import index_queue, log_queue
+
 
 
 router = APIRouter(prefix="/api/messages", tags=["messages"])
@@ -227,8 +229,11 @@ async def tag_message(
         {"message_id": {"$in": message_ids}},
         mongo_update
     )
-    for message_id in message_ids:
-        await index_queue.put(message_id)
+    # Metadata-only Qdrant update: no re-embedding
+    await update_qdrant_metadata_for_messages(message_ids)
+
+    #for message_id in message_ids:
+    #    await index_queue.put(message_id)
     return {"updated": result.modified_count}
 
 @router.get("/user_tags")

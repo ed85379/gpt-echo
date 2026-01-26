@@ -1,6 +1,6 @@
 
-import re
-import os
+# app/databases/memory_indexer.py
+from typing import List
 from datetime import datetime, timezone
 import hashlib
 import pymongo
@@ -199,3 +199,67 @@ async def build_memory_index(dryrun=False, entry_id=None):
     )
 
     print(f"Memory indexing complete. Processed {total}. Qdrant updated: {updated_qdrant}.")
+
+async def update_qdrant_metadata_for_messages(message_ids: List[str]):
+    """
+    For the given message_ids:
+    - Read current metadata fields from Mongo
+    - Update payload in Qdrant (no re-embedding)
+    - Bump indexed_on in Mongo
+    """
+    if not message_ids:
+        return 0
+
+    client = pymongo.MongoClient(MONGO_URI)
+    coll = client[MONGO_DBNAME][MONGO_CONVERSATION_COLLECTION]
+
+    cursor = coll.find(
+        {"message_id": {"$in": message_ids}},
+        {
+            "_id": 0,
+            "message_id": 1,
+            "user_tags": 1,
+            "is_private": 1,
+            "is_hidden": 1,
+            "is_deleted": 1,
+            "project_id": 1,
+            "remembered": 1,
+            # include anything else you want mirrored into Qdrant payload
+        },
+    )
+
+    docs = list(cursor)
+    if not docs:
+        return 0
+
+    updates = []
+    for doc in docs:
+        msg_id = doc["message_id"]
+
+        payload = {
+            "message_id": msg_id,
+            "user_tags": doc.get("user_tags", []),
+            "is_private": doc.get("is_private", False),
+            "is_hidden": doc.get("is_hidden", False),
+            "is_deleted": doc.get("is_deleted", False),
+            "project_id": qdrant_connector.safe_str(doc.get("project_id")),
+            "remembered": doc.get("remembered", False),
+        }
+
+        updates.append({
+            "message_id": msg_id,
+            "payload": payload,
+        })
+
+    # Qdrant: payload-only update
+    qdrant_connector.update_payload_for_messages(updates)
+
+    # Mongo: bump indexed_on
+    now = datetime.now(timezone.utc)
+    coll.update_many(
+        {"message_id": {"$in": message_ids}},
+        {"$set": {"indexed_on": now}},
+    )
+    print(f"Metadata Indexed for: {message_ids}")
+
+    return len(updates)

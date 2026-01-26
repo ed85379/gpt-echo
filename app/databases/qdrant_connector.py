@@ -1,9 +1,9 @@
+from typing import Sequence, List, Dict, Any
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 from qdrant_client import models as rest
 from sentence_transformers import SentenceTransformer
 import uuid, bson
-from typing import Sequence
 from app.config import muse_config
 
 QDRANT_HOST = muse_config.get("QDRANT_HOST")
@@ -173,3 +173,24 @@ def delete_point(point_id_str: str, collection_name: str):
             points=[point_id]
         )
     )
+
+def update_payload_for_messages(
+    updates: List[Dict[str, Any]],
+    collection: str = QDRANT_COLLECTION,
+):
+    """
+    updates: list of {"message_id": str, "payload": {...}} dicts.
+    Does NOT touch vectors, only payload.
+    """
+    if not updates:
+        return
+
+    for u in updates:
+        msg_id = u["message_id"]
+        payload = u["payload"]
+
+        qdrant.set_payload(
+            collection_name=collection,
+            payload=payload,  # single dict
+            points=[message_id_to_uuid(msg_id)],
+        )
