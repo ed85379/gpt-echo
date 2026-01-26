@@ -298,3 +298,12 @@ def parse_iso_datetime(value: str) -> datetime | None:
         return dt
     except Exception:
         return None
+
+def ensure_aware_utc(dt):
+    if dt is None:
+        return None
+    # If naive, assume it’s already UTC and attach tzinfo
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    # Otherwise, convert to UTC
+    return dt.astimezone(timezone.utc)

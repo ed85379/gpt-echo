@@ -163,74 +163,78 @@ def set_motd(text: str):
     return bool(result)
 
 async def create_time_skip(message_id: str):
-        time_start_mid = message_id
-        # Find timestamp from message_id
-        start_msg = mongo.find_one_document(
-            "muse_conversations",
-            { "message_id": time_start_mid },
-            { "timestamp": 1, "project_id": 1, "_id": 0 }
-        )
-        if not start_msg:
-            return  # or raise/log, but don’t continue
-        # Pull the timestamp for the states doc
-        start_ts = start_msg.get("timestamp")
-        # Pull the project_id for setting the active project
-        project_id = start_msg.get("project_id")
+    from app.core.time_location_utils import ensure_aware_utc
+    time_start_mid = message_id
+    # Find timestamp from message_id
+    start_msg = mongo.find_one_document(
+        "muse_conversations",
+        { "message_id": time_start_mid },
+        { "timestamp": 1, "project_id": 1, "_id": 0 }
+    )
+    if not start_msg:
+        return  # or raise/log, but don’t continue
+    # Pull the timestamp for the states doc
+    start_ts = start_msg.get("timestamp")
+    # Normalize to aware UTC datetime
+    start_ts_utc = ensure_aware_utc(start_ts)
+    # Pull the project_id for setting the active project
+    project_id = start_msg.get("project_id")
 
-        # Generate end message_id and message
-        end_timestamp = datetime.now(timezone.utc)
-        htime = humanize.naturaltime(start_ts, when=end_timestamp)
-        source = "system"
-        role = "system"
-        message = (
-            f"{muse_config.get('USER_NAME')} has returned to a previous conversation from {htime}.\n"
-            "The previous messages will appear to be from the past, but consider them directly preceding "
-            "the following messages."
-        )
-        # Build msg dict to get the end message_id
-        msg = {
-            "source": source,
+    # Generate end message_id and message
+    end_timestamp = datetime.now(timezone.utc)
+
+    htime = humanize.naturaltime(start_ts_utc, when=end_timestamp)
+    source = "system"
+    role = "system"
+    message = (
+        f"{muse_config.get('USER_NAME')} has returned to a previous conversation from {htime}.\n"
+        "The previous messages will appear to be from the past, but consider them directly preceding "
+        "the following messages."
+    )
+    # Build msg dict to get the end message_id
+    msg = {
+        "source": source,
+        "role": role,
+        "timestamp": end_timestamp,
+        "message": message,
+    }
+    time_end_mid = assign_message_id(msg)
+
+    # Create the message in the Mongo conversation log
+    try:
+        await log_queue.put({
             "role": role,
-            "timestamp": end_timestamp,
             "message": message,
-        }
-        time_end_mid = assign_message_id(msg)
+            "source": source,
+            "timestamp": end_timestamp,
+            "skip_index": True
+        })
+    except Exception as e:
+        print(f"Logging error: {e}")
 
-        # Create the message in the Mongo conversation log
-        try:
-            await log_queue.put({
-                "role": role,
-                "message": message,
-                "source": source,
-                "timestamp": end_timestamp,
-                "skip_index": True
-            })
-        except Exception as e:
-            print(f"Logging error: {e}")
+    # Add time_skip anchor state doc
+    set_fields = {
+        "time_skip.pollable": True,
+        "time_skip.start.message_id": time_start_mid,
+        "time_skip.start.timestamp": start_ts,
+        "time_skip.end.message_id": time_end_mid,
+        "time_skip.end.timestamp": end_timestamp,
+        "time_skip.active": True
+    }
+    mongo_system.update_one_document(
+        STATES_COLLECTION,
+        {"type": STATES_DOC},
+        set_fields,
+    )
 
-        # Add time_skip anchor state doc
-        set_fields = {
-            "time_skip.pollable": True,
-            "time_skip.start.message_id": time_start_mid,
-            "time_skip.start.timestamp": start_ts,
-            "time_skip.end.message_id": time_end_mid,
-            "time_skip.end.timestamp": end_timestamp,
-            "time_skip.active": True
-        }
+    # Set the active project_id for the UI
+    if project_id is not None:
         mongo_system.update_one_document(
             STATES_COLLECTION,
             {"type": STATES_DOC},
-            set_fields,
+            {"projects.project_id": str(project_id)},
         )
-
-        # Set the active project_id for the UI
-        if project_id is not None:
-            mongo_system.update_one_document(
-                STATES_COLLECTION,
-                {"type": STATES_DOC},
-                {"projects.project_id": str(project_id)},
-            )
-        return True
+    return True
 
 def get_active_time_skip_window(excluded_project_ids=None):
     """
