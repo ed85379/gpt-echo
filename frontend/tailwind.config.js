@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+const defaultTheme = require("tailwindcss/defaultTheme");
+
 module.exports = {
     darkMode: ["class"],
     content: [
@@ -7,6 +9,14 @@ module.exports = {
   ],
   theme: {
   	extend: {
+      fontFamily: {
+        mono: [
+          "Fira Code",
+          "JetBrains Mono",
+          "Cascadia Code",
+          ...defaultTheme.fontFamily.mono,
+        ],
+      },
   		animation: {
   			'pulse-border': 'pulseBorder 1.5s ease-in-out infinite'
   		},
