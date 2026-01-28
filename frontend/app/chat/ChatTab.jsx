@@ -43,6 +43,14 @@ function HistoryOffIcon(props) {
 const ChatTab = (
   {
     setSpeaking,
+    speak,
+    setIsTTSPlaying,
+    isTTSPlaying,
+    audioSourceRef,
+    audioCtxRef,
+    Equalizer,
+    setSpeakingMessageId,
+    speakingMessageId,
     selectedProjectId,
     focus,
     autoAssign,
@@ -61,7 +69,7 @@ const ChatTab = (
   const [lastTTS, setLastTTS] = useState(null);
   const [thinking, setThinking] = useState(false);
   const [connecting, setConnecting] = useState(true);
-  const [isTTSPlaying, setIsTTSPlaying] = useState(false);
+
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [scrollToBottom, setScrollToBottom] = useState(true);
@@ -83,8 +91,7 @@ const ChatTab = (
   const chatEndRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
-  const audioCtxRef = useRef(null);
-  const audioSourceRef = useRef(null);
+
   const scrollContainerRef = useRef(null);
   const messageRefs = useRef({});
   const { museProfile, museProfileLoading, uiStates } = useConfig();
@@ -618,63 +625,7 @@ const ChatTab = (
     clearEphemeralFiles();
   };
 
-  const speak = async (text, onDone) => {
-    setSpeaking(true);
-    setIsTTSPlaying(true);
 
-    // If audio is playing, stop it
-    if (audioSourceRef.current) {
-      try {
-        audioSourceRef.current.stop();
-      } catch (e) {}
-      audioSourceRef.current = null;
-    }
-    if (audioCtxRef.current) {
-      try {
-        audioCtxRef.current.close();
-      } catch (e) {}
-      audioCtxRef.current = null;
-    }
-
-    const response = await fetch("/api/tts/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!response.ok) {
-      setSpeaking(false);
-      setIsTTSPlaying(false);
-      if (onDone) onDone();
-      return;
-    }
-    const reader = response.body.getReader();
-    const audioCtx = new window.AudioContext();
-    audioCtxRef.current = audioCtx; // Track for stopping
-    const source = audioCtx.createBufferSource();
-    audioSourceRef.current = source; // Track for stopping
-    const chunks = [];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(...value);
-    }
-
-    const buffer = new Uint8Array(chunks).buffer;
-    audioCtx.decodeAudioData(buffer, (decoded) => {
-      if (!audioCtxRef.current) return; // canceled before playback started
-      source.buffer = decoded;
-      source.connect(audioCtx.destination);
-      source.start(0);
-      source.onended = () => {
-        setSpeaking(false);
-        setIsTTSPlaying(false);
-        audioSourceRef.current = null;
-        audioCtxRef.current = null;
-        if (onDone) onDone();
-      };
-    });
-  };
 
 
   const handleKeyDown = (e) => {
@@ -698,32 +649,6 @@ const ChatTab = (
             />
             <span className="text-sm text-neutral-300">Auto-TTS</span>
           </label>
-          <button
-            onClick={() => {
-              if (isTTSPlaying) {
-                if (audioSourceRef.current) {
-                  try {
-                    audioSourceRef.current.stop();
-                  } catch (e) {}
-                  audioSourceRef.current = null;
-                }
-                if (audioCtxRef.current) {
-                  try {
-                    audioCtxRef.current.close();
-                  } catch (e) {}
-                  audioCtxRef.current = null;
-                }
-                setIsTTSPlaying(false);
-                setSpeaking(false);
-              } else if (lastTTS && !connecting) {
-                speak(lastTTS, () => setIsTTSPlaying(false));
-              }
-            }}
-            className="text-sm text-purple-300 hover:underline"
-            disabled={connecting || !lastTTS}
-          >
-            {isTTSPlaying ? "⏹️ Stop" : "▶️ Play"}
-          </button>
         </div>
       {/*}
       <div className="flex items-center justify-end px-2 py-1 text-xs text-neutral-400 gap-2">
@@ -856,6 +781,16 @@ const ChatTab = (
               onAddTag,
               onRemoveTag,
               mode,
+              audioSourceRef,
+              audioCtxRef,
+              isTTSPlaying,
+              setIsTTSPlaying,
+              speak,
+              connecting,
+              setSpeaking,
+              Equalizer,
+              setSpeakingMessageId,
+              speakingMessageId,
               multiSelectEnabled,
               isSelected: selectedMessageIds.includes(msg.message_id),
               onToggleSelect: handleToggleSelect,

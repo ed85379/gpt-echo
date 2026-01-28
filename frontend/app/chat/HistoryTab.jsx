@@ -48,7 +48,16 @@ function getMonthRange(date) {
 }
 
 const HistoryTab = ({
-    onReturnToThisMoment
+    onReturnToThisMoment,
+    setSpeaking,
+    speak,
+    setIsTTSPlaying,
+    isTTSPlaying,
+    audioSourceRef,
+    audioCtxRef,
+    Equalizer,
+    setSpeakingMessageId,
+    speakingMessageId
   }) => {
   const [source, setSource] = useState("Frontend");
   const [calendarStatus, setCalendarStatus] = useState({});
@@ -593,6 +602,15 @@ const HistoryTab = ({
                       onAddTag={onAddTag}
                       onRemoveTag={onRemoveTag}
                       mode={mode}
+                      audioSourceRef={audioSourceRef}
+                      audioCtxRef={audioCtxRef}
+                      isTTSPlaying={isTTSPlaying}
+                      setIsTTSPlaying={setIsTTSPlaying}
+                      speak={speak}
+                      setSpeaking={setSpeaking}
+                      Equalizer={Equalizer}
+                      setSpeakingMessageId={setSpeakingMessageId}
+                      speakingMessageId={speakingMessageId}
                       onReturnToThisMoment={onReturnToThisMoment}
                       multiSelectEnabled={multiSelectEnabled}
                       isSelected={selectedMessageIds.includes(msg.message_id)}

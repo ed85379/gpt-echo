@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import ChatTab from './ChatTab';
 import HistoryTab from './HistoryTab';
 import { useConfig } from '@/hooks/ConfigContext';
@@ -20,7 +20,118 @@ export default function ChatPage() {
   const { uiStates, loading: uiStatesLoading } = useConfig();
   const initialProjectId = uiStates?.projects?.project_id ?? "";
   const motd = uiStates?.motd?.text ?? "";
+  const audioCtxRef = useRef(null);
+  const audioSourceRef = useRef(null);
+  const [isTTSPlaying, setIsTTSPlaying] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState(null);
 
+  const speak = useCallback(
+    async (msg, onDone) => {
+      const text = msg.text;
+
+      setSpeaking(true);
+      setSpeakingMessageId(msg.message_id);
+      setIsTTSPlaying(true);
+
+      // Stop any existing playback
+      if (audioSourceRef.current) {
+        try {
+          audioSourceRef.current.stop();
+        } catch (e) {}
+        audioSourceRef.current = null;
+      }
+      if (audioCtxRef.current) {
+        try {
+          audioCtxRef.current.close();
+        } catch (e) {}
+        audioCtxRef.current = null;
+      }
+
+      let cancelled = false;
+
+      try {
+        const response = await fetch("/api/tts/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+
+        if (!response.ok) {
+          throw new Error("TTS request failed");
+        }
+
+        const reader = response.body.getReader();
+        const audioCtx = new window.AudioContext();
+        audioCtxRef.current = audioCtx;
+
+        const source = audioCtx.createBufferSource();
+        audioSourceRef.current = source;
+
+        const chunks = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(...value);
+        }
+
+        if (cancelled) return;
+
+        const buffer = new Uint8Array(chunks).buffer;
+
+        // IMPORTANT: capture the ctx we created
+        const thisCtx = audioCtx;
+        const thisSource = source;
+
+        audioCtx.decodeAudioData(buffer, (decoded) => {
+          // Bail if we’ve since started another speak()
+          if (audioCtxRef.current !== thisCtx) return;
+          if (!decoded) return;
+
+          thisSource.buffer = decoded;
+          thisSource.connect(thisCtx.destination);
+          thisSource.start(0);
+
+          thisSource.onended = () => {
+            // Only clean up if we’re still the active one
+            if (audioSourceRef.current === thisSource) {
+              audioSourceRef.current = null;
+            }
+            if (audioCtxRef.current === thisCtx) {
+              audioCtxRef.current = null;
+            }
+            setSpeaking(false);
+            setIsTTSPlaying(false);
+            if (onDone) onDone();
+          };
+        });
+      } catch (err) {
+        // Any error → reset state
+        if (!cancelled) {
+          setSpeaking(false);
+          setIsTTSPlaying(false);
+          if (onDone) onDone();
+        }
+      }
+
+      // Optional: if you ever want to support explicit cancellation:
+      return () => {
+        cancelled = true;
+      };
+    },
+    [audioCtxRef, audioSourceRef, setSpeaking, setIsTTSPlaying, setSpeakingMessageId]
+  );
+
+  function Equalizer({ isActive }) {
+    if (!isActive) return null;
+
+    return (
+      <span className="ml-1 equalizer">
+        <span className="equalizer-bar" />
+        <span className="equalizer-bar" />
+        <span className="equalizer-bar" />
+      </span>
+    );
+  }
 
   const handleReturnToThisMoment = async (message_id: string) => {
     const res = await fetch(`/api/time_skip/${message_id}`, {
@@ -229,6 +340,14 @@ export default function ChatPage() {
               ephemeralFiles={ephemeralFiles}
               setEphemeralFiles={setEphemeralFiles}
               handleEphemeralUpload={handleEphemeralUpload}
+              speak={speak}
+              setIsTTSPlaying={setIsTTSPlaying}
+              isTTSPlaying={isTTSPlaying}
+              audioSourceRef={audioSourceRef}
+              audioCtxRef={audioCtxRef}
+              Equalizer={Equalizer}
+              setSpeakingMessageId={setSpeakingMessageId}
+              speakingMessageId={speakingMessageId}
             />
           </div>
           <div className="flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">
@@ -268,6 +387,15 @@ export default function ChatPage() {
         <div className="flex-1 min-h-0 px-6 bg-neutral-950 text-white">
           <HistoryTab
             onReturnToThisMoment={handleReturnToThisMoment}
+            setSpeaking={setSpeaking}
+            speak={speak}
+            setIsTTSPlaying={setIsTTSPlaying}
+            isTTSPlaying={isTTSPlaying}
+            audioSourceRef={audioSourceRef}
+            audioCtxRef={audioCtxRef}
+            Equalizer={Equalizer}
+            setSpeakingMessageId={setSpeakingMessageId}
+            speakingMessageId={speakingMessageId}
           />
         </div>
       )}
