@@ -307,3 +307,17 @@ def ensure_aware_utc(dt):
         return dt.replace(tzinfo=timezone.utc)
     # Otherwise, convert to UTC
     return dt.astimezone(timezone.utc)
+
+def build_date_query(date_str: str):
+    # date_str is "YYYY-MM-DD" as clicked in the UI, in *local* terms
+    local_start = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=ZoneInfo(muse_config.get("USER_TIMEZONE")))
+    local_end = local_start + timedelta(days=1)
+
+    # Convert to UTC for querying Mongo (timestamps are stored in UTC)
+    utc_start = local_start.astimezone(timezone.utc)
+    utc_end = local_end.astimezone(timezone.utc)
+
+    query = {
+        "timestamp": {"$gte": utc_start, "$lt": utc_end}
+    }
+    return query
