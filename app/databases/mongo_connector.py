@@ -1,6 +1,8 @@
 # app/databases/mongo_connector.py
-
+from typing import Optional, Dict, Any
 from pymongo import MongoClient, ASCENDING
+from pymongo.database import Database
+from pymongo.collection import Collection
 from datetime import datetime
 
 MONGO_URI = "mongodb://localhost:27017/"
@@ -10,6 +12,35 @@ class MongoConnector:
         self.client = MongoClient(uri)
         self.db = self.client[db_name]
         # Example: self.db['muse_log']
+
+    def ensure_mongo_collection(self,
+            collection_name: str,
+            *,
+            create_options: Optional[Dict[str, Any]] = None,
+    ) -> Collection:
+        """
+        Ensure a MongoDB collection exists and return a handle to it.
+
+        - If the collection already exists, just return db[name].
+        - If it doesn't, create it (optionally with options) and return it.
+
+        `create_options` can include things like:
+          - capped: bool
+          - size: int
+          - max: int
+          - validator: dict
+          - validationLevel: str
+          - validationAction: str
+          - etc.
+        """
+        if collection_name in self.db.list_collection_names():
+            return self.db[collection_name]
+
+        create_options = create_options or {}
+
+        # This will create the collection if it doesn't exist.
+        self.db.create_collection(collection_name, **create_options)
+        return self.db[collection_name]
 
     def get_collection(self, collection_name):
         return self.db[collection_name]

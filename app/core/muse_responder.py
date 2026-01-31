@@ -1044,6 +1044,9 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     dev_prompt, user_prompt = build_speak_prompt(subject=subject, payload=payload, destination="frontend")
 
     response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_config.get("OPENAI_MODEL"))
+    # Normalize muse-experience tags outside of fenced code blocks
+    response = normalize_muse_experience_tags(response)
+
     timestamp = datetime.now(timezone.utc).isoformat()
     send_to_websocket(response, to, timestamp)
 

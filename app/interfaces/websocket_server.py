@@ -1,60 +1,113 @@
-# app/websocket_server.py
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import Dict, Set
+from dataclasses import dataclass, field
+from typing import Dict, Set, List
 import json
 from app.databases.memory_indexer import assign_message_id
 
 router = APIRouter()
 
-# Maintain separate connection pools by role
-active_connections: Dict[str, Set[WebSocket]] = {
-    "frontend": set(),
-    "speaker": set(),
-    "discord": set()
+
+@dataclass
+class ClientConnection:
+    websocket: WebSocket
+    modality: str
+    channels: Set[str] = field(default_factory=set)
+
+# Maintain separate connection pools by modality
+active_connections: Dict[str, List[ClientConnection]] = {
+    "frontend": [],
+    "speaker": [],
+    "discord": [],
 }
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
-        # Expect client to identify its role first
         init_msg = await websocket.receive_json()
-        role = init_msg.get("listen_as", "frontend")
-        print(f"New {role} connection")
-        active_connections.setdefault(role, set()).add(websocket)
+        modality = init_msg.get("listen_as", "frontend")
+        print(f"New {modality} connection")
+
+        client = ClientConnection(websocket=websocket, modality=modality)
+
+        # Default subscriptions by modality
+        if modality == "frontend":
+            # global UI + chat by default
+            client.channels.update({"muse-actions", "muse-chat", "muse-thread"})
+        elif modality == "speaker":
+            client.channels.add("speaker")
+        elif modality == "discord":
+            client.channels.add("discord")
+
+        active_connections.setdefault(modality, []).append(client)
 
         while True:
-            data = await websocket.receive_text()
-            print(f"[{role}] Received from client: {data}")
-            await websocket.send_text(f"Muse ({role}): {data}")
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                print(f"[{modality}] Non-JSON message: {raw}")
+                continue
+
+            action = msg.get("action")
+
+            if modality == "frontend" and action in ("subscribe", "unsubscribe"):
+                new_channels = set(msg.get("channels", []))
+                if action == "subscribe":
+                    client.channels.update(new_channels)
+                else:
+                    client.channels.difference_update(new_channels)
+                print(f"[frontend] {action} {new_channels}, now: {client.channels}")
+                continue
+
+            # fallback echo
+            print(f"[{modality}] Received from client: {raw}")
+            await websocket.send_text(f"Muse ({modality}): {raw}")
 
     except WebSocketDisconnect:
-        for role, connections in active_connections.items():
-            if websocket in connections:
-                connections.remove(websocket)
-                print(f"{role} client disconnected")
+        for modality, connections in active_connections.items():
+            for c in list(connections):
+                if c.websocket is websocket:
+                    connections.remove(c)
+                    print(f"{modality} client disconnected")
 
-# Broadcast to all clients listening under a given role
-async def broadcast_message(message: str, timestamp: str, to: str = "frontend", project_id: str = ""):
+# Broadcast to all clients listening under a given modality
+async def broadcast_message(
+    message: str,
+    timestamp: str,
+    role: str,
+    *,
+    to_modality: str = "frontend",
+    channels: Set[str] | None = None,
+    project_id: str = "",
+    thread_id: str = "",
+    payload_type: str = "muse_message",
+):
+    if channels is None:
+        channels = {"muse-chat"}  # default lane for plain messages
+
     msg_dict = {
         "timestamp": timestamp,
-        "role": "muse",
+        "role": role,
         "source": "frontend",
-        "message": message
+        "message": message,
     }
     message_id = assign_message_id(msg_dict)
-    connections = active_connections.get(to, set())
-    print(f"Broadcasting to {to}: {message} ({len(connections)} clients)")
-    for connection in list(connections):
-        try:
-            await connection.send_text(json.dumps({
-                "type": "muse_message",
-                "message": message,
-                "message_id": message_id,
-                "project_id": project_id,
-                "to": to
-            }))
 
+    connections = active_connections.get(to_modality, [])
+    print(f"Broadcasting {payload_type} to {to_modality} on {channels} ({len(connections)} clients)")
+
+    for client in list(connections):
+        try:
+            if client.channels.intersection(channels):
+                await client.websocket.send_text(json.dumps({
+                    "type": payload_type,
+                    "message": message,
+                    "role": role,
+                    "message_id": message_id,
+                    "project_id": project_id,
+                    "thread_id": thread_id,
+                    "channels": list(channels),
+                }))
         except Exception:
-            connections.remove(connection)
+            connections.remove(client)

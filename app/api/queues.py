@@ -22,8 +22,9 @@ async def run_broadcast_queue(
             # Adjust keys as needed for your message dict!
             await broadcast_message(
                 message=msg["message"],
+                role=msg["role"],
                 timestamp=msg.get("timestamp"),
-                to=msg.get("to", "frontend"),
+                to_modality=msg.get("to", "frontend"),
                 project_id=msg.get("project_id", "")
             )
         except Exception as e:
