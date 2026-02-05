@@ -41,6 +41,28 @@ def get_projects():
 
     return {"projects": result[::-1]}
 
+@router.get("/{key}")
+def get_project(key: str):
+    query = {"_id": ObjectId(key)}
+    project = mongo.find_one_document(
+        collection_name=MONGO_PROJECTS_COLLECTION,
+        query=query,
+    )
+    project = {
+        "_id": str(project["_id"]),
+        "name": project.get("name") or "",
+        "description": project.get("description") or "",
+        "shortdesc": project.get("shortdesc") or "",
+        "tags": project.get("tags", []),
+        "notes": project.get("notes", []),
+        "is_hidden": project.get("is_hidden", False),
+        "is_private": project.get("is_private", False),
+        "archived": project.get("archived", False),
+        "code_intensity": project.get("code_intensity", "MIXED")
+    }
+
+    return {"project": project}
+
 @router.post("/")
 def create_project():
     now = datetime.utcnow()
