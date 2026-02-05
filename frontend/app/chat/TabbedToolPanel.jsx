@@ -1,9 +1,13 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import ProjectsPanel from "./ProjectsPanel";
+import { useConfig } from '@/hooks/ConfigContext';
+import { updateNavState } from "@/utils/statesFunctions";
+
 
 const TABS = [
   { key: "projects", label: "Projects" },
+  { key: "threads", label: "Threads" },
   { key: "muse", label: "Muse" },
   { key: "games", label: "Games" },
   { key: "files", label: "Files" }
@@ -41,29 +45,41 @@ export default function TabbedToolPanel(
     filesLoading,
     setFilesLoading,
     filesError,
-    handlePinToggle
+    handlePinToggle,
+    threads,
+    threadMap,
   }
 ) {
+  const { uiStates } = useConfig();
   const [activeTab, setActiveTab] = useState("projects");
+
+  useEffect(() => {
+    if (uiStates?.nav?.tools_panel_tab) {
+      setActiveTab(uiStates.nav.tools_panel_tab);
+    }
+  }, [uiStates]);
 
   return (
     <div className="flex flex-col bg-neutral-950 rounded-b-xl shadow-inner overflow-hidden h-full">
       <div className="flex gap-1 border-b border-neutral-800 bg-neutral-900/80 px-2">
-        {TABS.map(tab => (
-          <button
-            key={tab.key}
-            className={`px-3 py-2 text-sm rounded-t-md font-semibold transition
-              ${activeTab === tab.key
-                ? 'text-purple-200 bg-neutral-900 border-b-2 border-purple-700'
-                : 'text-purple-400 hover:bg-neutral-800/70'
-              }`
-            }
-            onClick={() => setActiveTab(tab.key)}
-            tabIndex={0}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {TABS.map(tab => (
+        <button
+          key={tab.key}
+          className={`px-3 py-2 text-sm rounded-t-md font-semibold transition
+            ${activeTab === tab.key
+              ? 'text-purple-200 bg-neutral-900 border-b-2 border-purple-700'
+              : 'text-purple-400 hover:bg-neutral-800/70'
+            }`
+          }
+          onClick={() => {
+            setActiveTab(tab.key);
+            updateNavState({ tools_panel_tab: tab.key });
+          }}
+          tabIndex={0}
+        >
+          {tab.label}
+        </button>
+      ))}
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === "projects" && (
@@ -87,6 +103,12 @@ export default function TabbedToolPanel(
             filesError={filesError}
             handlePinToggle={handlePinToggle}
           />
+        )}
+        {activeTab === "threads" && (
+          <div>
+            {/* Placeholder content */}
+            <p className="text-neutral-300">Threads.</p>
+          </div>
         )}
         {activeTab === "muse" && (
           <div>

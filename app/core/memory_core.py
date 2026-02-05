@@ -4,17 +4,13 @@ import time
 import asyncio
 import re
 from datetime import datetime, timedelta, timezone
-from dateutil.parser import isoparse
 from dateutil.parser import parse as parse_datetime
-from zoneinfo import ZoneInfo
 from bson import ObjectId
 from bson.errors import InvalidId
 from sentence_transformers import SentenceTransformer, util
-from croniter import croniter
 from app import config
 from app.config import muse_config
 from app.core.utils import write_system_log, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
-from app.core.time_location_utils import align_cron_for_croniter
 from app.core import utils
 from app.databases.mongo_connector import mongo
 from app.services.openai_client import get_openai_autotags
@@ -51,6 +47,7 @@ async def log_message(
         timestamp=None,
         project_id=None,
         project_ids=None,
+        thread_ids=None,
         skip_index: bool = False
 ):
     """
@@ -99,6 +96,9 @@ async def log_message(
         log_entry["project_id"] = ObjectId(project_id)
     if project_ids is not None:
         log_entry["project_ids"] = project_ids
+    if thread_ids is not None:
+        log_entry["thread_ids"] = thread_ids
+
 
     try:
         log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
@@ -168,12 +168,33 @@ def get_excluded_project_ids(public: bool = False) -> set:
     )
     return {p["_id"] for p in projects}
 
+def get_excluded_thread_ids(public: bool = False) -> set:
+    query = {"is_hidden": True}
+
+    if public:
+        # In public mode, also exclude private projects
+        query = {
+            "$or": [
+                {"is_hidden": True},
+                {"is_private": True},
+            ]
+        }
+
+    projection = {"_id": 0, "thread_id": 1}
+    threads = mongo.find_documents(
+        collection_name="muse_threads",
+        query=query,
+        projection=projection,
+    )
+    return {t["thread_id"] for t in threads}
+
 def get_immediate_context(
     n: int = 10,
     hours: int = 4,
     sources=None,
     public: bool = False,
     anchor_message_id: str | None = None,
+    thread_id=None,
 ):
     """
     Return a list of messages, starting from a moment and working backward.
@@ -203,10 +224,12 @@ def get_immediate_context(
     sources_list = list(sources)
 
     excluded_project_ids = get_excluded_project_ids(public=public)
+    excluded_thread_ids = get_excluded_thread_ids(public=public)
 
     # Ask states_core what time looks like right now (sync version)
     active_skip, skip_start, skip_end = get_active_time_skip_window(
-        excluded_project_ids=excluded_project_ids
+        excluded_project_ids=excluded_project_ids,
+        excluded_thread_ids=excluded_thread_ids
     )
 
     # 2) Base query: visibility + sources (+ public)
@@ -218,7 +241,7 @@ def get_immediate_context(
     if public:
         base_query["is_private"] = {"$ne": True}
 
-    # 3) Time clause: rolling window OR seam carve-out
+    # 3) Time clause: rolling window OR seam carve-out OR thread mode
     if active_skip and skip_start and skip_end:
         # Time-skip active: carve out the gap, no "since" filter
         time_clause: dict = {
@@ -227,12 +250,15 @@ def get_immediate_context(
                 {"timestamp": {"$gte": skip_end}},
             ]
         }
+    elif thread_id:
+        # In a thread: ignore rolling window, no time filter at all
+        time_clause = {}  # neutral, won't constrain
     else:
         # Normal flow: use the rolling window
         since = now - timedelta(hours=hours)
         time_clause: dict = {"timestamp": {"$gte": since}}
 
-    # 4) Project exclusions as their own clause
+    # 4) Project and Thread exclusions as their own clause
     project_clause = None
     if excluded_project_ids:
         excluded = list(excluded_project_ids)
@@ -240,16 +266,42 @@ def get_immediate_context(
             "$or": [
                 {"project_id": {"$nin": excluded}},   # Single-linked
                 {"project_id": {"$exists": False}},   # Unattached
-                # If you really still need project_ids (multi-link), keep this;
-                # otherwise you can drop it now that you've simplified the model.
-                {"project_ids": {"$exists": True, "$nin": excluded}},
+                {"project_ids": {"$elemMatch": {"$nin": excluded}}},
             ]
         }
 
+    thread_exclude_clause = None
+    thread_include_clause = None
+
+    if thread_id:
+        # In a thread: only messages that belong to this thread
+        thread_include_clause = {
+            "thread_ids": thread_id
+        }
+    else:
+        # Global mode: respect excluded_thread_ids
+        if excluded_thread_ids:
+            excluded = list(excluded_thread_ids)
+            thread_exclude_clause = {
+                "$or": [
+                    {"thread_ids": {"$exists": False}},
+                    {"thread_ids": {"$size": 0}},
+                    # At least one thread_id is NOT excluded
+                    {"thread_ids": {"$elemMatch": {"$nin": excluded}}},
+                ]
+            }
+
     # 5) Combine everything with $and so clauses compose instead of overwrite
-    clauses = [base_query, time_clause]
+    clauses = [base_query]
+
+    if time_clause:
+        clauses.append(time_clause)
     if project_clause is not None:
         clauses.append(project_clause)
+    if thread_include_clause is not None:
+        clauses.append(thread_include_clause)
+    elif thread_exclude_clause is not None:
+        clauses.append(thread_exclude_clause)
 
     final_query = {"$and": clauses}
 
@@ -311,6 +363,7 @@ def search_indexed_memory(
     query,
     projects_in_focus=None,     # List[str], e.g. ["proj_abc123"]
     blend_ratio=1.0,            # float: 1.0 = hard project focus, 0.1–0.99 = blended
+    thread_id=None,
     top_k=10,
     collection_name="muse_memory",
     bias_author_id=None,
@@ -320,7 +373,9 @@ def search_indexed_memory(
     penalize_muse=False,
     muse_penalty=0.05,
     recency_half_life=48,
-    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0, project_boost=1.25, non_project_penalty=0.2,
+    tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0,
+    project_boost=1.25, non_project_penalty=0.2,
+    thread_boost=1.25,
     public: bool = False
 ):
     """
@@ -334,6 +389,7 @@ def search_indexed_memory(
     QDRANT_COLLECTION = collection_name
 
     excluded_project_ids = [str(oid) for oid in get_excluded_project_ids(public=public)]
+    excluded_thread_ids = get_excluded_thread_ids(public=public)
     query_filter = {
         "must_not": [
             {"key": "is_hidden", "match": {"value": True}},
@@ -347,6 +403,11 @@ def search_indexed_memory(
     if excluded_project_ids:
         query_filter["must_not"].append(
             {"key": "project_id", "match": {"any": excluded_project_ids}}
+        )
+
+    if excluded_thread_ids:
+        query_filter["must_not"].append(
+            {"key": "thread_ids", "match": {"any": list(excluded_thread_ids)}}
         )
 
     # Project focus: hard filter for 100%
@@ -389,7 +450,8 @@ def search_indexed_memory(
             "muse_tags": hit.payload.get("muse_tags"),
             "remembered": hit.payload.get("remembered", False),
             "project_id": hit.payload.get("project_id"),
-            "project_ids": hit.payload.get("project_ids")
+            "project_ids": hit.payload.get("project_ids"),
+            "thread_ids": hit.payload.get("thread_ids"),
         }
         # Biases
         if bias_author_id and entry["metadata"].get("author_id") == bias_author_id:
@@ -404,8 +466,8 @@ def search_indexed_memory(
         entry["score"] *= tag_weight(entry, tag_boost, muse_boost, remembered_boost, project_boost)
         results.append(entry)
 
-    # Filter out entries with only hidden project_ids (for files, etc.)
     filtered_results = []
+    # Filter out entries with only hidden project_ids (for files, etc.)
     for entry in results:
         pids = entry.get("project_ids")
         if pids is not None:
@@ -417,6 +479,37 @@ def search_indexed_memory(
                 filtered_results.append(entry)
         else:
             filtered_results.append(entry)
+
+    # Filter out entries with only hidden thread_ids
+    for entry in results:
+        tids = entry.get("thread_ids")
+        if tids is not None:
+            if not tids:
+                filtered_results.append(entry)
+            elif all(tid in excluded_thread_ids for tid in tids):
+                continue
+            else:
+                filtered_results.append(entry)
+        else:
+            filtered_results.append(entry)
+
+    if thread_id:
+        for i, entry in enumerate(filtered_results):
+            tids = entry.get("thread_ids") or []
+            if thread_id in tids:
+                pre_score = entry["score"]
+                entry["score"] *= thread_boost  # e.g. 1.25
+                post_score = entry["score"]
+
+                # Optional tiny debug, mirroring the project blend logging
+                if i < 5:
+                    print(
+                        f"[Thread Focus] entry[{i}] id={entry.get('message_id')[:6]}..., "
+                        f"thread_match=True, "
+                        f"thread_id={thread_id}, "
+                        f"tids={tids}, "
+                        f"pre={pre_score:.3f}, post={post_score:.3f}"
+                    )
 
     # Project focus blending: only if 10-99% (not hard filter)
     if projects_in_focus and 0.0 < blend_ratio < 1.0:

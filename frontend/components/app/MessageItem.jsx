@@ -98,40 +98,52 @@ function MuseBlock({ museType, text }) {
 const MessageItem = React.memo(
   React.forwardRef(function MessageItemInner(props, ref) {
     const {
+      audioControls,
       msg,
+      setMessages,
+      setThreadMessages,
       projects,
       projectsLoading,
       projectMap,
-      onSetProject,
-      onClearProject,
-      onAddTag,
-      onRemoveTag,
-      onTogglePrivate,
-      onToggleHidden,
-      onToggleRemembered,
-      onDelete,
+
+      threads,
+
+
       tagDialogOpen,
       setTagDialogOpen,
       projectDialogOpen,
       setProjectDialogOpen,
       museName,
       mode,
-      audioSourceRef,
-      audioCtxRef,
-      isTTSPlaying,
-      setIsTTSPlaying,
-      speak,
       connecting,
-      setSpeaking,
-      Equalizer,
-      setSpeakingMessageId,
-      speakingMessageId,
+
+
+
       onReturnToThisMoment,
       multiSelectEnabled,
       isSelected,
       onToggleSelect,
+
+      setShowSingleThreadPanel,
+      setThreadPanelOpen,
+      showSingleThreadPanel,
+      handleCreateThread,
+      handleJoinThread,
+      handleLeaveThread,
+      clearSelectionAndExit,
     } = props;
   if (!msg) return <div>[No message]</div>;
+
+  const {
+    audioSourceRef,
+    audioCtxRef,
+    isTTSPlaying,
+    setIsTTSPlaying,
+    speak,
+    setSpeaking,
+    Equalizer,
+    speakingMessageId,
+  } = audioControls;
 
   const rawText = msg.message || msg.text || "";
   const blocks = splitCustomBlocks(rawText);
@@ -461,17 +473,10 @@ const MessageItem = React.memo(
 
           <MessageActions
             msg={msg}
+            setMessages={setMessages}
+            setThreadMessages={setThreadMessages}
             projects={projects}
             projectsLoading={projectsLoading}
-            projectMap={projectMap}
-            onSetProject={onSetProject}
-            onClearProject={onClearProject}
-            onAddTag={onAddTag}
-            onRemoveTag={onRemoveTag}
-            onTogglePrivate={onTogglePrivate}
-            onToggleHidden={onToggleHidden}
-            onToggleRemembered={onToggleRemembered}
-            onDelete={onDelete}
             tagDialogOpen={tagDialogOpen}
             setTagDialogOpen={setTagDialogOpen}
             projectDialogOpen={projectDialogOpen}
@@ -481,15 +486,23 @@ const MessageItem = React.memo(
             multiSelectEnabled={multiSelectEnabled}
             isSelected={isSelected}
             onToggleSelect={onToggleSelect}
+            threads={threads}
+            setShowSingleThreadPanel={setShowSingleThreadPanel}
+            setThreadPanelOpen={setThreadPanelOpen}
+            showSingleThreadPanel={showSingleThreadPanel}
+            handleCreateThread={handleCreateThread}
+            handleJoinThread={handleJoinThread}
+            handleLeaveThread={handleLeaveThread}
+            clearSelectionAndExit={clearSelectionAndExit}
           />
         </div>
 
         <div className="flex flex-wrap gap-1 mt-1 ml-2">
-          {inProject && projectMap[inProject] && (
+          {inProject && projectMap.projects[inProject] && (
             <span className="bg-purple-800 text-xs text-purple-100 px-2 py-0.5 rounded-full flex items-center gap-1">
               <BookMarked size={14} className="inline" />
               <span className="font-semibold">
-                {projectMap[inProject].name || "Project"}
+                {projectMap.projects[inProject].name || "Project"}
               </span>
             </span>
           )}

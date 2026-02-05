@@ -25,7 +25,7 @@ from app.core.reminders_core import get_cron_description_safe, humanize_time, fo
 from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
 from app.services.openai_client import speak_openai_client, journal_openai_client
 from app.api.queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
-
+from app.interfaces.websocket_server import broadcast_message
 
 
 CMD_OPEN = re.compile(r"\[COMMAND:\s*([^\]]+)\]\s*", re.DOTALL)
@@ -1005,8 +1005,16 @@ def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay
 def handle_set_motd(payload, source=None):
     text = payload.get("text", "")
     if set_motd(text):
+        timestamp = datetime.now(timezone.utc).isoformat()
+        asyncio.create_task(broadcast_message(
+            message=text,
+            timestamp=timestamp,
+            role="muse",
+            to_modality="frontend",
+            payload_type="motd_update",
+        ))
         if source:
-            timestamp = datetime.now(timezone.utc).isoformat()
+
             try:
                 asyncio.create_task(log_queue.put({
                     "role": "system",

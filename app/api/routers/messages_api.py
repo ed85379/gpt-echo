@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body, Query
+from fastapi import APIRouter, HTTPException, Body, Query, Request
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
@@ -8,6 +8,7 @@ from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.memory_indexer import update_qdrant_metadata_for_messages
 from app.config import muse_config
 from app.api.queues import index_queue, log_queue
+from app.core.memory_core import get_excluded_thread_ids
 
 
 
@@ -23,7 +24,9 @@ def get_messages(
         after: Optional[str] = None,
         sources: Optional[List[str]] = Query(None),
         project_id: Optional[str] = None,
-        tags: Optional[List[str]] = Query(None)
+        thread_id: Optional[str] = None,
+        tags: Optional[List[str]] = Query(None),
+        public: bool = False
 ):
     query: dict = {}
 
@@ -48,6 +51,33 @@ def get_messages(
         except Exception:
             # Invalid ObjectId string—fail gracefully, or skip filter
             pass
+    if thread_id:
+        query["thread_ids"] = {"$in": [thread_id]}
+    else:
+        # 🔹 Main lane: exclude hidden/private threads
+        raw = get_excluded_thread_ids(public=public) or []
+        # If it’s a JSON-style dict like {"thread_ids": ["a", "b", ...]}
+        if isinstance(raw, dict):
+            excluded_thread_ids = raw.get("thread_ids", [])
+        else:
+            excluded_thread_ids = raw
+        # Flatten any sets / tuples into a plain list
+        excluded_thread_ids = list(excluded_thread_ids)
+        if excluded_thread_ids:
+            # Messages that either:
+            # - have no thread_ids, or
+            # - have thread_ids that do NOT intersect excluded_thread_ids
+            thread_filter = {
+                "$or": [
+                    {"thread_ids": {"$exists": False}},
+                    {"thread_ids": {"$size": 0}},
+                    {"thread_ids": {"$nin": excluded_thread_ids}},
+                ]
+            }
+            if query:
+                query = {"$and": [query, thread_filter]}
+            else:
+                query = thread_filter
     if tags:
         query["user_tags"] = {"$in": tags}
 
@@ -116,6 +146,7 @@ def get_messages(
             "remembered": msg.get("remembered", False),
             "is_deleted": msg.get("is_deleted", False),
             "project_id": str(msg["project_id"]) if msg.get("project_id") else None,
+            "thread_ids": msg.get("thread_ids", []),
             "flags": msg.get("flags", []),
             "metadata": msg.get("metadata", {}),
         }
@@ -135,6 +166,11 @@ async def log_message_endpoint(payload: dict = Body(...)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+#@router.post("/tag")
+#async def tag_message_debug(request: Request):
+#    data = await request.json()
+#    print("RAW BODY:", data)
+#    return {"ok": True}
 
 @router.post("/tag")
 async def tag_message(
@@ -146,10 +182,14 @@ async def tag_message(
     remembered: Optional[bool] = Body(None),
     is_deleted: Optional[bool] = Body(None),
     set_project: Optional[Any] = Body(None),
+    set_thread: Optional[Any] = Body(None),
+    add_threads: Optional[List[str]] = Body(None),
+    remove_threads: Optional[List[str]] = Body(None),
     exported: Optional[bool] = Body(None)
 ):
-    print(message_ids)
-    print(set_project)
+    print(f"DEBUG: message_ids - {message_ids}")
+    print(f"DEBUG: add thread_id - {add_threads}")
+    print(f"DEBUG: remove thread_ids - {remove_threads}")
     mongo_update = {}
     contentful = False
 
@@ -205,6 +245,19 @@ async def tag_message(
                 set_fields["project_id"] = set_project
         else:
             unset_fields.append("project_id")
+
+    # --- THREADS LOGIC ---
+    if set_thread:
+        mongo_update.setdefault("$addToSet", {})["thread_ids"] = set_thread
+        contentful = True
+
+    if add_threads:
+        mongo_update.setdefault("$addToSet", {})["thread_ids"] = {"$each": add_threads}
+        contentful = True
+
+    if remove_threads:
+        mongo_update.setdefault("$pullAll", {})["thread_ids"] = remove_threads
+        contentful = True
 
     # Handle exported
     if exported is not None:
@@ -326,14 +379,11 @@ def get_messages_by_day(
     source: str = Query(None, description="Optional source filter (Frontend, ChatGPT, Discord)"),
     project_id: Optional[str] = None
 ):
+    from app.core.time_location_utils import build_date_query
     # Parse to start/end of day (UTC)
-    dt = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    dt_next = dt + timedelta(days=1)
-
     # Build query
-    query = {
-        "timestamp": {"$gte": dt, "$lt": dt_next}
-    }
+    query = build_date_query(date)
+
     if source:
         query["source"] = source.lower()
     else:

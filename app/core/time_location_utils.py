@@ -72,16 +72,22 @@ def get_local_time():
     now = datetime.now(ZoneInfo(loc.timezone))
     return now.strftime("%Y-%m-%d %H:%M")
 
-def get_local_human_time(time=None):
-    """
-    Similar to get_local_time, but also specifies the day
-    """
+def get_local_human_time(time=None, time_format=None):
     loc = _load_user_location()
+    tz = ZoneInfo(loc.timezone)
+
     if time:
-        now = time
+        # Assume incoming time is UTC and convert
+        if time.tzinfo is None:
+            time = time.replace(tzinfo=ZoneInfo("UTC"))
+        now = time.astimezone(tz)
     else:
-        now = datetime.now(ZoneInfo(loc.timezone))
-    return now.strftime('%A, %B %d, %Y %I:%M %p %Z')
+        now = datetime.now(tz)
+
+    if time_format == "thread":
+        return now.strftime('%Y-%m-%d %I:%M %p')
+    else:
+        return now.strftime('%A, %B %d, %Y %I:%M %p %Z')
 
 def user_data() -> tuple[datetime, str, str]:
     loc = _load_user_location()

@@ -236,7 +236,10 @@ async def create_time_skip(message_id: str):
         )
     return True
 
-def get_active_time_skip_window(excluded_project_ids=None):
+def get_active_time_skip_window(
+    excluded_project_ids=None,
+    excluded_thread_ids=None,
+):
     """
     Return (active, start_ts, end_ts) for the current time_skip,
     after applying the auto-expire rule.
@@ -263,16 +266,30 @@ def get_active_time_skip_window(excluded_project_ids=None):
             "is_hidden": {"$ne": True},
             "source": {"$in": SOURCES_CHAT}
     }
+    # Project scope
     if excluded_project_ids:
         excluded = list(excluded_project_ids)
-        query["$or"] = [
-            # Single-linked: project_id not in excluded
+        project_scope = [
             {"project_id": {"$nin": excluded}},
-            # Unattached: no project_id field at all
             {"project_id": {"$exists": False}},
-            # Multi-linked: at least one linked project is *not* excluded
             {"project_ids": {"$elemMatch": {"$nin": excluded}}},
         ]
+    else:
+        project_scope = []
+
+    # Thread scope (messages have thread_ids: [..])
+    thread_scope = []
+    if excluded_thread_ids:
+        excluded_t = list(excluded_thread_ids)
+        thread_scope.append({"thread_ids": {"$nin": excluded_t}})
+        # If you ever add a single `thread_id` field, we’d mirror that here.
+
+    if project_scope or thread_scope:
+        query["$and"] = []
+        if project_scope:
+            query["$and"].append({"$or": project_scope})
+        if thread_scope:
+            query["$and"].extend(thread_scope)
 
     recent_count = mongo.count_logs(
         "muse_conversations",
@@ -310,3 +327,59 @@ def clear_time_skip():
             {"message_id": end_mid},
             {"is_deleted": True},
         )
+
+def update_thread_state(payload: dict):
+    allowed_keys = {"open_thread_id"}
+    updates = {}
+
+    for key, value in payload.items():
+        if key not in allowed_keys:
+            continue
+
+        if key == "open_thread_id":
+            # allow None to clear
+            if value is not None and not isinstance(value, str):
+                raise ValueError("open_thread_id must be a string or null.")
+            updates["threads.open_thread_id"] = value
+
+
+    if not updates:
+        raise ValueError("No valid thread state fields to update.")
+
+    updated = mongo_system.update_one_document(
+        collection_name=STATES_COLLECTION,
+        filter_query={"type": STATES_DOC},  # your fixed states doc locator
+        update_data=updates
+    )
+
+    return updated.get("threads", {})
+
+def update_nav_state(payload: dict):
+    allowed_keys = {"main_tab", "tools_panel_tab"}
+    updates = {}
+
+    for key, value in payload.items():
+        if key not in allowed_keys:
+            continue
+
+        if key == "main_tab":
+            # allow None to clear
+            if value is not None and not isinstance(value, str):
+                raise ValueError("main_tab must be a string or null.")
+            updates["nav.main_tab"] = value
+
+        elif key == "tools_panel_tab":
+            if value is not None and not isinstance(value, str):
+                raise ValueError("tools_panel_tab must be a string or null.")
+            updates["nav.tools_panel_tab"] = value
+
+    if not updates:
+        raise ValueError("No valid nav state fields to update.")
+
+    updated = mongo_system.update_one_document(
+        collection_name=STATES_COLLECTION,
+        filter_query={"type": STATES_DOC},  # your fixed states doc locator
+        update_data=updates
+    )
+
+    return updated.get("nav", {})

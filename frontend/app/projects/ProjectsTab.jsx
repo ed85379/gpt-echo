@@ -46,21 +46,21 @@ function ProjectsTab() {
   const [showArchived, setShowArchived] = useState(false);
   const [toggleLoading, setToggleLoading] = useState(false);
 
-    const handleAddProject = async () => {
-      try {
-        // Optionally: disable button here if you want
-        const res = await fetch("/api/projects", { method: "POST" });
-        if (!res.ok) throw new Error("Failed to create project");
-        const project = await res.json();
-        // If your backend returns only the project ID: { "_id": ... }
-        // If it returns the full project object, adapt accordingly below.
-        await fetchProjects();
-        // After re-fetching, select the new project
-        setSelectedProjectId(project._id || project.project_id);
-      } catch (e) {
-        alert("Could not add project:\n" + e);
-      }
-    };
+  const handleAddProject = async () => {
+    try {
+      // Optionally: disable button here if you want
+      const res = await fetch("/api/projects", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to create project");
+      const project = await res.json();
+      // If your backend returns only the project ID: { "_id": ... }
+      // If it returns the full project object, adapt accordingly below.
+      await fetchProjects();
+      // After re-fetching, select the new project
+      setSelectedProjectId(project._id || project.project_id);
+    } catch (e) {
+      alert("Could not add project:\n" + e);
+    }
+  };
 
   useEffect(() => {
     fetchProjects();

@@ -1,36 +1,26 @@
+// app/chat/ChatTab.jsx
+// ChatPage layout:
+// 1) Controls
+// 2) Chat and Formatting
+// 3) Files and Attachments
+// 4) Message Actions States and Functions
+// 5) Rendering (tabs + layout)
 "use client";
 import React from "react";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Remarkable } from 'remarkable';
-import {
-  Eye,
-  EyeOff,
-  EyeClosed,
-  DoorClosed,
-  DoorClosedLocked,
-  Tags,
-  Shredder,
-  SquareX,
-  History,
-  Slash
-  } from 'lucide-react';
-import { BookDashed, BookMarked, ArrowBigDownDash, Paperclip, Pin, Sparkles } from 'lucide-react';
-import { linkify } from 'remarkable/linkify';
+import { useState, useEffect, useRef, useMemo } from "react";
+// Hooks
 import { useConfig } from '@/hooks/ConfigContext';
-import { assignMessageId, toPythonIsoString, fileToBase64, trimMessages } from '@/utils/utils';
+// Components
 import MessageItem from "@/components/app/MessageItem";
 import MultiActionBar from "@/components/app/MultiActionBar"
 import ProjectPickerPanel from "@/components/app/ProjectPickerPanel"
 import TagPanel from "@/components/app/TagPanel"
-import {
-      handleDelete,
-      handleTogglePrivate,
-      handleToggleHidden,
-      handleToggleRemembered,
-      handleMultiAction
-   } from "@/utils/messageActions";
-import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
+import ThreadPanel from "@/components/app/ThreadPanel";
+// Utils
+import { assignMessageId, toPythonIsoString, fileToBase64, trimMessages } from '@/utils/utils';
 
+// Icons
+import { ArrowBigDownDash, Paperclip, Pin, Sparkles, History, Slash } from 'lucide-react';
 function HistoryOffIcon(props) {
   return (
     <span className="relative inline-flex h-4 w-4" {...props}>
@@ -42,15 +32,35 @@ function HistoryOffIcon(props) {
 
 const ChatTab = (
   {
-    setSpeaking,
-    speak,
-    setIsTTSPlaying,
-    isTTSPlaying,
-    audioSourceRef,
-    audioCtxRef,
-    Equalizer,
-    setSpeakingMessageId,
-    speakingMessageId,
+    // General and nav
+    audioControls,
+    ephemeralFiles,
+    setEphemeralFiles,
+    handleEphemeralUpload,
+    messages,
+    setMessages,
+    threadMessages,
+    setThreadMessages,
+    wsRef,
+    connecting,
+    thinking,
+    setThinking,
+    scrollToMessageId,
+    setScrollToMessageId,
+    ACTIVE_WINDOW_LIMIT,
+    timeSkipOverride,
+    setTimeSkipOverride,
+    timeSkipActive,
+
+    // Project & Threads
+    threadId = null,
+    threadTitle = null,
+    threads,
+    threadMap,
+    projects,
+    project,
+    projectMap,
+    projectsLoading,
     selectedProjectId,
     focus,
     autoAssign,
@@ -58,190 +68,414 @@ const ChatTab = (
     files,
     setInjectedFiles,
     handlePinToggle,
-    ephemeralFiles,
-    setEphemeralFiles,
-    handleEphemeralUpload
+
+    // Message Actions
+    createThreadWithMessages,
+    multiSelectEnabled,
+    selectedMessageIds,
+    showProjectPanel,
+    setShowProjectPanel,
+    showTagPanel,
+    setShowTagPanel,
+    showThreadPanel,
+    setShowThreadPanel,
+    showSingleThreadPanel,
+    setShowSingleThreadPanel,
+    handleToggleMultiSelect,
+    handleToggleSelect,
+    onMultiAction,
+    handleCreateThread,
+    handleJoinThread,
+    handleLeaveThread,
+    tagDialogOpen,
+    setTagDialogOpen,
+    handleConfirmProject,
+    handleConfirmTagsAdd,
+    handleConfirmTagsRemove,
+    existingTagsForSelection,
+    existingThreadsForSelection,
+    clearSelectionAndExit,
   }
 ) => {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [autoTTS, setAutoTTS] = useState(false);
-  const [lastTTS, setLastTTS] = useState(null);
-  const [thinking, setThinking] = useState(false);
-  const [connecting, setConnecting] = useState(true);
+  // ------------------------------------
+  // Controls
+  // ------------------------------------
+  const {
+    autoTTS,
+    setAutoTTS,
+    } = audioControls;
 
+  const mode = "chat";
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!input.trim()) return;
+
+    // 0. Start from what we currently believe
+    let latestTimeSkip = uiStates?.time_skip;
+
+    const thinksSkipActive =
+      timeSkipOverride !== null
+        ? timeSkipOverride
+        : Boolean(latestTimeSkip?.active);
+
+    // Only bother the backend if we *think* a skip is active
+    try {
+      const res = await fetch("/api/states/time_skip");
+      if (res.ok) {
+        const data = await res.json(); // [false, null, null]
+        const latestTimeSkip = Array.isArray(data) ? data[0] : null;
+
+        // If backend says it's not active, clear the override
+        if (latestTimeSkip === false || latestTimeSkip === null) {
+          setTimeSkipOverride(false);
+
+        }
+      }
+    } catch (err) {
+      console.error("Error refreshing time_skip:", err);
+    }
+
+
+    const allFiles = [
+      ...injectedFiles,
+      ...ephemeralFiles.map(f => ({
+        name: f.name,
+        type: f.type,
+      }))
+    ];
+
+    const filenamesBlock = allFiles.length
+      ? '\n' + allFiles.map(f => `[file: ${f.name}]`).join('\n')
+      : '';
+    const timestamp = toPythonIsoString();
+    const role = "user";
+    const source = "frontend";
+    const message = input + (filenamesBlock ? '\n' + filenamesBlock : '');
+    // sets the project_id on the message immediately
+    const project_id = (autoAssign && selectedProjectId) ? selectedProjectId : "";
+    const thread_id = threadId
+    const ephemeralPayload = await Promise.all(
+      ephemeralFiles.map(async (f) => ({
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        data: await fileToBase64(f.file),
+        encoding: "base64"
+      }))
+    );
+
+    // 1. Generate the message_id (async)//
+    const message_id = await assignMessageId({
+      timestamp,
+      role,
+      source,
+      message
+    });
+
+    // 2. Add to UI state immediately (so it’s taggable, traceable, etc.)//
+    setMessages(prev =>
+      trimMessages([
+        ...prev,
+        {
+          id: message_id,
+          message_id,
+          text: message,
+          timestamp,
+          role,
+          source,
+          project_id,
+          thread_ids: [threadId],
+        }
+      ], ACTIVE_WINDOW_LIMIT)
+    );
+      if (threadId) {
+        setThreadMessages(prev =>
+          trimMessages([
+            ...prev,
+            {
+              id: message_id,
+              message_id,
+              text: message,
+              timestamp,
+              role,
+              source,
+              project_id,
+              thread_ids: [threadId],
+            }
+          ], ACTIVE_WINDOW_LIMIT)
+        );
+      }
+
+    setInput("");
+    setThinking(true);
+    setScrollToBottom(true);
+
+    // 3. Send the message to the backend, including timestamp
+    await fetch("/api/muse/talk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: message,
+        timestamp,
+        message_id,
+        project_id: selectedProjectId,
+        thread_id: threadId,
+        auto_assign: autoAssign,
+        blend_ratio: focus,
+        injected_files: injectedFiles.map(f => f.id),
+        ephemeral_files: ephemeralPayload
+      }),
+    });
+
+    // 4. Clean up ephemerals (only keep pinned) //
+    clearEphemeralFiles();
+  };
+
+  // ------------------------------------
+  // End - Controls
+  // ------------------------------------
+
+
+  // ------------------------------------
+  // Chat and Formatting
+  // ------------------------------------
+  const [input, setInput] = useState("");
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [scrollToBottom, setScrollToBottom] = useState(true);
-  const [tagDialogOpen, setTagDialogOpen] = useState(null); // message id or null
-  const [newTag, setNewTag] = useState("");
-  const [projectDialogOpen, setProjectDialogOpen] = useState(null); // message id or null
-  const [newProject, setNewProject] = useState("");
-  const [projects, setProjects] = useState([]);
-  const [projectsLoading, setProjectsLoading] = useState(true);
-  const [scrollToMessageId, setScrollToMessageId] = useState(null);
   const [scrollTargetNode, setScrollTargetNode] = useState(null);
   const [atBottom, setAtBottom] = useState(true);
-  const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
-  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
-  const [showProjectPanel, setShowProjectPanel] = useState(false);
-  const [showTagPanel, setShowTagPanel] = useState(null); // "add" | "remove" | null
-
-
   const chatEndRef = useRef(null);
-  const wsRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
-
   const scrollContainerRef = useRef(null);
   const messageRefs = useRef({});
   const { museProfile, museProfileLoading, uiStates } = useConfig();
-  {/* }const { states } = uiPollstates || {}; */}
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
-  const [timeSkipOverride, setTimeSkipOverride] = useState(null);
-  const timeSkipActive =
-  timeSkipOverride !== null
-    ? timeSkipOverride
-    : Boolean(uiStates?.time_skip?.active);
   const INITIAL_RENDERED_MESSAGES = 10;  // On reload, after chat, etc.
-  const ACTIVE_WINDOW_LIMIT = 10;         // After new message
   const SCROLLBACK_LIMIT = 30;            // After scroll up
   const MAX_RENDERED_MESSAGES = 30;      // Max after scroll loading "more"
   const MESSAGE_LIMIT = 10;              // How many to load per scroll/page
+  const whichMessages = React.useMemo(() => {
+    if (threadId) {
+      // In a thread: show every message that belongs to this thread,
+      // regardless of hidden/private.
+      return threadMessages.filter((m) => m.thread_ids?.includes(threadId));
+    }
+
+    // In main chat: hide messages whose thread_ids intersect hidden/private threads
+    return messages.filter((m) => {
+      const tids = m.thread_ids || [];
+      if (!tids.length) return true; // plain main-river message
+
+      // If ANY of the message's threads are hidden/private, drop it from main view
+      const belongsToHidden = tids.some((id) => {
+        const t = threadMap.threads[id];
+        return t && (t.is_hidden || t.is_private);
+
+        });
+
+      return !belongsToHidden;
+    });
+
+  }, [threadId, threadMessages, messages, threads]);
+
+  const safeMessages = Array.isArray(whichMessages) ? whichMessages : [];
+
   const visibleMessages = React.useMemo(
-    () => messages.slice(-MAX_RENDERED_MESSAGES),
-    [messages, MAX_RENDERED_MESSAGES]
+    () => safeMessages.slice(-MAX_RENDERED_MESSAGES),
+    [safeMessages, MAX_RENDERED_MESSAGES]
   );
+
+  const [useLabRenderer, setUseLabRenderer] = React.useState(false);
+  useEffect(() => {
+    if (scrollTargetNode) {
+      scrollTargetNode.scrollIntoView({ behavior: "smooth", block: "start" });
+      setScrollTargetNode(null);
+      setScrollToMessageId(null);
+    }
+  }, [scrollTargetNode]);
+
+  const formatTimestamp = (utcString) => {
+    if (!utcString) return "";
+    const dt = new Date(utcString);
+    return dt.toLocaleString(); // Respects user timezone/locales
+  };
+
+  function buildMessagesUrl({ before, sources, threadId } = {}) {
+    const params = new URLSearchParams();
+
+    params.set("limit", INITIAL_RENDERED_MESSAGES.toString());
+
+    // sources: array of strings → multiple ?sources=... entries
+    const srcs = sources && sources.length
+      ? sources
+      : ["frontend", "reminder", "discovery", "whispergate"];
+
+    srcs.forEach(src => params.append("sources", src));
+
+    if (before) {
+      params.set("before", before); // URLSearchParams handles encoding
+    }
+
+    if (threadId) {
+      params.set("thread_id", threadId);
+    }
+
+    return `/api/messages?${params.toString()}`;
+  }
+
+  const handleLoadMore = async () => {
+    if (!hasMore || loadingMore) return;
+
+    const isThread = !!threadId;
+    const currentList = isThread ? threadMessages : messages;
+
+    if (!currentList.length) return;
+
+    const oldest = currentList[0]?.timestamp;
+    if (!oldest) return;
+
+    await loadMessages({
+      before: oldest,
+      target: isThread ? "thread" : "main",
+    });
+  };
+
+  const loadMessages = async ({
+    before = null,
+    target = "main", // "main" | "thread"
+  } = {}) => {
+    setLoadingMore(true);
+
+    let prevScrollHeight = null;
+    let prevScrollTop = null;
+
+    const isHistoryLoad = !!before;
+
+    // Only care about previous scroll position if loading history
+    if (isHistoryLoad && scrollContainerRef.current) {
+      prevScrollHeight = scrollContainerRef.current.scrollHeight;
+      prevScrollTop = scrollContainerRef.current.scrollTop;
+    }
+
+    const url = buildMessagesUrl({
+      before,
+      threadId: target === "thread" ? threadId : null, // use current threadId when targeting thread
+    });
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (isHistoryLoad) {
+      if (target === "thread") {
+        setThreadMessages(prev =>
+          trimMessages([...data.messages, ...prev], SCROLLBACK_LIMIT)
+        );
+      } else {
+        setMessages(prev =>
+          trimMessages([...data.messages, ...prev], SCROLLBACK_LIMIT)
+        );
+      }
+
+      setScrollToBottom(false); // Don't scroll when loading history
+
+      // After next render, restore the scroll position so the previous top message stays in place
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          if (
+            scrollContainerRef.current &&
+            prevScrollHeight !== null &&
+            prevScrollTop !== null
+          ) {
+            const newScrollHeight = scrollContainerRef.current.scrollHeight;
+            scrollContainerRef.current.scrollTop =
+              newScrollHeight - prevScrollHeight + prevScrollTop;
+          }
+        });
+      }, 0);
+    } else {
+      if (target === "thread") {
+        setThreadMessages(trimMessages(data.messages, ACTIVE_WINDOW_LIMIT));
+      } else {
+        setMessages(trimMessages(data.messages, ACTIVE_WINDOW_LIMIT));
+      }
+
+      // If you want auto-scroll on fresh loads, you can re‑enable this:
+       setScrollToBottom(true);
+    }
+
+    if (data.messages.length === SCROLLBACK_LIMIT) {
+      setHasMore(false);
+    }
+
+    setLoadingMore(false);
+  };
+
+  useEffect(() => {
+    loadMessages({ target: "main" });
+    // eslint-disable-next-line
+  }, []);
+
+  useEffect(() => {
+    if (!threadId) {
+      // Optional: clear threadMessages when leaving thread mode
+      setThreadMessages([]);
+      return;
+    }
+
+    // when a thread becomes active, load its messages
+    loadMessages({ target: "thread" });
+    // eslint-disable-next-line
+  }, [threadId]);
+
+  const lastVisibleId = visibleMessages.length
+    ? visibleMessages[visibleMessages.length - 1].message_id
+    : null;
+
+  useEffect(() => {
+    if (scrollToBottom) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [lastVisibleId, scrollToBottom]);
+
+
+  useEffect(() => {
+    if (
+      scrollToMessageId &&
+      scrollContainerRef.current &&
+      messageRefs.current[scrollToMessageId]?.current
+    ) {
+      const container = scrollContainerRef.current;
+      const messageEl = messageRefs.current[scrollToMessageId].current;
+
+      const offsetTop = messageEl.offsetTop - container.offsetTop;
+      container.scrollTo({
+        top: offsetTop,
+        behavior: "smooth",
+      });
+
+      setScrollToMessageId(null);
+    }
+  }, [scrollToMessageId, visibleMessages]);
+  // ------------------------------------
+  // End - Chat and Formatting
+  // ------------------------------------
+
+  // ------------------------------------
+  // Files and Attachments
+  // ------------------------------------
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
-  const mode = "chat";
-  // "Bind" each handler to local state
-  const onDelete = useCallback(
-    (message_id, markDeleted) =>
-      handleDelete(setMessages, message_id, markDeleted),
-    [setMessages]
-  );
-
-  const onTogglePrivate = useCallback(
-    (message_id, makePrivate) =>
-      handleDelete(setMessages, message_id, makePrivate),
-    [setMessages]
-  );
-
-  const onToggleHidden = useCallback(
-    (message_id, makeHidden) =>
-      handleToggleHidden(setMessages, message_id, makeHidden),
-    [setMessages]
-  );
-
-  const onToggleRemembered = useCallback(
-    (message_id, makeRemembered) =>
-      handleToggleRemembered(setMessages, message_id, makeRemembered),
-    [setMessages]
-  );
-
-  const onSetProject = useCallback(
-    (message_id, project_id) =>
-      setProject(setMessages, message_id, project_id),
-    [setMessages]
-  );
-
-  const onClearProject = useCallback(
-    (message_id) =>
-      clearProject(setMessages, message_id),
-    [setMessages]
-  );
-
-  const onAddTag = useCallback(
-    (message_id, tag) =>
-      addTag(setMessages, message_id, tag),
-    [setMessages]
-  );
-
-  const onRemoveTag = useCallback(
-    (message_id, tag) =>
-      removeTag(setMessages, message_id, tag),
-    [setMessages]
-  );
-
-  const clearSelectionAndExit = () => {
-    setSelectedMessageIds([]);
-    setMultiSelectEnabled(false);
-  };
-
-  const handleToggleMultiSelect = (enabled) => {
-    setMultiSelectEnabled(enabled);
-    if (!enabled) {
-      setSelectedMessageIds([]);
-    }
-  };
-
-  const onMultiAction = (action, options = {}) => {
-    console.log("onMultiAction called with:", action);
-    switch (action) {
-      case "set_project":
-        console.log(">>> setting showProjectPanel = true");
-        setShowProjectPanel(true);
-        break;
-      case "add_tags":
-        console.log(">>> setting showTagPanel = 'add'");
-        setShowTagPanel("add");
-        break;
-      case "remove_tags":
-        console.log(">>> setting showTagPanel = 'remove'");
-        setShowTagPanel("remove");
-        break;
-      default:
-        // simple actions go straight through
-        handleMultiAction(setMessages, selectedMessageIds, action, options);
-        clearSelectionAndExit();
-    }
-  };
-
-  const handleToggleSelect = useCallback((message_id) => {
-    setSelectedMessageIds((prev) =>
-      prev.includes(message_id)
-        ? prev.filter((id) => id !== message_id)
-        : [...prev, message_id]
-    );
-  }, [setSelectedMessageIds]);
-
-  const handleConfirmProject = (project_id) => {
-    setShowProjectPanel(false);
-    handleMultiAction(setMessages, selectedMessageIds, "set_project", {
-      project_id,
-    });
-    clearSelectionAndExit();
-  };
-
-  const handleConfirmTagsAdd = (tagsToAdd) => {
-    setShowTagPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "add_tags", {
-      tagsToAdd,
-    });
-    clearSelectionAndExit();
-  };
-
-  const handleConfirmTagsRemove = (tagsToRemove) => {
-    setShowTagPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "remove_tags", {
-      tagsToRemove,
-    });
-    clearSelectionAndExit();
-  };
-
-  const existingTagsForSelection = useMemo(() => {
-    if (!selectedMessageIds.length) return [];
-
-    const tagSet = new Set();
-
-    messages.forEach((msg) => {
-      if (!selectedMessageIds.includes(msg.message_id)) return;
-      (msg.user_tags || []).forEach((tag) => tagSet.add(tag));
-    });
-
-    return Array.from(tagSet).sort();
-  }, [messages, selectedMessageIds]);
-
+  const ACCEPTED_TYPES = [
+    ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".js", ".ts", ".py", ".java", ".c", ".cpp", ".cs", ".go", ".rb", ".php",
+    ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"
+  ];
   const handleFileInputChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -286,233 +520,6 @@ const ChatTab = (
     }
   };
 
-
-   const [useLabRenderer, setUseLabRenderer] = React.useState(false);
-
-  const ACCEPTED_TYPES = [
-    ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".js", ".ts", ".py", ".java", ".c", ".cpp", ".cs", ".go", ".rb", ".php",
-    ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"
-  ];
-
-  useEffect(() => {
-    if (scrollTargetNode) {
-      scrollTargetNode.scrollIntoView({ behavior: "smooth", block: "start" });
-      setScrollTargetNode(null);
-      setScrollToMessageId(null);
-    }
-  }, [scrollTargetNode]);
-
-  const handleReadAloudClick = () => {
-    if (isTTSPlaying) {
-      // STOP logic
-      window.speechSynthesis.cancel();
-      setIsTTSPlaying(false);
-    } else {
-      // START logic
-      speak(textToRead, () => setIsTTSPlaying(false)); // pass a callback when done
-      setIsTTSPlaying(true);
-    }
-  };
-
-  const playPing = () => {
-    const audio = new window.Audio("/ping.mp3");
-    audio.play();
-  };
-
-  const formatTimestamp = (utcString) => {
-    if (!utcString) return "";
-    const dt = new Date(utcString);
-    return dt.toLocaleString(); // Respects user timezone/locales
-  };
-
-  async function handleClearTimeSkip() {
-    try {
-      // optimistic UI: flip it *now*
-      setTimeSkipOverride(false);
-
-      await fetch("/api/time_skip/clear", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      loadMessages()
-      // optional: once the next poll confirms, you can clear override
-      // setTimeSkipOverride(null);
-    } catch (err) {
-      console.error("Error clearing time skip:", err);
-      // if you want to be fancy, roll back:
-      setTimeSkipOverride(null);
-    }
-  }
-  useEffect(() => {
-    if (timeSkipOverride === null) return;
-
-    const backendActive = Boolean(uiStates?.time_skip?.active);
-
-    // if backend has caught up with our optimistic value, drop override
-    if (backendActive === timeSkipOverride) {
-      setTimeSkipOverride(null);
-    }
-  }, [uiStates?.time_skip?.active, timeSkipOverride]);
-
-  const loadMessages = async (before = null) => {
-    setLoadingMore(true);
-
-    let prevScrollHeight = null;
-    let prevScrollTop = null;
-
-    // Only care about previous scroll position if loading history
-    if (before && scrollContainerRef.current) {
-      prevScrollHeight = scrollContainerRef.current.scrollHeight;
-      prevScrollTop = scrollContainerRef.current.scrollTop;
-    }
-
-    let url = `/api/messages?limit=${INITIAL_RENDERED_MESSAGES}&sources=frontend&sources=chatgpt&sources=reminder&sources=discovery&sources=whispergate`;
-    if (before) url += `&before=${encodeURIComponent(before)}`;
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (before) {
-      setMessages(prev => trimMessages([...data.messages, ...prev], SCROLLBACK_LIMIT));
-      setScrollToBottom(false); // Don't scroll when loading history
-
-      // After next render, restore the scroll position so the previous top message stays in place
-      setTimeout(() => {
-        requestAnimationFrame(() => {
-          if (scrollContainerRef.current && prevScrollHeight !== null && prevScrollTop !== null) {
-            const newScrollHeight = scrollContainerRef.current.scrollHeight;
-            scrollContainerRef.current.scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop;
-          }
-        });
-      }, 0);
-    } else {
-      setMessages(trimMessages(data.messages, ACTIVE_WINDOW_LIMIT));
-      //setScrollToBottom(true); // Scroll when loading initial/latest
-    }
-    if (data.messages.length === SCROLLBACK_LIMIT) setHasMore(false);
-      setLoadingMore(false);
-  };
-
-
-  useEffect(() => {
-    loadMessages();
-    // eslint-disable-next-line
-  }, []);
-
-
-  useEffect(() => {
-    if (scrollToBottom) {
-      chatEndRef.current?.scrollIntoView({behavior: "smooth"});
-    }
-  }, [messages, scrollToBottom]);
-
-  // WebSocket with auto-reconnect
-  useEffect(() => {
-    let cancelled = false;
-    function connectWebSocket() {
-      setConnecting(true);
-      const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-      const wsHost = window.location.host;
-      const wsPath = "/ws"; // or whatever your backend WebSocket endpoint is
-      const ws = new WebSocket(`${wsProtocol}://${wsHost}${wsPath}`);
-      wsRef.current = ws;
-
-      const tryRegister = () => {
-        if (ws.readyState === 1) {
-          ws.send(JSON.stringify({ listen_as: "frontend" }));
-          setConnecting(false);
-        } else if (!cancelled) {
-          setTimeout(tryRegister, 50);
-        }
-      };
-      tryRegister();
-
-      ws.onmessage = async (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === "muse_message") {
-          const text = data.message;
-          const message_id = data.message_id;
-          const project_id = data.project_id;
-          setMessages((prev) =>
-            trimMessages([
-              ...prev,
-              {
-                from: "muse",
-                text,
-                message_id,
-                timestamp: new Date().toISOString(),
-                project_id
-              }
-            ], ACTIVE_WINDOW_LIMIT)
-          );
-          setScrollToMessageId(message_id);  // <-- Flag for scroll
-
-          setLastTTS(text);
-          setThinking(false);
-          if (autoTTS) {
-
-            await speak(text, () => setIsTTSPlaying(false));
-          } else {
-            playPing();
-          }
-        }
-      };
-
-
-      ws.onclose = () => {
-        if (!cancelled) {
-          setConnecting(true);
-          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 1500);
-        }
-      };
-
-      ws.onerror = () => {
-        ws.close();
-      };
-    }
-
-    connectWebSocket();
-
-    return () => {
-      cancelled = true;
-      if (wsRef.current) wsRef.current.close();
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-    };
-  }, [autoTTS]);
-
-  useEffect(() => {
-    if (scrollToBottom) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, scrollToBottom]);
-
-  useEffect(() => {
-    if (scrollToMessageId && messageRefs.current[scrollToMessageId]) {
-      messageRefs.current[scrollToMessageId].current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setScrollToMessageId(null);
-    }
-  }, [scrollToMessageId, messages]);
-
-  useEffect(() => {
-    fetch("/api/projects")
-      .then(res => res.json())
-      .then(data => {
-        setProjects(data.projects || []);
-        setProjectsLoading(false);
-      });
-  }, []);
-
-  // Build a map for fast lookup
-  const projectMap = useMemo(() => {
-    const map = {};
-    for (const proj of projects) {
-      map[proj._id] = proj;
-    }
-    return map;
-  }, [projects]);
-
-
-
-
   const mergedFiles = [
     ...ephemeralFiles.map(f => ({
       id: f.id,
@@ -547,93 +554,54 @@ const ChatTab = (
     setEphemeralFiles([]);
   };
 
+  // ------------------------------------
+  // End - Files and Attachments
+  // ------------------------------------
 
-  const handleSubmit = async () => {
-    if (!input.trim()) return;
-    const allFiles = [
-      ...injectedFiles,
-      ...ephemeralFiles.map(f => ({
-        name: f.name,
-        type: f.type,
-        // add other fields if you want, but 'name' is usually the key for prompt
-      }))
-    ];
-
-    const filenamesBlock = allFiles.length
-      ? '\n' + allFiles.map(f => `[file: ${f.name}]`).join('\n')
-      : '';
-    const timestamp = toPythonIsoString();
-    const role = "user";
-    const source = "frontend";
-    const message = input + (filenamesBlock ? '\n' + filenamesBlock : '');
-    const project_id = (autoAssign && selectedProjectId) ? selectedProjectId : "";
-    const ephemeralPayload = await Promise.all(
-      ephemeralFiles.map(async (f) => ({
-        name: f.name,
-        type: f.type,
-        size: f.size,
-        data: await fileToBase64(f.file),
-        encoding: "base64"
-      }))
-    );
-
-    // 1. Generate the message_id (async)//
-    const message_id = await assignMessageId({
-      timestamp,
-      role,
-      source,
-      message
-    });
-
-    // 2. Add to UI state immediately (so it’s taggable, traceable, etc.)//
-    setMessages(prev =>
-      trimMessages([
-        ...prev,
-        {
-          id: message_id,
-          message_id,
-          text: message,
-          timestamp,
-          role,
-          source,
-          project_id
-        }
-      ], ACTIVE_WINDOW_LIMIT)
-    );
-
-    setInput("");
-    setThinking(true);
-    setScrollToBottom(true);
-
-    // 3. Send the message to the backend, including timestamp
-    await fetch("/api/muse/talk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: message,
-        timestamp,
-        message_id,
-        project_id: selectedProjectId,
-        auto_assign: autoAssign,
-        blend_ratio: focus,
-        injected_files: injectedFiles.map(f => f.id),
-        ephemeral_files: ephemeralPayload
-      }),
-    });
-
-    // 4. Clean up ephemerals (only keep pinned) //
-    clearEphemeralFiles();
-  };
+  // ------------------------------------
+  // Message Actions States and Functions
+  // ------------------------------------
+  const [newTag, setNewTag] = useState("");
+  const [projectDialogOpen, setProjectDialogOpen] = useState(null); // message id or null
+  const [threadPanelOpen, setThreadPanelOpen] = useState(null);
+  const [newProject, setNewProject] = useState("");
 
 
 
+  async function handleClearTimeSkip() {
+    try {
+      // optimistic UI: flip it *now*
+      setTimeSkipOverride(false);
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
+      await fetch("/api/time_skip/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      loadMessages()
+      // optional: once the next poll confirms, you can clear override
+      // setTimeSkipOverride(null);
+    } catch (err) {
+      console.error("Error clearing time skip:", err);
+      // if you want to be fancy, roll back:
+      setTimeSkipOverride(null);
     }
-  };
+  }
+
+  useEffect(() => {
+    if (timeSkipOverride === null) return;
+
+    const backendActive = Boolean(uiStates?.time_skip?.active);
+
+    // if backend has caught up with our optimistic value, drop override
+    if (backendActive === timeSkipOverride) {
+      setTimeSkipOverride(null);
+    }
+  }, [uiStates?.time_skip?.active, timeSkipOverride]);
+
+  // ------------------------------------
+  // End - Message Actions States and Functions
+  // ------------------------------------
+
 
   return (
     <div className="relative flex flex-col h-full ">
@@ -650,7 +618,7 @@ const ChatTab = (
             <span className="text-sm text-neutral-300">Auto-TTS</span>
           </label>
         </div>
-      {/*}
+      {/* // Uncomment this to experiment with different renderers
       <div className="flex items-center justify-end px-2 py-1 text-xs text-neutral-400 gap-2">
         <span>Renderer:</span>
         <button
@@ -683,6 +651,7 @@ const ChatTab = (
           disabled={thinking || connecting}
           setShowProjectPanel={setShowProjectPanel}
           setShowTagPanel={setShowTagPanel}
+          setShowThreadPanel={setShowThreadPanel}
         />
         {/* Overlay row for complex actions */}
         {showProjectPanel && (
@@ -710,6 +679,22 @@ const ChatTab = (
             />
           </div>
         )}
+        {showThreadPanel && (
+          <div className="absolute right-0 top-12 mt-0 z-20 flex justify-end">
+            <ThreadPanel
+              mode={showThreadPanel}
+              msg_ids={selectedMessageIds}
+              threads={threads}
+              memberThreadIds={existingThreadsForSelection}
+              onCreateThread={handleCreateThread}
+              onJoinThread={handleJoinThread}
+              onLeaveThread={handleLeaveThread}
+              clearSelectionAndExit={clearSelectionAndExit}
+              onCancel={() => setShowThreadPanel(false)}
+            />
+          </div>
+        )}
+
       </div>
         {!atBottom && (
         <button
@@ -730,25 +715,23 @@ const ChatTab = (
           <ArrowBigDownDash />
         </button>
       )}
-      <div
-        ref={scrollContainerRef}
-        className="mt-4 flex-1 min-h-0 overflow-y-auto relative pt-12"
-        onScroll={async (e) => {
-          const { scrollTop, scrollHeight, clientHeight } = e.target;
-          if (scrollTop + clientHeight >= scrollHeight - 10) {
-            setAtBottom(true);
-          } else {
-            setAtBottom(false);
-          }
-          if (scrollTop === 0 && hasMore && !loadingMore && messages.length > 0) {
-            // Get the timestamp of the oldest message //
-            const oldest = messages[0]?.timestamp;
-            if (oldest) {
-              await loadMessages(oldest);
+        <div
+          ref={scrollContainerRef}
+          className="mt-4 flex-1 min-h-0 overflow-y-auto relative pt-12"
+          onScroll={async (e) => {
+            const { scrollTop, scrollHeight, clientHeight } = e.target;
+
+            if (scrollTop + clientHeight >= scrollHeight - 10) {
+              setAtBottom(true);
+            } else {
+              setAtBottom(false);
             }
-          }
-        }}
-      >
+
+            if (scrollTop === 0) {
+              await handleLoadMore();
+            }
+          }}
+        >
 
         <div className="text-sm text-neutral-400 italic text-center mt-2">
           That’s the beginning. Visit the History Tab for more.
@@ -756,6 +739,7 @@ const ChatTab = (
         {connecting && (
           <div className="text-sm text-neutral-400">Reconnecting…</div>
         )}
+
           {visibleMessages.map((msg, idx) => {
             if (!messageRefs.current[msg.message_id]) {
               messageRefs.current[msg.message_id] = React.createRef();
@@ -763,35 +747,30 @@ const ChatTab = (
             const key = msg.message_id || idx;
             const CommonProps = {
               ref: messageRefs.current[msg.message_id],
+              audioControls,
               msg,
+              setMessages,
+              setThreadMessages,
               projects,
               projectsLoading,
               projectMap,
+              threads,
               tagDialogOpen,
               setTagDialogOpen,
               projectDialogOpen,
               setProjectDialogOpen,
               museName,
-              onDelete,
-              onTogglePrivate,
-              onToggleHidden,
-              onToggleRemembered,
-              onSetProject,
-              onClearProject,
-              onAddTag,
-              onRemoveTag,
               mode,
-              audioSourceRef,
-              audioCtxRef,
-              isTTSPlaying,
-              setIsTTSPlaying,
-              speak,
               connecting,
-              setSpeaking,
-              Equalizer,
-              setSpeakingMessageId,
-              speakingMessageId,
+              createThreadWithMessages,
+              setShowSingleThreadPanel,
+              setThreadPanelOpen,
+              showSingleThreadPanel,
               multiSelectEnabled,
+              handleCreateThread,
+              handleJoinThread,
+              handleLeaveThread,
+              clearSelectionAndExit,
               isSelected: selectedMessageIds.includes(msg.message_id),
               onToggleSelect: handleToggleSelect,
             };

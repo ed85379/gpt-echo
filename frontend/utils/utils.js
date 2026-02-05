@@ -61,3 +61,23 @@ export function humanFileSize(bytes) {
   } while (Math.abs(bytes) >= thresh && u < units.length - 1);
   return bytes.toFixed(1) + " " + units[u];
 }
+
+export function getMonthRange(date) {
+  // Current month and year
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+
+  // Previous month (handle January rollover)
+  const prevMonth = month === 0 ? 11 : month - 1;
+  const prevYear = month === 0 ? year - 1 : year;
+
+  // Start: first of previous month
+  const start = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
+
+  // End: last of current month
+  const firstOfNextMonth = new Date(Date.UTC(year, month + 1, 1));
+  const lastOfMonth = new Date(firstOfNextMonth.getTime() - 24 * 3600 * 1000);
+  const end = `${lastOfMonth.getUTCFullYear()}-${String(lastOfMonth.getUTCMonth() + 1).padStart(2, '0')}-${String(lastOfMonth.getUTCDate()).padStart(2, '0')}`;
+
+  return { start, end };
+}

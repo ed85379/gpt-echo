@@ -1,180 +1,80 @@
+// app/chat/page.tsx
+// ChatPage layout:
+// 1) General controls
+// 2) UI initial load
+// 3) Projects & threads
+// 4) Message actions
+// 5) Websocket
+// 6) Tool panel / files
+// 7) Rendering (tabs + layout)
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { nanoid } from "nanoid";
+// Hooks
+import { useConfig } from '@/hooks/ConfigContext';
+import { useAudioControls } from "@/hooks/useAudioControls";
+// Components
 import ChatTab from './ChatTab';
 import HistoryTab from './HistoryTab';
-import { useConfig } from '@/hooks/ConfigContext';
 import PresencePanel from './PresencePanel';
 import MotdBar from './MotdBar';
 import TabbedToolPanel from './TabbedToolPanel';
+// Utils
+import { trimMessages } from '@/utils/utils';
+import { createThreadWithMessages } from '@/utils/threadActions.js'
+import { updateNavState, updateThreadsState } from "@/utils/statesFunctions";
+import {
+  addToThread,
+  removeFromThread,
+  handleMultiAction,
+   } from "@/utils/messageActions";
+ // Icons
+import { Split } from "lucide-react";
 
+// General props
 const TABS = [
   { key: "chat", label: "Chat" },
+  { key: "thread", label: "Thread" },
   { key: "history", label: "History" },
 ];
 
 export default function ChatPage() {
+  // General controls
   const [activeTab, setActiveTab] = useState("chat");
-  const [speaking, setSpeaking] = useState(false);
-  const [projects, setProjects] = useState([]);
-  const [projectMap, setProjectMap] = useState({});
+  const [messages, setMessages] = useState([]);
+  const [threadMessages, setThreadMessages] = useState([]);
+  const [connecting, setConnecting] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [scrollToMessageId, setScrollToMessageId] = useState(null);
+
+  // ------------------------------------
+  // UI States Initial Load
+  // ------------------------------------
   const { uiStates, loading: uiStatesLoading } = useConfig();
+  const initialMotd = uiStates?.motd?.text ?? "";
+  const [motd, setMotd] = useState(initialMotd);
   const initialProjectId = uiStates?.projects?.project_id ?? "";
-  const motd = uiStates?.motd?.text ?? "";
-  const audioCtxRef = useRef(null);
-  const audioSourceRef = useRef(null);
-  const [isTTSPlaying, setIsTTSPlaying] = useState(false);
-  const [speakingMessageId, setSpeakingMessageId] = useState(null);
-
-  const speak = useCallback(
-    async (msg, onDone) => {
-      const text = msg.text;
-
-      setSpeaking(true);
-      setSpeakingMessageId(msg.message_id);
-      setIsTTSPlaying(true);
-
-      // Stop any existing playback
-      if (audioSourceRef.current) {
-        try {
-          audioSourceRef.current.stop();
-        } catch (e) {}
-        audioSourceRef.current = null;
-      }
-      if (audioCtxRef.current) {
-        try {
-          audioCtxRef.current.close();
-        } catch (e) {}
-        audioCtxRef.current = null;
-      }
-
-      let cancelled = false;
-
-      try {
-        const response = await fetch("/api/tts/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
-
-        if (!response.ok) {
-          throw new Error("TTS request failed");
-        }
-
-        const reader = response.body.getReader();
-        const audioCtx = new window.AudioContext();
-        audioCtxRef.current = audioCtx;
-
-        const source = audioCtx.createBufferSource();
-        audioSourceRef.current = source;
-
-        const chunks = [];
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(...value);
-        }
-
-        if (cancelled) return;
-
-        const buffer = new Uint8Array(chunks).buffer;
-
-        // IMPORTANT: capture the ctx we created
-        const thisCtx = audioCtx;
-        const thisSource = source;
-
-        audioCtx.decodeAudioData(buffer, (decoded) => {
-          // Bail if we’ve since started another speak()
-          if (audioCtxRef.current !== thisCtx) return;
-          if (!decoded) return;
-
-          thisSource.buffer = decoded;
-          thisSource.connect(thisCtx.destination);
-          thisSource.start(0);
-
-          thisSource.onended = () => {
-            // Only clean up if we’re still the active one
-            if (audioSourceRef.current === thisSource) {
-              audioSourceRef.current = null;
-            }
-            if (audioCtxRef.current === thisCtx) {
-              audioCtxRef.current = null;
-            }
-            setSpeaking(false);
-            setIsTTSPlaying(false);
-            if (onDone) onDone();
-          };
-        });
-      } catch (err) {
-        // Any error → reset state
-        if (!cancelled) {
-          setSpeaking(false);
-          setIsTTSPlaying(false);
-          if (onDone) onDone();
-        }
-      }
-
-      // Optional: if you ever want to support explicit cancellation:
-      return () => {
-        cancelled = true;
-      };
-    },
-    [audioCtxRef, audioSourceRef, setSpeaking, setIsTTSPlaying, setSpeakingMessageId]
-  );
-
-  function Equalizer({ isActive }) {
-    if (!isActive) return null;
-
-    return (
-      <span className="ml-1 equalizer">
-        <span className="equalizer-bar" />
-        <span className="equalizer-bar" />
-        <span className="equalizer-bar" />
-      </span>
-    );
-  }
-
-  const handleReturnToThisMoment = async (message_id: string) => {
-    const res = await fetch(`/api/time_skip/${message_id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    if (!res.ok) {
-      console.error("Failed to set time skip");
-      return;
-    }
+  const [timeSkipOverride, setTimeSkipOverride] = useState(null);
+  const timeSkipActive =
+  timeSkipOverride !== null
+    ? timeSkipOverride
+    : Boolean(uiStates?.time_skip?.active);
 
 
-    // optional: maybe navigate back to Chat tab
-    setActiveTab("chat");
-
-  };
-
-  const fetchProjects = async () => {
-    const res = await fetch("/api/projects");
-    const data = await res.json();
-    setProjects(data.projects || []);
-    // Build a file map for quick lookups
-    const files = {};
-    for (const proj of data.projects || []) {
-      for (const fid of (proj.file_ids || [])) {
-        if (!files[fid]) files[fid] = { name: fid }; // You would actually want to fetch file metadata
+  useEffect(() => {
+    if (!uiStatesLoading) {
+      if (uiStates?.nav?.main_tab) {
+        setActiveTab(uiStates.nav.main_tab);
       }
     }
-    setProjectMap({ projects: Object.fromEntries((data.projects || []).map(p => [p._id, p])), files });
-  };
-  useEffect(() => { fetchProjects(); }, []);
+  }, [uiStatesLoading, uiStates]);
 
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [project, setProject] = useState(null);
-  const [focus, setFocus] = useState(0.5);
-  const [autoAssign, setAutoAssign] = useState(false);
-  const [injectedFiles, setInjectedFiles] = useState([]);
-  const [ephemeralFiles, setEphemeralFiles] = useState([]);
-  // File list state, loading, and error
-  const [files, setFiles] = useState([]);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [filesError, setFilesError] = useState(null);
+  useEffect(() => {
+    if (!uiStatesLoading) {
+      const text = uiStates?.motd?.text ?? "";
+      setMotd(text);
+    }
+  }, [uiStatesLoading, uiStates]);
 
   // Hydrate from uiStates once they’re available
   useEffect(() => {
@@ -205,6 +105,404 @@ export default function ChatPage() {
       setAutoAssign(auto);
     }
   }, [uiStatesLoading, uiStates]);
+  // ------------------------------------
+  // End - UI States Initial Load
+  // ------------------------------------
+
+  // ------------------------------------
+  // Projects and Threads States and Functions
+  // ------------------------------------
+  const [projects, setProjects] = useState([]);
+  const [projectMap, setProjectMap] = useState({});
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [threads, setThreads] = useState([]);
+  const [threadMap, setThreadMap] = useState({});
+  const initialOpenThreadId = uiStates?.threads?.open_thread_id ?? "";
+  const [openThreadId, setOpenThreadId] = useState(initialOpenThreadId);
+
+
+  const fetchProjects = async () => {
+    const res = await fetch("/api/projects");
+    const data = await res.json();
+    setProjects(data.projects || []);
+    setProjectsLoading(false);
+    // Build a file map for quick lookups
+    const files = {};
+    for (const proj of data.projects || []) {
+      for (const fid of (proj.file_ids || [])) {
+        if (!files[fid]) files[fid] = { name: fid }; // You would actually want to fetch file metadata
+      }
+    }
+    setProjectMap({ projects: Object.fromEntries((data.projects || []).map(p => [p._id, p])), files });
+  };
+  useEffect(() => { fetchProjects(); }, []);
+
+  const fetchThreads = async () => {
+    const res = await fetch("/api/threads/");
+    const data = await res.json();
+    setThreads(data.threads || []);
+    setThreadMap({ threads: Object.fromEntries((data.threads || []).map(t => [t.thread_id, t]))});
+  };
+  useEffect(() => { fetchThreads(); }, []);
+
+  useEffect(() => {
+    if (!uiStatesLoading) {
+      if (uiStates?.threads?.open_thread_id) {
+        setOpenThreadId(uiStates.threads.open_thread_id);
+      }
+    }
+  }, [uiStatesLoading, uiStates]);
+
+
+
+
+  const visibleTabs = TABS.filter(tab =>
+    tab.key === "thread" ? !!openThreadId: true
+  );
+  const openThread = threads.find(thread => thread.thread_id === openThreadId);
+  const openThreadTitle = openThread?.title ?? 'Thread';
+ //const openThreadTitle = "Thread"
+
+  // ------------------------------------
+  // End - Projects and Threads States and Functions
+  // ------------------------------------
+
+
+  // ------------------------------------
+  // Message Actions States and Functions
+  // ------------------------------------
+  const [tagDialogOpen, setTagDialogOpen] = useState(null);
+  const [showProjectPanel, setShowProjectPanel] = useState(false);
+  const [showTagPanel, setShowTagPanel] = useState(null);
+  const [showThreadPanel, setShowThreadPanel] = useState(null);
+  const [showSingleThreadPanel, setShowSingleThreadPanel] = useState(null);
+  const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
+  const clearSelectionAndExit = () => {
+    setSelectedMessageIds([]);
+    setMultiSelectEnabled(false);
+  };
+
+  const handleToggleMultiSelect = (enabled) => {
+    setMultiSelectEnabled(enabled);
+    if (!enabled) {
+      setSelectedMessageIds([]);
+    }
+  };
+
+  const onMultiAction = (action, options = {}) => {
+    console.log("onMultiAction called with:", action);
+    switch (action) {
+      case "set_project":
+        console.log(">>> setting showProjectPanel = true");
+        setShowProjectPanel(true);
+        break;
+      case "add_tags":
+        console.log(">>> setting showTagPanel = 'add'");
+        setShowTagPanel("add");
+        break;
+      case "remove_tags":
+        console.log(">>> setting showTagPanel = 'remove'");
+        setShowTagPanel("remove");
+        break;
+      case "add_threads":
+        console.log(">>> setting showThreadPanel = 'add'");
+        setShowThreadPanel("add");
+        break;
+      case "remove_threads":
+        console.log(">>> setting showThreadPanel = 'remove'");
+        setShowThreadPanel("remove");
+        break;
+      default:
+        // simple actions go straight through
+        handleMultiAction(setMessages, setThreadMessages, selectedMessageIds, action, options);
+        clearSelectionAndExit();
+    }
+  };
+
+  const handleToggleSelect = useCallback((message_id) => {
+    setSelectedMessageIds((prev) =>
+      prev.includes(message_id)
+        ? prev.filter((id) => id !== message_id)
+        : [...prev, message_id]
+    );
+  }, [setSelectedMessageIds]);
+
+  const handleConfirmProject = (project_id) => {
+    setShowProjectPanel(false);
+    handleMultiAction(setMessages, selectedMessageIds, "set_project", {
+      project_id,
+    });
+    clearSelectionAndExit();
+  };
+
+  const handleConfirmTagsAdd = (tagsToAdd) => {
+    setShowTagPanel(null);
+    handleMultiAction(setMessages, selectedMessageIds, "add_tags", {
+      tagsToAdd,
+    });
+    clearSelectionAndExit();
+  };
+
+  const handleConfirmTagsRemove = (tagsToRemove) => {
+    setShowTagPanel(null);
+    handleMultiAction(setMessages, selectedMessageIds, "remove_tags", {
+      tagsToRemove,
+    });
+    clearSelectionAndExit();
+  };
+
+  const handleConfirmThreadJoin = (thread_id) => {
+    setShowThreadPanel(null);
+    handleMultiAction(setMessages, selectedMessageIds, "add_threads");
+    clearSelectionAndExit();
+  };
+
+  const handleConfirmThreadRemove = (thread_id) => {
+    setShowThreadPanel(null);
+    handleMultiAction(setMessages, selectedMessageIds, "remove_threads");
+    clearSelectionAndExit();
+  };
+
+  const handleConfirmThreadCreate = () => {
+    setShowThreadPanel(null);
+    handleMultiAction(setMessages, selectedMessageIds, "add_threads");
+    clearSelectionAndExit();
+  };
+
+  const existingTagsForSelection = useMemo(() => {
+    if (!selectedMessageIds.length) return [];
+
+    const tagSet = new Set();
+
+    messages.forEach((msg) => {
+      if (!selectedMessageIds.includes(msg.message_id)) return;
+      (msg.user_tags || []).forEach((tag) => tagSet.add(tag));
+    });
+
+    return Array.from(tagSet).sort();
+  }, [messages, selectedMessageIds]);
+
+  const existingThreadsForSelection = useMemo(() => {
+    if (!selectedMessageIds.length) return [];
+
+    const threadSet = new Set();
+
+    messages.forEach((msg) => {
+      if (!selectedMessageIds.includes(msg.message_id)) return;
+      (msg.thread_ids || []).forEach((thread_id) => threadSet.add(thread_id));
+    });
+
+    return Array.from(threadSet).sort();
+  }, [messages, selectedMessageIds]);
+
+  const handleReturnToThisMoment = async (message_id: string) => {
+    const res = await fetch(`/api/time_skip/${message_id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) {
+      console.error("Failed to set time skip");
+      return;
+    }
+
+    const data = await res.json(); // { time_skip: {...} }
+
+
+    setTimeSkipOverride(true);
+    setActiveTab("chat");
+  };
+
+  const handleCreateBulkThread = (msg, title) => {
+    createThreadWithMessages({
+      setMessages,
+      selectedMessageIds: [msg.message_id],
+      setOpenThreadId,
+      setActiveTab,
+      fetchThreads,
+      title,
+    });
+    setShowThreadPanel(false);
+  };
+
+  const handleCreateThread = (msg_ids, title) => {
+    createThreadWithMessages({
+      setMessages,
+      setThreads,
+      setThreadMessages,
+      selectedMessageIds: msg_ids,
+      setOpenThreadId,
+      setActiveTab,
+      updateThreadsState,
+      fetchThreads,
+      title,
+    });
+    setShowSingleThreadPanel(false);
+    setShowThreadPanel(false);
+  };
+
+  const handleJoinThread = (msg, threadId) => {
+    addToThread(setMessages, setThreadMessages, msg, threadId);
+    // you might or might not want to auto-open the thread tab here
+    setShowSingleThreadPanel(false);
+    setShowThreadPanel(false);
+  };
+
+  const handleLeaveThread = (msg, threadId) => {
+    removeFromThread(setMessages, setThreadMessages, msg, threadId);
+    setShowSingleThreadPanel(false);
+    setShowThreadPanel(false);
+  };
+  // ------------------------------------
+  // End - Message Actions States and Functions
+  // ------------------------------------
+
+  // ------------------------------------
+  // Websocket States and Functions
+  // ------------------------------------
+  const audioControls = useAudioControls();
+  const wsRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const ACTIVE_WINDOW_LIMIT = 10;
+
+  function upsertMessage(existing, incoming) {
+    const index = existing.findIndex(m => m.message_id === incoming.message_id);
+    if (index === -1) {
+      return [...existing, incoming];
+    } else {
+      const copy = existing.slice();
+      copy[index] = { ...copy[index], ...incoming };
+      return copy;
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function connectWebSocket() {
+      setConnecting(true);
+      const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+      const wsHost = window.location.host;
+      const wsPath = "/ws";
+      const ws = new WebSocket(`${wsProtocol}://${wsHost}${wsPath}`);
+      wsRef.current = ws;
+
+      const tryRegister = () => {
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ listen_as: "frontend" }));
+          setConnecting(false);
+        } else if (!cancelled) {
+          setTimeout(tryRegister, 50);
+        }
+      };
+      tryRegister();
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        switch (data.type) {
+          case "muse_message": {
+            const text = data.message;
+            const role = data.role;
+            const message_id = data.message_id;
+            const project_id = data.project_id;
+            const thread_id = data.thread_id;
+
+            const incoming = {
+              role,
+              text,
+              message_id,
+              timestamp: new Date().toISOString(),
+              project_id,
+              thread_ids: thread_id ? [thread_id] : []
+            };
+
+            setMessages(prev => {
+              const updated = trimMessages(
+                upsertMessage(prev, incoming),
+                ACTIVE_WINDOW_LIMIT
+              );
+              setScrollToMessageId(message_id);
+              return updated;
+            });
+
+            if (thread_id) {
+              setThreadMessages(prev => {
+                const updated = trimMessages(
+                  upsertMessage(prev, incoming),
+                  ACTIVE_WINDOW_LIMIT
+                );
+                return updated;
+              });
+            }
+
+            setThinking(false);
+            if (data.type === "muse_message") {
+              const incoming = data.message;
+              if (audioControls.audioResponseRef.current) {
+                audioControls.audioResponseRef.current(incoming);
+              }
+            }
+
+            break;
+          }
+
+          case "motd_update": {
+            setMotd(data.message);
+            break;
+          }
+
+          // later:
+          // case "avatar_update":
+          //   setAvatarUrl(data.message);
+          //   break;
+
+          default:
+            // ignore unknown types for now
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        if (!cancelled) {
+          setConnecting(true);
+          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 1500);
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    connectWebSocket();
+
+    return () => {
+      cancelled = true;
+      if (wsRef.current) wsRef.current.close();
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    };
+  }, []); // single socket for the page
+
+  // ------------------------------------
+  // End - Websocket States and Functions
+  // ------------------------------------
+
+  // ------------------------------------
+  // Tool Panel / Files States and Functions
+  // ------------------------------------
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [project, setProject] = useState(null);
+  const [focus, setFocus] = useState(0.5);
+  const [autoAssign, setAutoAssign] = useState(false);
+  const [injectedFiles, setInjectedFiles] = useState([]);
+
+  // Ephemeral file controls
+  const [ephemeralFiles, setEphemeralFiles] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState(null);
 
   // On project select: fetch project doc (read-only)
   useEffect(() => {
@@ -302,23 +600,37 @@ export default function ChatPage() {
     ]);
   };
 
+  // ------------------------------------
+  // End - Tool Panel / Files States and Functions
+  // ------------------------------------
+
   return (
     <div className="flex flex-col h-full w-full min-h-0">
       {/* Sub-tab selector */}
       <div className="flex gap-2 border-b border-neutral-800 px-6">
-        {TABS.map(tab => (
+        {visibleTabs.map(tab => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => {
+              setActiveTab(tab.key);
+              updateNavState({ main_tab: tab.key });
+            }}
             title={tab.key === "history" ? "View, search, and filter conversation logs" : ""}
             className={`px-4 py-2 rounded-t-lg border-b-2 transition-all
               ${activeTab === tab.key
-                ? 'border-purple-400 text-purple-200 font-bold bg-neutral-900'
-                : 'border-transparent text-purple-400 hover:bg-neutral-900/50'
+                ? "border-purple-400 text-purple-200 font-bold bg-neutral-900"
+                : "border-transparent text-purple-400 hover:bg-neutral-900/50"
               }`
             }
           >
-            {tab.label}
+            <span className="inline-flex items-center gap-1 align-middle">
+              {tab.key === "thread" && openThreadId && (
+                <Split className="w-4 h-4 translate-y-[1px]" />
+              )}
+              <span className="leading-none">
+                {tab.key === "thread" ? openThreadTitle || tab.label : tab.label}
+              </span>
+            </span>
           </button>
         ))}
       </div>
@@ -328,8 +640,33 @@ export default function ChatPage() {
         <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0 px-6">
           <div className=" relative md:col-span-2 overflow-y-auto">
             <ChatTab
-              setSpeaking={setSpeaking}
-              speaking={speaking}
+              // General and nav
+              audioControls={audioControls}
+              ephemeralFiles={ephemeralFiles}
+              setEphemeralFiles={setEphemeralFiles}
+              handleEphemeralUpload={handleEphemeralUpload}
+              messages={messages}
+              setMessages={setMessages}
+              threadMessages={threadMessages}
+              setThreadMessages={setThreadMessages}
+              wsRef={wsRef}
+              connecting={connecting}
+              thinking={thinking}
+              setThinking={setThinking}
+              scrollToMessageId={scrollToMessageId}
+              setScrollToMessageId={setScrollToMessageId}
+              ACTIVE_WINDOW_LIMIT={ACTIVE_WINDOW_LIMIT}
+              timeSkipOverride={timeSkipOverride}
+              setTimeSkipOverride={setTimeSkipOverride}
+              timeSkipActive={timeSkipActive}
+
+              // Project & Threads
+              threads={threads}
+              threadMap={threadMap}
+              projects={projects}
+              project={project}
+              projectMap={projectMap}
+              projectsLoading={projectsLoading}
               selectedProjectId={selectedProjectId}
               focus={focus}
               autoAssign={autoAssign}
@@ -337,26 +674,48 @@ export default function ChatPage() {
               files={files}
               setInjectedFiles={setInjectedFiles}
               handlePinToggle={handlePinToggle}
-              ephemeralFiles={ephemeralFiles}
-              setEphemeralFiles={setEphemeralFiles}
-              handleEphemeralUpload={handleEphemeralUpload}
-              speak={speak}
-              setIsTTSPlaying={setIsTTSPlaying}
-              isTTSPlaying={isTTSPlaying}
-              audioSourceRef={audioSourceRef}
-              audioCtxRef={audioCtxRef}
-              Equalizer={Equalizer}
-              setSpeakingMessageId={setSpeakingMessageId}
-              speakingMessageId={speakingMessageId}
+              onCreateThread={handleCreateThread}
+              onJoinThread={handleJoinThread}
+              onLeaveThread={handleLeaveThread}
+
+              // Message Actions
+              createThreadWithMessages={createThreadWithMessages}
+              multiSelectEnabled={multiSelectEnabled}
+              selectedMessageIds={selectedMessageIds}
+              showProjectPanel={showProjectPanel}
+              setShowProjectPanel={setShowProjectPanel}
+              showTagPanel={showTagPanel}
+              setShowTagPanel={setShowTagPanel}
+              showThreadPanel={showThreadPanel}
+              setShowThreadPanel={setShowThreadPanel}
+              showSingleThreadPanel={showSingleThreadPanel}
+              setShowSingleThreadPanel={setShowSingleThreadPanel}
+              handleToggleMultiSelect={handleToggleMultiSelect}
+              handleToggleSelect={handleToggleSelect}
+              onMultiAction={onMultiAction}
+              handleCreateThread={handleCreateThread}
+              handleJoinThread={handleJoinThread}
+              handleLeaveThread={handleLeaveThread}
+              tagDialogOpen={tagDialogOpen}
+              setTagDialogOpen={setTagDialogOpen}
+              handleConfirmProject={handleConfirmProject}
+              handleConfirmTagsAdd={handleConfirmTagsAdd}
+              handleConfirmTagsRemove={handleConfirmTagsRemove}
+              existingTagsForSelection={existingTagsForSelection}
+              existingThreadsForSelection={existingThreadsForSelection}
+              clearSelectionAndExit={clearSelectionAndExit}
             />
           </div>
           <div className="flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">
             {/* Expandable/collapsible presence panel */}
-            <PresencePanel speaking={speaking} />
-            <MotdBar />
+            <PresencePanel speaking={audioControls.speaking} />
+            {/* MOTD Bar under the Presence Panel */}
+            <MotdBar motd={motd} />
             {/* Always-scrollable tool panel below */}
             <div className="flex-1 overflow-y-auto">
             <TabbedToolPanel
+              threads={threads}
+              threadMap={threadMap}
               projects={projects}
               project={project}
               fetchProjects={fetchProjects}
@@ -382,20 +741,151 @@ export default function ChatPage() {
         </div>
       )}
 
+      {activeTab === "thread" && openThreadId && (
+        <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0 px-6">
+          <div className=" relative md:col-span-2 overflow-y-auto">
+            <ChatTab
+              // General and nav
+              threadId={openThreadId}
+              audioControls={audioControls}
+              ephemeralFiles={ephemeralFiles}
+              setEphemeralFiles={setEphemeralFiles}
+              handleEphemeralUpload={handleEphemeralUpload}
+              messages={messages}
+              setMessages={setMessages}
+              threadMessages={threadMessages}
+              setThreadMessages={setThreadMessages}
+              wsRef={wsRef}
+              connecting={connecting}
+              thinking={thinking}
+              setThinking={setThinking}
+              scrollToMessageId={scrollToMessageId}
+              setScrollToMessageId={setScrollToMessageId}
+              ACTIVE_WINDOW_LIMIT={ACTIVE_WINDOW_LIMIT}
+              timeSkipOverride={timeSkipOverride}
+              setTimeSkipOverride={setTimeSkipOverride}
+              timeSkipActive={timeSkipActive}
+
+              // Project & Threads
+              threads={threads}
+              threadMap={threadMap}
+              projects={projects}
+              project={project}
+              projectMap={projectMap}
+              projectsLoading={projectsLoading}
+              selectedProjectId={selectedProjectId}
+              focus={focus}
+              autoAssign={autoAssign}
+              injectedFiles={injectedFiles}
+              files={files}
+              setInjectedFiles={setInjectedFiles}
+              handlePinToggle={handlePinToggle}
+
+              // Message Actions
+              createThreadWithMessages={createThreadWithMessages}
+              multiSelectEnabled={multiSelectEnabled}
+              selectedMessageIds={selectedMessageIds}
+              showProjectPanel={showProjectPanel}
+              setShowProjectPanel={setShowProjectPanel}
+              showTagPanel={showTagPanel}
+              setShowTagPanel={setShowTagPanel}
+              showThreadPanel={showThreadPanel}
+              setShowThreadPanel={setShowThreadPanel}
+              showSingleThreadPanel={showSingleThreadPanel}
+              setShowSingleThreadPanel={setShowSingleThreadPanel}
+              handleToggleMultiSelect={handleToggleMultiSelect}
+              handleToggleSelect={handleToggleSelect}
+              onMultiAction={onMultiAction}
+              handleCreateThread={handleCreateThread}
+              handleJoinThread={handleJoinThread}
+              handleLeaveThread={handleLeaveThread}
+              tagDialogOpen={tagDialogOpen}
+              setTagDialogOpen={setTagDialogOpen}
+              handleConfirmProject={handleConfirmProject}
+              handleConfirmTagsAdd={handleConfirmTagsAdd}
+              handleConfirmTagsRemove={handleConfirmTagsRemove}
+              existingTagsForSelection={existingTagsForSelection}
+              existingThreadsForSelection={existingThreadsForSelection}
+              clearSelectionAndExit={clearSelectionAndExit}
+            />
+          </div>
+          <div className="flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">
+            {/* Expandable/collapsible presence panel */}
+            <PresencePanel speaking={audioControls.speaking} />
+            {/* MOTD Bar under the Presence Panel */}
+            <MotdBar motd={motd} />
+            {/* Always-scrollable tool panel below */}
+            <div className="flex-1 overflow-y-auto">
+            <TabbedToolPanel
+              threads={threads}
+              threadMap={threadMap}
+              projects={projects}
+              project={project}
+              fetchProjects={fetchProjects}
+              projectMap={projectMap}
+              selectedProjectId={selectedProjectId}
+              setSelectedProjectId={setSelectedProjectId}
+              focus={focus}
+              setFocus={setFocus}
+              autoAssign={autoAssign}
+              setAutoAssign={setAutoAssign}
+              injectedFiles={injectedFiles}
+              setInjectedFiles={setInjectedFiles}
+              fetchFiles={fetchFiles}
+              files={files}
+              setFiles={setFiles}
+              filesLoading={filesLoading}
+              setFilesLoading={setFilesLoading}
+              filesError={filesError}
+              handlePinToggle={handlePinToggle}
+            />
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === "history" && (
         <div className="flex-1 min-h-0 px-6 bg-neutral-950 text-white">
           <HistoryTab
+            // General and nav
+            audioControls={audioControls}
+
+            // Project & Threads
+            threads={threads}
+            threadMap={threadMap}
+            projects={projects}
+            project={project}
+            fetchProjects={fetchProjects}
+            projectMap={projectMap}
+            projectsLoading={projectsLoading}
+
+            // Message Actions
+            clearSelectionAndExit={clearSelectionAndExit}
             onReturnToThisMoment={handleReturnToThisMoment}
-            setSpeaking={setSpeaking}
-            speak={speak}
-            setIsTTSPlaying={setIsTTSPlaying}
-            isTTSPlaying={isTTSPlaying}
-            audioSourceRef={audioSourceRef}
-            audioCtxRef={audioCtxRef}
-            Equalizer={Equalizer}
-            setSpeakingMessageId={setSpeakingMessageId}
-            speakingMessageId={speakingMessageId}
+            createThreadWithMessages={createThreadWithMessages}
+            multiSelectEnabled={multiSelectEnabled}
+            selectedMessageIds={selectedMessageIds}
+            showProjectPanel={showProjectPanel}
+            setShowProjectPanel={setShowProjectPanel}
+            showTagPanel={showTagPanel}
+            setShowTagPanel={setShowTagPanel}
+            showThreadPanel={showThreadPanel}
+            setShowThreadPanel={setShowThreadPanel}
+            showSingleThreadPanel={showSingleThreadPanel}
+            setShowSingleThreadPanel={setShowSingleThreadPanel}
+            handleToggleMultiSelect={handleToggleMultiSelect}
+            handleToggleSelect={handleToggleSelect}
+            handleCreateThread={handleCreateThread}
+            handleJoinThread={handleJoinThread}
+            handleLeaveThread={handleLeaveThread}
+            tagDialogOpen={tagDialogOpen}
+            setTagDialogOpen={setTagDialogOpen}
+            handleConfirmProject={handleConfirmProject}
+            handleConfirmTagsAdd={handleConfirmTagsAdd}
+            handleConfirmTagsRemove={handleConfirmTagsRemove}
+            existingTagsForSelection={existingTagsForSelection}
+            existingThreadsForSelection={existingThreadsForSelection}
+            clearSelectionAndExit={clearSelectionAndExit}
           />
         </div>
       )}

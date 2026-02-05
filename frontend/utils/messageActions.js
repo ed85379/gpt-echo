@@ -3,8 +3,8 @@ export function CandleHolderLit(props) {
   return (
     <svg
       xmlns="https://www.w3.org/2000/svg"
-      width="18"
-      height="18"
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -78,17 +78,18 @@ export function handleToggleRemembered(setMessages, message_id, makeRemembered) 
   });
 }
 
-export function setProject(setMessages, message_id, project_id) {
+export function setProjectOnMessage(setMessages, message_id, project_id) {
   fetch("/api/messages/tag", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message_ids: [message_id], set_project: project_id }),
   }).then(() => {
-    setMessages(prev =>
-      prev.map(m =>
+    setMessages(prev => {
+      console.log('setProject prev:', typeof prev, Array.isArray(prev), prev);
+      return prev.map(m =>
         m.message_id === message_id ? { ...m, project_id } : m
-      )
-    );
+      );
+    });
   });
 }
 
@@ -138,13 +139,92 @@ export function removeTag(setMessages, message_id, tag) {
   });
 }
 
+
+export function addToThread(setMessages, setThreadMessages, message_ids, thread_id) {
+  if (!message_ids.length || !thread_id) return;
+
+  // 1) Optimistic UI update in main list
+  setMessages(prev =>
+    prev.map(m => {
+      if (!message_ids.includes(m.message_id)) return m;
+      const existing = m.thread_ids || [];
+      if (existing.includes(thread_id)) return m;
+      return { ...m, thread_ids: [...existing, thread_id] };
+    })
+  );
+
+  // 1b) Optimistic UI update in thread list (if it already has any of these messages)
+  if (setThreadMessages) {
+    setThreadMessages(prev =>
+      prev.map(m => {
+        if (!message_ids.includes(m.message_id)) return m;
+        const existing = m.thread_ids || [];
+        if (existing.includes(thread_id)) return m;
+        return { ...m, thread_ids: [...existing, thread_id] };
+      })
+    );
+  }
+
+  // 2) Fire-and-forget server update
+  return fetch("/api/messages/tag", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message_ids,
+      add_threads: [thread_id],
+    }),
+  });
+}
+
+export function removeFromThread(setMessages, setThreadMessages, message_ids, thread_id) {
+  if (!message_ids.length || !thread_id) return;
+
+  // 1) Optimistic UI update in main list
+  setMessages(prev =>
+    prev.map(m => {
+      if (!message_ids.includes(m.message_id)) return m;
+      const existing = m.thread_ids || [];
+      if (!existing.length) return m;
+      return {
+        ...m,
+        thread_ids: existing.filter(tid => tid !== thread_id),
+      };
+    })
+  );
+
+  // 1b) Optimistic UI update in thread list (if it already has any of these messages)
+  if (setThreadMessages) {
+    setThreadMessages(prev =>
+      prev.map(m => {
+        if (!message_ids.includes(m.message_id)) return m;
+        const existing = m.thread_ids || [];
+        if (!existing.length) return m;
+        return {
+          ...m,
+          thread_ids: existing.filter(tid => tid !== thread_id),
+        };
+      })
+    );
+  }
+
+  // 2) Fire-and-forget server update
+  return fetch("/api/messages/tag", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message_ids,
+      remove_threads: [thread_id],
+    }),
+  });
+}
+
 export async function handleMultiAction(
-  setMessages,
+  updateMessages,
   selectedMessageIds,
   action,
   options = {}
 ) {
-  const { project_id, tagsToAdd = [], tagsToRemove = [] } = options;
+  const { project_id, tagsToAdd = [], tagsToRemove = [], thread_id } = options;
 
   const body = { message_ids: selectedMessageIds };
 
@@ -184,6 +264,12 @@ export async function handleMultiAction(
       if (!tagsToRemove.length) return;
       body.remove_user_tags = tagsToRemove;
       break;
+    case "add_threads":
+      body.add_threads = thread_id ?? false;
+      break;
+    case "remove_threads":
+      body.remove_threads = thread_id ?? false;
+      break;
     default:
       return;
   }
@@ -199,7 +285,7 @@ export async function handleMultiAction(
     return;
   }
 
-  setMessages(prev =>
+  updateMessages(prev =>
     prev.map(m => {
       if (!selectedMessageIds.includes(m.message_id)) return m;
 
@@ -234,6 +320,18 @@ export async function handleMultiAction(
           return {
             ...m,
             user_tags: existing.filter((t) => !tagsToRemove.includes(t)),
+          };
+        }
+        case "add_threads": {
+          const existing = m.thread_ids || [];
+          const merged = Array.from(new Set([...existing, ...thread_id]));
+          return { ...m, thread_ids: merged };
+        }
+        case "remove_threads": {
+          const existing = m.thread_ids || [];
+          return {
+            ...m,
+            thread_ids: existing.filter((t) => !thread_id.includes(t)),
           };
         }
         default:

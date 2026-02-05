@@ -51,6 +51,7 @@ def build_api_prompt(user_input, **kwargs):
     author_name = muse_config.get("USER_NAME", "Unknown Person")
     active_project_report = kwargs.get("active_project_report", {})
     project_id, project_name, project_meta, project_code_intensity = prompt_projects_helper(kwargs.get("project_id"))
+    thread_id = kwargs.get("thread_id")
     # Developer role segments
     builder.add_laws()
     builder.add_profile()
@@ -87,6 +88,7 @@ def build_api_prompt(user_input, **kwargs):
         user_input=user_input,
         projects_in_focus=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
         blend_ratio=kwargs.get("blend_ratio", 0.0),
+        thread_id=kwargs.get("thread_id"),
         message_ids_to_exclude=kwargs.get("message_ids_to_exclude", []),
         final_top_k=kwargs.get("final_top_k", 10),
         proj_code_intensity=project_code_intensity
@@ -186,7 +188,9 @@ def build_discord_prompt(user_input, muse_config, **kwargs):
     builder.add_prompt_context(user_input=user_input,
                                projects_in_focus=[],
                                blend_ratio=0.0,
-                               public=True)
+                               public=True,
+                               thread_id=kwargs.get("thread_id"),
+                               )
     builder.add_formatting_instructions()
     footer = f"[{local_timestamp}] [Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])

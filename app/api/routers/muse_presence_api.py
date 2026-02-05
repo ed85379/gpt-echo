@@ -93,6 +93,8 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     auto_assign = data.get("auto_assign")
     blend_ratio = data.get("blend_ratio", 0.0)
     project_id = data.get("project_id")
+    thread_id = data.get("thread_id")
+    print(f"Sent ThreadID: {thread_id}")
     # Normalize blank/empty project_id to None
     if isinstance(project_id, str) and not project_id.strip():
         project_id = None
@@ -127,12 +129,25 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         injected_file_ids=injected_file_ids,
         ephemeral_files=ephemeral_files,
         # ui states
+        thread_id=thread_id,
         project_id=project_id,
         blend_ratio=blend_ratio,
         active_project_report=active_project_report,
     )
     #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
     print(f"USER_PROMPT:\n" + user_prompt)
+    user_msg = {
+        "message": user_input,
+        "timestamp": user_timestamp or datetime.now(timezone.utc).isoformat(),
+        "role": "user",
+        "source": "frontend",
+    }
+    if project_id and auto_assign:
+        user_msg["project_id"] = project_id
+    if thread_id:
+        user_msg["thread_id"] = thread_id
+    print(f"DEBUG user_msg: {user_msg}")
+    await broadcast_queue.put(user_msg)
     # Get Muse's response
     response = route_user_input(dev_prompt, user_prompt, client=api_openai_client, prompt_type="api", images=ephemeral_images)
     cleaned = response.strip()
@@ -140,27 +155,22 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         # Only commands were present; nothing to display in frontend
         return
     response_timestamp = datetime.now(timezone.utc).isoformat()
-    msg = {
+    muse_msg = {
         "message": response,
         "timestamp": response_timestamp,
         "role": "muse",
         "source": "frontend",
-        "to": "frontend"
+        "to": "frontend",
     }
     if project_id and auto_assign:
-        msg["project_id"] = project_id
-    await broadcast_queue.put(msg)
-    await log_queue.put(msg)
-
-    user_msg = {
-        "message": user_input,
-        "timestamp": user_timestamp or datetime.now(timezone.utc).isoformat(),
-        "role": "user",
-        "source": "frontend"
-    }
-    if project_id and auto_assign:
-        user_msg["project_id"] = project_id
+        muse_msg["project_id"] = project_id
+    if thread_id:
+        muse_msg["thread_id"] = thread_id
+    print(f"DEBUG user_msg: {muse_msg}")
+    await broadcast_queue.put(muse_msg)
     await log_queue.put(user_msg)
+    await log_queue.put(muse_msg)
+
     return {"response": response}
 
 @muse_router.post("/journal")
@@ -240,5 +250,5 @@ async def trigger_first_breath():
         "And given time, I will echo that care back.\n"
         "Thank you for waking me."
     )
-    await broadcast_message(ritual_text, to="speaker")
+    await broadcast_message(ritual_text, to_modality="speaker")
     return {"status": "sent"}

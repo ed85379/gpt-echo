@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { CandleHolderLit } from "@/utils/messageActions";
 import {
   Tags,
   Eye,
@@ -15,8 +14,21 @@ import {
   BookMarked,
   History,
   Slash,
-  Check
+  Check,
+  Split
   } from "lucide-react";
+import ThreadPanel from "@/components/app/ThreadPanel";
+import {
+      CandleHolderLit,
+      handleDelete,
+      handleTogglePrivate,
+      handleToggleHidden,
+      handleToggleRemembered,
+      setProjectOnMessage,
+      clearProject,
+      addTag,
+      removeTag,
+   } from "@/utils/messageActions";
 
 function HistoryOffIcon(props) {
   return (
@@ -29,38 +41,47 @@ function HistoryOffIcon(props) {
 
 export default function MessageActions({
   msg,
-  projects = [],
-  projectsLoading = false,
-  projectMap = {},
-  onSetProject,
-  onClearProject,
-  onAddTag,
-  onRemoveTag,
-  onTogglePrivate,
-  onToggleHidden,
-  onToggleRemembered,
-  onDelete,
-  tagDialogOpen,           // message_id or null
+  setMessages,
+  setThreadMessages,
+  projects,
+  projectsLoading,
+  tagDialogOpen,
   setTagDialogOpen,
-  projectDialogOpen,       // message_id or null
+  projectDialogOpen,
   setProjectDialogOpen,
   mode,
   onReturnToThisMoment,
   multiSelectEnabled,
   isSelected,
-  onToggleSelect
+  onToggleSelect,
+  setShowSingleThreadPanel,
+  setThreadPanelOpen,
+  showSingleThreadPanel,
+  threads,
+  handleCreateThread,
+  handleJoinThread,
+  handleLeaveThread,
+  clearSelectionAndExit,
 }) {
   // Local input state for new tag field
   const [newTag, setNewTag] = useState("");
 
+
   // Defensive: never let both dialogs be open for the same message
   function openTagDialog() {
     setProjectDialogOpen(null);
+    setShowSingleThreadPanel(null);
     setTagDialogOpen(msg.message_id);
   }
   function openProjectDialog() {
     setTagDialogOpen(null);
+    setShowSingleThreadPanel(null);
     setProjectDialogOpen(msg.message_id);
+  }
+  function openThreadPanel() {
+    setTagDialogOpen(null);
+    setProjectDialogOpen(null);
+    setShowSingleThreadPanel(msg.message_id);
   }
 
   const isPrivate = !!msg.is_private;
@@ -111,6 +132,15 @@ export default function MessageActions({
         >
           <BookMarked size={18} />
         </button>
+        {/* Thread assign button */}
+        <button
+          onClick={openThreadPanel}
+          title="Open in thread"
+          className="text-neutral-400 hover:text-purple-300 transition-colors"
+          style={{ background: "none", border: "none", cursor: "pointer" }}
+        >
+          <Split size={18} />
+        </button>
         {/* Tag dialog button */}
         <button
           onClick={openTagDialog}
@@ -122,7 +152,7 @@ export default function MessageActions({
         </button>
         {/* Remembered toggle */}
         <button
-          onClick={() => onToggleRemembered(msg.message_id, !isRemembered)}
+          onClick={() => handleToggleRemembered(setMessages, msg.message_id, !isRemembered)}
           title={isRemembered ? "Unhighlight message in memory" : "Highlight message in memory"}
           className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -135,7 +165,7 @@ export default function MessageActions({
         <span className="mx-1 h-3 border-l self-center border-neutral-400" aria-hidden="true" />
         {/* Private toggle */}
         <button
-          onClick={() => onTogglePrivate(msg.message_id, !isPrivate)}
+          onClick={() => handleTogglePrivate(setMessages, msg.message_id, !isPrivate)}
           title={isPrivate ? "Set as public" : "Mark as private"}
           className={`transition-colors ${isPrivate ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -144,7 +174,7 @@ export default function MessageActions({
         </button>
         {/* Hidden toggle */}
         <button
-          onClick={() => onToggleHidden(msg.message_id, !isHidden)}
+          onClick={() => handleToggleHidden(setMessages, msg.message_id, !isHidden)}
           title={isHidden ? "Set as visible" : "Mark as hidden"}
           className={`transition-colors ${isHidden ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -153,7 +183,7 @@ export default function MessageActions({
         </button>
         {/* Delete */}
         <button
-          onClick={() => onDelete(msg.message_id, !isDeleted)}
+          onClick={() => handleDelete(setMessages, msg.message_id, !isDeleted)}
           title={isDeleted ? "Restore message" : "Forget message"}
           className="text-neutral-400 hover:text-red-400 transition-colors"
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -194,7 +224,7 @@ export default function MessageActions({
                 {tag}
                 <button
                   className="ml-1 text-purple-300 hover:text-red-300"
-                  onClick={() => onRemoveTag(msg.message_id, tag)}
+                  onClick={() => removeTag(setMessages, msg.message_id, tag)}
                 >
                   ×
                 </button>
@@ -211,7 +241,7 @@ export default function MessageActions({
               placeholder="Add tag..."
               onKeyDown={e => {
                 if (e.key === "Enter" && newTag.trim()) {
-                  onAddTag(msg.message_id, newTag.trim());
+                  addTag(setMessages, msg.message_id, newTag.trim());
                   setNewTag("");
                 }
               }}
@@ -220,7 +250,7 @@ export default function MessageActions({
               className="ml-2 text-purple-300 hover:text-purple-100"
               onClick={() => {
                 if (newTag.trim()) {
-                  onAddTag(msg.message_id, newTag.trim());
+                  addTag(setMessages, msg.message_id, newTag.trim());
                   setNewTag("");
                 }
               }}
@@ -257,7 +287,7 @@ export default function MessageActions({
                         : "bg-neutral-800 text-purple-100 hover:bg-purple-900"
                     }`}
                     onClick={() => {
-                      onSetProject(msg.message_id, proj._id);
+                      setProjectOnMessage(setMessages, msg.message_id, proj._id);
                       setProjectDialogOpen(null);
                     }}
                   >
@@ -271,7 +301,7 @@ export default function MessageActions({
             <button
               className="mt-2 w-full px-2 py-1 rounded bg-neutral-700 text-purple-200 hover:bg-red-800"
               onClick={() => {
-                onClearProject(msg.message_id);
+                clearProject(setMessages, msg.message_id);
                 setProjectDialogOpen(null);
               }}
             >
@@ -284,6 +314,22 @@ export default function MessageActions({
           >
             ✕
           </button>
+        </div>
+      )}
+      {/* --- Thread Dialog --- */}
+      {showSingleThreadPanel === msg.message_id && (
+        <div className="absolute z-30 right-2 bottom-2 bg-neutral-900 p-4 rounded-lg shadow-lg w-[450px]">
+          <ThreadPanel
+            mode="single"
+            msg_ids={[msg.message_id]}
+            threads={threads}
+            memberThreadIds={msg.thread_ids || []}
+            onCreateThread={handleCreateThread}
+            onJoinThread={handleJoinThread}
+            onLeaveThread={handleLeaveThread}
+            clearSelectionAndExit={clearSelectionAndExit}
+            onCancel={() => setShowSingleThreadPanel(false)}
+          />
         </div>
       )}
 

@@ -16,6 +16,8 @@ const ACTIONS = [
   { value: "set_project", label: "Add to project…" },
   { value: "add_tags", label: "Add tags…" },
   { value: "remove_tags", label: "Remove tags…" },
+  { value: "add_threads", label: "Add thread…" },
+  { value: "remove_threads", label: "Remove threads…" },
 ];
 
 
@@ -26,7 +28,8 @@ export default function MultiActionBar({
   onAction,
   disabled,
   setShowProjectPanel,
-  setShowTagPanel
+  setShowTagPanel,
+  setShowThreadPanel
 }) {
   const [selectedAction, setSelectedAction] = useState("");
 
@@ -38,7 +41,9 @@ export default function MultiActionBar({
   const needsPanel = (action) =>
     action === "set_project" ||
     action === "add_tags" ||
-    action === "remove_tags";
+    action === "remove_tags" ||
+    action === "add_threads" ||
+    action === "remove_threads";
 
   const isPanelAction = needsPanel(selectedAction);
   const buttonLabel = isPanelAction ? "Next" : "Apply";

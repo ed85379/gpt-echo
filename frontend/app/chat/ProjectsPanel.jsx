@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, Pin } from 'lucide-react';
-import { useConfig } from '@/hooks/ConfigContext';
 import { humanFileSize } from '@/utils/utils';
-
+import { updateUiStateForProject } from "@/utils/statesFunctions";
 
 export default function ProjectsPanel({
   projects,
@@ -24,24 +23,7 @@ export default function ProjectsPanel({
   handlePinToggle
 }) {
 
-  async function updateUiStateForProject(projectId, updates) {
-    if (!projectId) return; // nothing selected, nothing to persist
 
-    try {
-      const res = await fetch(`/api/states/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-
-      if (!res.ok) {
-        // Optional: log or surface an error later
-        console.error("Failed to update UI state", await res.text());
-      }
-    } catch (err) {
-      console.error("Error updating UI state", err);
-    }
-  }
 
   // UI handlers
   const handleFocusChange = val => {

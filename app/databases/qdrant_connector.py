@@ -104,6 +104,7 @@ def upsert_single(entry, vector, collection=QDRANT_COLLECTION):
         "is_hidden": entry.get("is_hidden", False),
         "is_deleted": entry.get("is_deleted", False),
         "project_id": safe_str(entry.get("project_id")),
+        "thread_ids": entry.get("thread_ids", []),
         "remembered": entry.get("remembered", False)
     }
     ensure_qdrant_collection(vector_size=len(vector), collection_name=collection)
@@ -150,6 +151,7 @@ def index_to_qdrant(entries, vectors, batch_size=128):
             "is_hidden": entry.get("is_hidden", False),
             "is_deleted": entry.get("is_deleted", False),
             "project_id": safe_str(entry.get("project_id")),
+            "thread_ids": entry.get("thread_ids", []),
             "remembered": entry.get("remembered", False)
         }
 

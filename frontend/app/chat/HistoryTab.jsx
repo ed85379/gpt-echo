@@ -1,15 +1,16 @@
+// app/chat/HistoryTab.jsx
 "use client";
-
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
-import { Eye, EyeOff, EyeClosed, Tags, Shredder, SquareX, BookMarked } from 'lucide-react';
+// Hooks
 import { useConfig } from '@/hooks/ConfigContext';
-import { useMemo } from "react";
+// Components
 import MessageItem from "@/components/app/MessageItem";
 import MultiActionBar from "@/components/app/MultiActionBar"
 import ProjectPickerPanel from "@/components/app/ProjectPickerPanel"
 import TagPanel from "@/components/app/TagPanel"
+// Utils
 import {
     handleDelete,
     handleTogglePrivate,
@@ -17,211 +18,78 @@ import {
     handleToggleRemembered,
     handleMultiAction
   } from "@/utils/messageActions";
-import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
+import { getMonthRange } from "@/utils/utils";
 
-
+// General props and functions
 const SOURCE_CHOICES = [
   { key: "frontend", label: "Frontend" },
   { key: "chatgpt", label: "ChatGPT" },
   { key: "discord", label: "Discord" }
 ];
 
+const HistoryTab = (
+  {
+    // General and nav
+    audioControls,
 
-function getMonthRange(date) {
-  // Current month and year
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth();
+    // Project & Threads
+    threads,
+    threadMap,
+    projects,
+    project,
+    fetchProjects,
+    projectMap,
+    projectsLoading,
 
-  // Previous month (handle January rollover)
-  const prevMonth = month === 0 ? 11 : month - 1;
-  const prevYear = month === 0 ? year - 1 : year;
-
-  // Start: first of previous month
-  const start = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
-
-  // End: last of current month
-  const firstOfNextMonth = new Date(Date.UTC(year, month + 1, 1));
-  const lastOfMonth = new Date(firstOfNextMonth.getTime() - 24 * 3600 * 1000);
-  const end = `${lastOfMonth.getUTCFullYear()}-${String(lastOfMonth.getUTCMonth() + 1).padStart(2, '0')}-${String(lastOfMonth.getUTCDate()).padStart(2, '0')}`;
-
-  return { start, end };
-}
-
-const HistoryTab = ({
+    // Message Actions
+    clearSelectionAndExit,
+    setSelectedMessageIds,
     onReturnToThisMoment,
-    setSpeaking,
-    speak,
-    setIsTTSPlaying,
-    isTTSPlaying,
-    audioSourceRef,
-    audioCtxRef,
-    Equalizer,
-    setSpeakingMessageId,
-    speakingMessageId
-  }) => {
+    createThreadWithMessages,
+    multiSelectEnabled,
+    selectedMessageIds,
+    showProjectPanel,
+    setShowProjectPanel,
+    showTagPanel,
+    setShowTagPanel,
+    showThreadPanel,
+    setShowThreadPanel,
+    handleToggleMultiSelect,
+    handleToggleSelect,
+    handleCreateThread,
+    handleJoinThread,
+    handleLeaveThread,
+    tagDialogOpen,
+    setTagDialogOpen,
+    handleConfirmProject,
+    handleConfirmTagsAdd,
+    handleConfirmTagsRemove,
+    existingTagsForSelection,
+  }
+) => {
+  // Initial states
   const [source, setSource] = useState("Frontend");
-  const [calendarStatus, setCalendarStatus] = useState({});
-  const [selectedDate, setSelectedDate] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [displayMonth, setDisplayMonth] = useState(new Date());
-  const [tagDialogOpen, setTagDialogOpen] = useState(null);
-  const [newTag, setNewTag] = useState("");
-  const [availableTags, setAvailableTags] = useState([]);
+
+  // ------------------------------------
+  // Message Filters
+  // ------------------------------------
+  const [projectFilter, setProjectFilter] = useState("")
   const [tagFilter, setTagFilter] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [projectsLoading, setProjectsLoading] = useState(true);
-  const [projectDialogOpen, setProjectDialogOpen] = useState(null)
+  const [availableTags, setAvailableTags] = useState([]);
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const hasTags = availableTags.length > 0;
-  const { museProfile, museProfileLoading } = useConfig();
-  const [projectFilter, setProjectFilter] = useState("")
   const [showHidden, setShowHidden] = useState(false)
   const [showForgotten, setShowForgotten] = useState(false)
   const [showPrivate, setShowPrivate] = useState(false)
   const [search, setSearch] = useState("")
-  const [visibleTagChips] = useState([])
-  const [remainingTagCount] = useState(null)
-  const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
-  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
-  const [showProjectPanel, setShowProjectPanel] = useState(false);
-  const [showTagPanel, setShowTagPanel] = useState(null); // "add" | "remove" | null
-
-
-  // derived
   const selectedTagObjects = availableTags.filter(t =>
     tagFilter.includes(t.tag)
   );
 
+  const { museProfile, museProfileLoading } = useConfig();
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
   const mode = "history";
-  // "Bind" each handler to local state
-  const onDelete = useCallback(
-    (message_id, markDeleted) =>
-      handleDelete(setMessages, message_id, markDeleted),
-    [setMessages]
-  );
-
-  const onTogglePrivate = useCallback(
-    (message_id, makePrivate) =>
-      handleDelete(setMessages, message_id, makePrivate),
-    [setMessages]
-  );
-
-  const onToggleHidden = useCallback(
-    (message_id, makeHidden) =>
-      handleToggleHidden(setMessages, message_id, makeHidden),
-    [setMessages]
-  );
-
-  const onToggleRemembered = useCallback(
-    (message_id, makeRemembered) =>
-      handleToggleRemembered(setMessages, message_id, makeRemembered),
-    [setMessages]
-  );
-
-  const onSetProject = useCallback(
-    (message_id, project_id) =>
-      setProject(setMessages, message_id, project_id),
-    [setMessages]
-  );
-
-  const onClearProject = useCallback(
-    (message_id) =>
-      clearProject(setMessages, message_id),
-    [setMessages]
-  );
-
-  const onAddTag = useCallback(
-    (message_id, tag) =>
-      addTag(setMessages, message_id, tag),
-    [setMessages]
-  );
-
-  const onRemoveTag = useCallback(
-    (message_id, tag) =>
-      removeTag(setMessages, message_id, tag),
-    [setMessages]
-  );
-
-  const onMultiAction = (action, options = {}) => {
-    console.log("onMultiAction called with:", action);
-    switch (action) {
-      case "set_project":
-        console.log(">>> setting showProjectPanel = true");
-        setShowProjectPanel(true);
-        break;
-      case "add_tags":
-        console.log(">>> setting showTagPanel = 'add'");
-        setShowTagPanel("add");
-        break;
-      case "remove_tags":
-        console.log(">>> setting showTagPanel = 'remove'");
-        setShowTagPanel("remove");
-        break;
-      default:
-        // simple actions go straight through
-        handleMultiAction(setMessages, selectedMessageIds, action, options);
-        clearSelectionAndExit();
-    }
-  };
-
-  const handleToggleSelect = useCallback((message_id) => {
-    setSelectedMessageIds((prev) =>
-      prev.includes(message_id)
-        ? prev.filter((id) => id !== message_id)
-        : [...prev, message_id]
-    );
-  }, [setSelectedMessageIds]);
-
-  const clearSelectionAndExit = () => {
-    setSelectedMessageIds([]);
-    setMultiSelectEnabled(false);
-  };
-
-  const handleToggleMultiSelect = (enabled) => {
-    setMultiSelectEnabled(enabled);
-    if (!enabled) {
-      setSelectedMessageIds([]);
-    }
-  };
-
-  const handleConfirmProject = (project_id) => {
-    setShowProjectPanel(false);
-    handleMultiAction(setMessages, selectedMessageIds, "set_project", {
-      project_id,
-    });
-    clearSelectionAndExit();
-  };
-
-  const handleConfirmTagsAdd = (tagsToAdd) => {
-    setShowTagPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "add_tags", {
-      tagsToAdd,
-    });
-    clearSelectionAndExit();
-  };
-
-  const handleConfirmTagsRemove = (tagsToRemove) => {
-    setShowTagPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "remove_tags", {
-      tagsToRemove,
-    });
-    clearSelectionAndExit();
-  };
-
-  const existingTagsForSelection = useMemo(() => {
-    if (!selectedMessageIds.length) return [];
-
-    const tagSet = new Set();
-
-    messages.forEach((msg) => {
-      if (!selectedMessageIds.includes(msg.message_id)) return;
-      (msg.user_tags || []).forEach((tag) => tagSet.add(tag));
-    });
-
-    return Array.from(tagSet).sort();
-  }, [messages, selectedMessageIds]);
 
 
   // 1. Base: apply left-column filters (AND) to messages
@@ -284,6 +152,25 @@ const HistoryTab = ({
   );
 
   useEffect(() => {
+    fetch("/api/messages/user_tags")
+      .then(res => res.json())
+      .then(data => setAvailableTags(data.tags || []));
+  }, []);
+  // ------------------------------------
+  // End - Message Filters
+  // ------------------------------------
+
+  // ------------------------------------
+  // Calendar Functions and Message Load
+  // ------------------------------------
+
+  const [calendarStatus, setCalendarStatus] = useState({});
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  const [loading, setLoading] = useState(false);
+  const [displayMonth, setDisplayMonth] = useState(new Date());
+
+  useEffect(() => {
     setCalendarStatus({});
     const { start, end } = getMonthRange(displayMonth);
 
@@ -320,13 +207,6 @@ const HistoryTab = ({
     showPrivate,
   ]);
 
-
-  useEffect(() => {
-    fetch("/api/messages/user_tags")
-      .then(res => res.json())
-      .then(data => setAvailableTags(data.tags || []));
-  }, []);
-
   useEffect(() => {
     setMessages([]);
     if (!selectedDate) return;
@@ -338,24 +218,40 @@ const HistoryTab = ({
       .finally(() => setLoading(false));
   }, [selectedDate, source]);
 
-  useEffect(() => {
-    fetch("/api/projects")
-      .then(res => res.json())
-      .then(data => {
-        setProjects(data.projects || []);
-        setProjectsLoading(false);
-      });
-  }, []);
+  // ------------------------------------
+  // End - Calendar Functions and Message Load
+  // ------------------------------------
 
-    // Build a map for fast lookup
-    const projectMap = useMemo(() => {
-      const map = {};
-      for (const proj of projects) {
-        map[proj._id] = proj;
-      }
-      return map;
-    }, [projects]);
 
+  // ------------------------------------
+  // Message Actions States and Functions
+  // ------------------------------------
+  const [projectDialogOpen, setProjectDialogOpen] = useState(null)
+  const onHistoryMultiAction = (action, options = {}) => {
+    console.log("onMultiAction called with:", action);
+    switch (action) {
+      case "set_project":
+        console.log(">>> setting showProjectPanel = true");
+        setShowProjectPanel(true);
+        break;
+      case "add_tags":
+        console.log(">>> setting showTagPanel = 'add'");
+        setShowTagPanel("add");
+        break;
+      case "remove_tags":
+        console.log(">>> setting showTagPanel = 'remove'");
+        setShowTagPanel("remove");
+        break;
+      default:
+        // simple actions go straight through
+        handleMultiAction(setMessages, selectedMessageIds, action, options);
+        clearSelectionAndExit();
+    }
+  };
+
+  // ------------------------------------
+  // End - Message Actions States and Functions
+  // ------------------------------------
 
 
   return (
@@ -524,7 +420,7 @@ const HistoryTab = ({
                 multiSelectEnabled={multiSelectEnabled}
                 onToggleMultiSelect={handleToggleMultiSelect}
                 selectedCount={selectedMessageIds.length}
-                onAction={onMultiAction}
+                onAction={onHistoryMultiAction}
                 disabled={null}
                 setShowProjectPanel={setShowProjectPanel}
                 setShowTagPanel={setShowTagPanel}
@@ -585,6 +481,7 @@ const HistoryTab = ({
                     <MessageItem
                       key={msg.message_id || idx}
                       msg={msg}
+                      setMessages={setMessages}
                       projects={projects}
                       projectsLoading={projectsLoading}
                       projectMap={projectMap}
@@ -593,28 +490,14 @@ const HistoryTab = ({
                       projectDialogOpen={projectDialogOpen}
                       setProjectDialogOpen={setProjectDialogOpen}
                       museName={museName}
-                      onDelete={onDelete}
-                      onTogglePrivate={onTogglePrivate}
-                      onToggleHidden={onToggleHidden}
-                      onToggleRemembered={onToggleRemembered}
-                      onSetProject={onSetProject}
-                      onClearProject={onClearProject}
-                      onAddTag={onAddTag}
-                      onRemoveTag={onRemoveTag}
+                      setShowThreadPanel={setShowThreadPanel}
                       mode={mode}
-                      audioSourceRef={audioSourceRef}
-                      audioCtxRef={audioCtxRef}
-                      isTTSPlaying={isTTSPlaying}
-                      setIsTTSPlaying={setIsTTSPlaying}
-                      speak={speak}
-                      setSpeaking={setSpeaking}
-                      Equalizer={Equalizer}
-                      setSpeakingMessageId={setSpeakingMessageId}
-                      speakingMessageId={speakingMessageId}
+                      audioControls={audioControls}
                       onReturnToThisMoment={onReturnToThisMoment}
                       multiSelectEnabled={multiSelectEnabled}
                       isSelected={selectedMessageIds.includes(msg.message_id)}
                       onToggleSelect={handleToggleSelect}
+                      createThreadWithMessages={createThreadWithMessages}
                     />
                   ))}
                 </div>

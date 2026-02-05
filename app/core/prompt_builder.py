@@ -215,6 +215,7 @@ class PromptBuilder:
                            user_input,
                            projects_in_focus,
                            blend_ratio,
+                           thread_id,
                            message_ids_to_exclude=[],
                            final_top_k=15,
                            public: bool = False,
@@ -224,7 +225,8 @@ class PromptBuilder:
         recent_entries = memory_core.get_immediate_context(n=10,
                                                            hours=24,
                                                            sources=utils.SOURCES_CONTEXT,
-                                                           public=public)
+                                                           public=public,
+                                                           thread_id=thread_id)
 
         # Build your blend dictionary for the search
         # Example: only main + one project, with UI slider ratio
@@ -257,6 +259,7 @@ class PromptBuilder:
             query=full_context_query,
             projects_in_focus=projects_in_focus,  # list of project ids, or None/[] for global
             blend_ratio=blend_ratio,  # 1.0 for hard, 0.1–0.99 for blend
+            thread_id=thread_id,
             top_k=final_top_k,
             public=public
         )

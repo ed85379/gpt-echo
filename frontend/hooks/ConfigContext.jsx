@@ -8,14 +8,14 @@ export function ConfigProvider({ children }) {
   const [config, setConfig] = useState({});
   const [profile, setProfile] = useState(null);
   const [states, setStates] = useState(null);
-  const [pollstates, setPollstates] = useState(null);
+  //const [pollstates, setPollstates] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const [statesLoading, setStatesLoading] = useState(true);
-  const [pollstatesLoading, setPollstatesLoading] = useState(true);
+  //const [pollstatesLoading, setPollstatesLoading] = useState(true);
 
-  const POLL_MS = 30_000; // 1 minute; change to 300_000 for 5 minutes
+  //const POLL_MS = 600_000; // 1 minute; change to 300_000 for 5 minutes
 
   // --- helpers ---
 
@@ -66,7 +66,7 @@ export function ConfigProvider({ children }) {
       console.error("Error loading states:", err);
     }
   }
-
+{/*
   async function loadPollstates(signal) {
     try {
       const res = await fetch('/api/uipolling/', { signal });
@@ -79,18 +79,19 @@ export function ConfigProvider({ children }) {
       console.error("Error loading polling states:", err);
     }
   }
+*/}
 
   useEffect(() => {
     const configController = new AbortController();
     const profileController = new AbortController();
     const statesController = new AbortController();
-    const pollstatesController = new AbortController();
+    //const pollstatesController = new AbortController();
 
     // initial loads
     loadConfig(configController.signal);
     loadProfile(profileController.signal);
     loadStates(statesController.signal);
-    loadPollstates(pollstatesController.signal);
+    //loadPollstates(pollstatesController.signal);
 
     // 🔁 polling
     //const configInterval = setInterval(() => {
@@ -103,19 +104,19 @@ export function ConfigProvider({ children }) {
     //  loadProfile(p.signal);
     //}, POLL_MS);
 
-    const pollstatesInterval = setInterval(() => {
-      const s = new AbortController();
-      loadPollstates(s.signal);
-    }, POLL_MS);
+    //const pollstatesInterval = setInterval(() => {
+    //  const s = new AbortController();
+    //  loadPollstates(s.signal);
+    //}, POLL_MS);
 
-    return () => {
+    //return () => {
     //  configController.abort();
     //  profileController.abort();
-      pollstatesController.abort();
+    //  pollstatesController.abort();
     //  clearInterval(configInterval);
     //  clearInterval(profileInterval);
-      clearInterval(pollstatesInterval);
-    };
+    //  clearInterval(pollstatesInterval);
+    //};
   }, []);
 
   return (
@@ -127,8 +128,8 @@ export function ConfigProvider({ children }) {
         museProfileLoading: profileLoading,
         uiStates: states,
         uiStatesLoading: statesLoading,
-        uiPollstates: pollstates,
-        uiPollstatesLoading: pollstatesLoading,
+//        uiPollstates: pollstates,
+//        uiPollstatesLoading: pollstatesLoading,
       }}
     >
       {children}

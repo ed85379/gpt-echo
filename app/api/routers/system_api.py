@@ -10,7 +10,10 @@ from app.core.states_core import (
     get_states_doc,
     get_per_project_states,
     create_time_skip,
-    clear_time_skip
+    clear_time_skip,
+    update_thread_state,
+    update_nav_state,
+    get_active_time_skip_window,
     )
 
 # --------------------------
@@ -78,6 +81,12 @@ def get_states():
     states_doc.pop("_id", None)
     return states_doc
 
+@states_router.get("/time_skip")
+def get_time_skip_state():
+    time_skip_state = get_active_time_skip_window()
+    return time_skip_state
+
+
 @states_router.get("/{project_id}")
 def get_project_state(project_id: str):
     per_projects_doc = get_per_project_states()
@@ -104,11 +113,42 @@ def get_project_state(project_id: str):
         "blend_ratio": blend_ratio
     }
 
-@states_router.patch("/{project_id}")
+@states_router.patch("/projects/{project_id}")
 async def set_project_states_endpoint(project_id: str, request: Request):
     data = await request.json()
     success = set_project_states(project_id, data)
     return {"status": "ok" if success else "not found"}
+
+@states_router.patch("/threads")
+def set_thread_state(payload: dict):
+    """
+    Update global thread-related state.
+    Expected payload keys:
+      - open_thread_id: str | null (optional)
+    """
+    try:
+        result = update_thread_state(payload)
+        return {"status": "ok", "threads": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@states_router.patch("/nav")
+def set_nav_state(payload: dict):
+    """
+    Update global nav-related state.
+    Expected payload keys:
+      - main_tab: str | null (optional)
+      - tools_panel_tab: str | null (optional)
+    """
+    try:
+        result = update_nav_state(payload)
+        return {"status": "ok", "nav": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # </editor-fold>
 

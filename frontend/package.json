@@ -27,6 +27,7 @@
     "lucide-mui": "^0.511.0",
     "lucide-react": "^0.512.0",
     "markdown-it": "^14.1.0",
+    "nanoid": "^5.1.6",
     "next": "15.3.2",
     "react": "^19.0.0",
     "react-day-picker": "^9.7.0",

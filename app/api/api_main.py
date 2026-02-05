@@ -15,6 +15,7 @@ from app.api.routers.memory_api import router as memory_router
 from app.api.routers.import_api import router as import_router
 from app.api.routers.projects_api import router as projects_router
 from app.api.routers.files_api import router as files_router
+from app.api.routers.threads_api import router as threads_router
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 
 JOURNAL_DIR = config.JOURNAL_DIR
@@ -38,6 +39,7 @@ app.include_router(profile_router)
 app.include_router(tts_router)
 app.include_router(muse_router)
 app.include_router(time_skip_router)
+app.include_router(threads_router)
 
 
 

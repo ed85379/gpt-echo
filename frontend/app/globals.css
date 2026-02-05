@@ -104,6 +104,17 @@ body {
   100% { height: 4px; }
 }
 
+.motd-letter {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.motd-letter.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 /* Make the DayPicker a bit more compact */
 .rdp-custom {
   --rdp-cell-size: 1.8rem;      /* default is ~2.75rem */

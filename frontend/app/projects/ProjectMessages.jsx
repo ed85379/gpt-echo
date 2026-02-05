@@ -6,7 +6,7 @@ import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import MessageItem from "@/components/app/MessageItem";
 import { handleDelete, handleTogglePrivate, handleToggleHidden, handleToggleRemembered } from "@/utils/messageActions";
-import { setProject, clearProject, addTag, removeTag } from "@/utils/messageActions";
+import { setProjectOnMessages, clearProject, addTag, removeTag } from "@/utils/messageActions";
 import { ChevronDownIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -106,7 +106,7 @@ export default function ProjectMessages({ project, projectMap, projects, project
   const onTogglePrivate = (message_id, makePrivate) => handleTogglePrivate(setMessages, message_id, makePrivate);
   const onToggleHidden = (message_id, makeHidden) => handleToggleHidden(setMessages, message_id, makeHidden);
   const onToggleRemembered = (message_id, makeRemembered) => handleToggleRemembered(setMessages, message_id, makeRemembered);
-  const onSetProject = (message_id, project_id) => setProject(setMessages, message_id, project_id);
+  const onSetProject = (message_id, project_id) => setProjectOnMessage(setMessages, message_id, project_id);
   const onClearProject = (message_id) => clearProject(setMessages, message_id);
   const onAddTag = (message_id, tag) => addTag(setMessages, message_id, tag);
   const onRemoveTag = (message_id, tag) => removeTag(setMessages, message_id, tag);
