@@ -1,4 +1,4 @@
-# prompt_builder.py
+# core/prompt_builder.py
 import json
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -10,12 +10,11 @@ from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.qdrant_connector import search_collection
 from app.core.text_filters import get_text_filter_config, filter_text
 import numpy as np
-from app.config import muse_config
+from app.config import muse_config, MONGO_FILES_COLLECTION, MONGO_PROJECTS_COLLECTION, MONGO_STATES_COLLECTION, \
+    MONGO_MEMORY_COLLECTION, QDRANT_MEMORY_COLLECTION, QDRANT_CONVERSATION_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 from app.core.muse_profile import muse_profile
 from app.services.feeds import get_dot_status, get_openweathermap, get_space_weather
 
-MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
-MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
 
 def format_profile_sections(sections):
     lines = []
@@ -161,8 +160,14 @@ class PromptBuilder:
         self.segments["ephemeral_files"] = "\n".join(file_blocks)
         return self.ephemeral_images
 
-    def build_conversation_context(self, source_name, author_name, timestamp, proj_name=""):
-        self.segments["conversation_context"] = f"[Conversation Context]\nCurrent Location: {source_name}\nActive Project: {proj_name}\nSpeaking With: {author_name}\nCurrent Time: {timestamp}\n"
+    def build_conversation_context(self, source_name, author_name, timestamp, project_name=None, thread_title=None):
+        project_display = ""
+        thread_display = ""
+        if project_name:
+            project_display = f"Active Project: {project_name}\n"
+        if thread_title:
+            thread_display = f"Active Thread: {thread_title}\n"
+        self.segments["conversation_context"] = f"[Conversation Context]\nCurrent Location: {source_name}\n{project_display}{thread_display}Speaking With: {author_name}\nCurrent Time: {timestamp}\n"
 
     def render_locations(self, current_location: str | None):
         lines = []
@@ -215,7 +220,7 @@ class PromptBuilder:
                            user_input,
                            projects_in_focus,
                            blend_ratio,
-                           thread_id,
+                           thread_id=None,
                            message_ids_to_exclude=[],
                            final_top_k=15,
                            public: bool = False,
@@ -235,7 +240,7 @@ class PromptBuilder:
             blend[proj] = blend_ratio / len(projects_in_focus)  # Split if multiple
 
         # Build context-bundled query
-        conversation_context  = memory_core.get_semantic_episode_context(collection_name="muse_memory",
+        conversation_context  = memory_core.get_semantic_episode_context(collection_name=QDRANT_CONVERSATION_COLLECTION,
                                                                          n_recent=6,
                                                                          hours=1,
                                                                          similarity_threshold=0.50,
@@ -264,6 +269,7 @@ class PromptBuilder:
             public=public
         )
 
+
         # Build exclusion set: recents + message_ids_to_exclude
         seen_ids = set(e["message_id"] for e in recent_entries)
         seen_ids |= set(message_ids_to_exclude or [])
@@ -274,6 +280,7 @@ class PromptBuilder:
         project_lookup = utils.build_project_lookup()
         #Format sections separately
         relevant_block = ""
+
         if deduped_semantic:
             formatted_semantic = "\n\n".join(
                 utils.format_context_entry(e,
@@ -283,6 +290,7 @@ class PromptBuilder:
                                            )
                 for e in deduped_semantic
             )
+
             relevant_block = f"[Relevant Memories]\n\n{formatted_semantic}"
 
         convo_block = ""
@@ -397,11 +405,11 @@ class PromptBuilder:
         if not snippets:
             return
 
-        query_vec = np.array(SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode([query])[0], dtype="float32")
+        query_vec = np.array(SentenceTransformer(SENTENCE_TRANSFORMER_MODEL).encode([query])[0], dtype="float32")
         entries = []
 
         for snippet in snippets:
-            vec = np.array(SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode([snippet])[0], dtype="float32")
+            vec = np.array(SentenceTransformer(SENTENCE_TRANSFORMER_MODEL).encode([snippet])[0], dtype="float32")
             similarity = np.dot(vec, query_vec) / (np.linalg.norm(vec) * np.linalg.norm(query_vec))
             entries.append((similarity, snippet))
 
@@ -593,7 +601,7 @@ class PromptBuilder:
         loc = time_location_utils._load_user_location()
         filter_query = {"type": "states"}
         projection = {"motd": 1, "_id": 0}
-        motddoc = mongo_system.find_one_document("muse_states",
+        motddoc = mongo_system.find_one_document(MONGO_STATES_COLLECTION,
                                                  query=filter_query,
                                                  projection=projection
                                                  )
@@ -632,7 +640,7 @@ class PromptBuilder:
 
         # --- Fetch global + project layers ---
         layers = mongo.find_documents(
-            collection_name="muse_cortex",
+            collection_name=MONGO_MEMORY_COLLECTION,
             query={"type": "layer"},
             sort=1,
             sort_field="order"
@@ -642,7 +650,7 @@ class PromptBuilder:
         if project_id:
             query_ids = [ObjectId(pid) if not isinstance(pid, ObjectId) else pid for pid in project_id]
             project_layers = mongo.find_documents(
-                collection_name="muse_cortex",
+                collection_name=MONGO_MEMORY_COLLECTION,
                 query={"type": "project_layer", "project_id": {"$in": query_ids}},
                 sort=1,
                 sort_field="order"
@@ -652,7 +660,7 @@ class PromptBuilder:
 
         # Lookup project names
         project_docs = mongo.find_documents(
-            collection_name="muse_projects",
+            collection_name=MONGO_PROJECTS_COLLECTION,
             query={"_id": {"$in": query_ids}}
         )
         project_name_map = {str(doc["_id"]): doc.get("name", "Untitled Project")
@@ -668,7 +676,7 @@ class PromptBuilder:
 
         # Inner monologue layer (Mongo-only)
         inner_layer_doc = mongo.find_documents(
-            collection_name="muse_cortex",
+            collection_name=MONGO_MEMORY_COLLECTION,
             query={"type": "inner_layer"},
             sort=1,
             sort_field="order"
@@ -722,7 +730,7 @@ class PromptBuilder:
                     ]
                 }
 
-                qdrant_hits = search_collection("muse_memory_layers",
+                qdrant_hits = search_collection(collection_name=QDRANT_MEMORY_COLLECTION,
                                            search_query=user_query,
                                            limit=semantic_slots,
                                            query_filter=query_filter)
