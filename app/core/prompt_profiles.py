@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from bson import ObjectId
 from app.core.prompt_builder import PromptBuilder, make_whisper_directive
 from app.core.utils import (prompt_projects_helper,
+                            prompt_threads_helper,
                             LOCATIONS,
                             SOURCES_CHAT,
                             SOURCES_CONTEXT,
@@ -52,6 +53,8 @@ def build_api_prompt(user_input, **kwargs):
     active_project_report = kwargs.get("active_project_report", {})
     project_id, project_name, project_meta, project_code_intensity = prompt_projects_helper(kwargs.get("project_id"))
     thread_id = kwargs.get("thread_id")
+    print(f"DEBUG thread_id: {thread_id}")
+    thread_title, thread_meta = prompt_threads_helper(thread_id)
     # Developer role segments
     builder.add_laws()
     builder.add_profile()
@@ -83,7 +86,7 @@ def build_api_prompt(user_input, **kwargs):
     ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
     builder.render_locations(current_location=source)
-    builder.build_conversation_context(source_name, author_name, timestamp, project_name)
+    builder.build_conversation_context(source_name, author_name, local_timestamp, project_name, thread_title)
     builder.add_prompt_context(
         user_input=user_input,
         projects_in_focus=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
