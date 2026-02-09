@@ -1,14 +1,14 @@
 # /app/core/threads_core.py
-
+from typing import List, Dict
 from app.core.utils import generate_new_id
 from app.core.time_location_utils import get_local_human_time
 from datetime import datetime
+from app.core.utils import serialize_doc
 from app.databases.mongo_connector import (
     mongo,
 )
+from app.config import MONGO_CONVERSATION_COLLECTION, MONGO_THREADS_COLLECTION
 
-
-MONGO_THREADS_COLLECTION = "muse_threads"
 
 def get_threads():
     mongo.ensure_mongo_collection(collection_name=MONGO_THREADS_COLLECTION)
@@ -27,10 +27,27 @@ def get_threads():
             "is_hidden": thread.get("is_hidden", False),
             "is_private": thread.get("is_private", False),
             "is_archived": thread.get("is_archived", False),
+            "created_at": str(thread.get("created_at", None)),
+            "updated_at": str(thread.get("updated_at", None))
         }
         results.append(mapped)
     return results
 
+
+def get_thread_message_ids(thread_id: str):
+    """
+    Return a list of message_ids that belong to the given thread_id.
+    """
+    documents = mongo.find_documents(MONGO_CONVERSATION_COLLECTION, {"thread_ids": thread_id}, {"message_id": 1, "_id": 0})
+    return [doc["message_id"] for doc in documents]
+
+
+def get_thread_message_count(thread_id: str) -> int:
+    """
+    Return a count of messages that belong to the given thread_id.
+    Useful for ThreadManager UI.
+    """
+    return mongo.count_matching_documents(MONGO_CONVERSATION_COLLECTION, {"thread_ids": thread_id})
 
 def create_thread(thread_id=None, title=None):
     mongo.ensure_mongo_collection(collection_name=MONGO_THREADS_COLLECTION)
@@ -96,6 +113,8 @@ def edit_thread_fields(filter_query, patch_fields):
     )
     if updated and "thread_id" in updated:
         updated["thread_id"] = updated["thread_id"]
-    return updated
+    return serialize_doc(updated)
 
 
+def delete_thread(thread_id):
+    return mongo.delete_one_document(MONGO_THREADS_COLLECTION, {"thread_id": thread_id})
