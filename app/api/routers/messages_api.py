@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Body, Query, Request
+# api/routers/messages_api.py
+from fastapi import APIRouter, HTTPException, Body, Query
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
@@ -6,16 +7,16 @@ from typing import Any
 from bson import ObjectId
 from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.memory_indexer import update_qdrant_metadata_for_messages
-from app.config import muse_config
+from app.config import muse_config, MONGO_CONVERSATION_COLLECTION, MONGO_STATES_COLLECTION
 from app.api.queues import index_queue, log_queue
 from app.core.memory_core import get_excluded_thread_ids
 
 
 
+
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
-
-MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
+USER_TIMEZONE = muse_config.get("USER_TIMEZONE")
 
 @router.get("/")
 def get_messages(
@@ -83,7 +84,7 @@ def get_messages(
 
     # 🔹 Apply time_skip band if active
     state_doc = mongo_system.find_one_document(
-        "muse_states",
+        MONGO_STATES_COLLECTION,
         {"type": "states"},
         {"time_skip": 1, "_id": 0},
     ) or {}
@@ -278,7 +279,7 @@ async def tag_message(
     if not mongo_update:
         return {"updated": 0, "detail": "No actions specified."}
 
-    result = mongo.db.muse_conversations.update_many(
+    result = mongo.db[MONGO_CONVERSATION_COLLECTION].update_many(
         {"message_id": {"$in": message_ids}},
         mongo_update
     )
@@ -300,7 +301,7 @@ def get_user_tags(
         {"$sort": {"count": -1, "_id": 1}},
         {"$limit": limit}
     ]
-    tag_docs = list(mongo.db.muse_conversations.aggregate(pipeline))
+    tag_docs = list(mongo.db[MONGO_CONVERSATION_COLLECTION].aggregate(pipeline))
     return {"tags": [{"tag": doc["_id"], "count": doc["count"]} for doc in tag_docs]}
 
 @router.get("/calendar_status")
@@ -331,7 +332,7 @@ def get_calendar_status(
         }},
         { "$sort": { "_id": 1 } }
     ]
-    stats = {doc["_id"]: {"total": doc["total"], "exported": doc["exported"]} for doc in mongo.db.muse_conversations.aggregate(pipeline)}
+    stats = {doc["_id"]: {"total": doc["total"], "exported": doc["exported"]} for doc in mongo.db[MONGO_CONVERSATION_COLLECTION].aggregate(pipeline)}
     return {"days": stats}
 
 @router.get("/calendar_status_simple")
@@ -340,54 +341,27 @@ def get_calendar_status_simple(
     end: str = Query(...),     # "YYYY-MM-DD"
     source: str = Query(None),
     tag: List[str] = Query(None),
-    project_id: Optional[str] = None
+    project_id: Optional[str] = None,
+    thread_id: List[str] = Query(None),
+    search_text: Optional[str] = Query(None),
+    include_hidden: bool = Query(False),
+    include_forgotten: bool = Query(False),
+    include_private: bool = Query(False),
 ):
-    # Parse input strings as datetimes in UTC
-    start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    # Add one day to make the range inclusive
-    end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
-    match_filter = {
-        "timestamp": {"$gte": start_dt, "$lt": end_dt}
-    }
-    if source:
-        match_filter["source"] = source.lower()
-    else:
-        match_filter["source"] = {"$ne": "chatgpt"}
-    if tag:
-        match_filter["user_tags"] = {"$in": tag}
-    if project_id:
-        try:
-            match_filter["project_id"] = ObjectId(project_id)
-        except Exception:
-            # Invalid ObjectId string—fail gracefully, or skip filter
-            pass
-    # Now use aggregation to group by day using timestamp
-    pipeline = [
-        {"$match": match_filter},
-        {"$group": {
-            "_id": { "$dateToString": { "format": "%Y-%m-%d", "date": "$timestamp" } },
-            "any": { "$first": "$_id" }
-        }},
-        {"$sort": { "_id": 1 }}
-    ]
-    days = {doc["_id"]: True for doc in mongo.db.muse_conversations.aggregate(pipeline)}
-    return {"days": days}
+    from app.core.time_location_utils import build_month_range_query
+    query = build_month_range_query(start, end)  # {"timestamp": { $gte: utc_start, $lt: utc_end }}
 
-@router.get("/by_day")
-def get_messages_by_day(
-    date: str = Query(..., description="YYYY-MM-DD"),
-    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT, Discord)"),
-    project_id: Optional[str] = None
-):
-    from app.core.time_location_utils import build_date_query
-    # Parse to start/end of day (UTC)
-    # Build query
-    query = build_date_query(date)
-
+    # Source
     if source:
         query["source"] = source.lower()
     else:
-        query["source"] = {"$eq": "frontend"}
+        query["source"] = {"$ne": "chatgpt"}
+
+    # Tags
+    if tag:
+        query["user_tags"] = {"$in": tag}
+
+    # Project
     if project_id:
         try:
             query["project_id"] = ObjectId(project_id)
@@ -395,12 +369,102 @@ def get_messages_by_day(
             # Invalid ObjectId string—fail gracefully, or skip filter
             pass
 
+    # Threads
+    if thread_id:
+        query["thread_ids"] = {"$in": thread_id}
+
+    # Flags as "include" expansions
+    if not include_hidden:
+        query["is_hidden"] = {"$ne": True}
+    if not include_forgotten:
+        query["is_forgotten"] = {"$ne": True}
+    if not include_private:
+        query["is_private"] = {"$ne": True}
+
+    # Text search
+    if search_text:
+        query["$text"] = {"$search": search_text}
+
+    pipeline = [
+        {"$match": query},
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "date": "$timestamp",
+                        "timezone": USER_TIMEZONE,
+                    }
+                },
+                "any": {"$first": "$_id"},
+            }
+        },
+        {"$sort": {"_id": 1}},
+    ]
+
+    days = {
+        doc["_id"]: True
+        for doc in mongo.db[MONGO_CONVERSATION_COLLECTION].aggregate(pipeline)
+    }
+    return {"days": days}
+
+@router.get("/by_day")
+def get_messages_by_day(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    source: str = Query(None, description="Optional source filter (Frontend, ChatGPT, Discord)"),
+    tag: List[str] = Query(None),
+    project_id: Optional[str] = None,
+    thread_id: List[str] = Query(None),
+    search_text: Optional[str] = Query(None),
+    include_hidden: bool = Query(False),
+    include_forgotten: bool = Query(False),
+    include_private: bool = Query(False),
+):
+    from app.core.time_location_utils import build_date_query
+
+    # Base: timestamp window (already timezone-aware)
+    query = build_date_query(date)  # {"timestamp": {"$gte": utc_start, "$lt": utc_end}}
+
+    # Source
+    if source:
+        query["source"] = source.lower()
+    else:
+        query["source"] = {"$eq": "frontend"}
+
+    # Tags
+    if tag:
+        query["user_tags"] = {"$in": tag}
+
+    # Project
+    if project_id:
+        try:
+            query["project_id"] = ObjectId(project_id)
+        except Exception:
+            # Invalid ObjectId string—fail gracefully, or skip filter
+            pass
+
+    # Threads
+    if thread_id:
+        query["thread_ids"] = {"$in": thread_id}
+
+    # Flags as "include" expansions
+    if not include_hidden:
+        query["is_hidden"] = {"$ne": True}
+    if not include_forgotten:
+        query["is_forgotten"] = {"$ne": True}
+    if not include_private:
+        query["is_private"] = {"$ne": True}
+
+    # Text search (Mongo text index on `message`)
+    if search_text:
+        query["$text"] = {"$search": search_text}
+
     logs = mongo.find_logs(
         collection_name=MONGO_CONVERSATION_COLLECTION,
         query=query,
         sort_field="timestamp",
         ascending=True,
-        limit=1000  # Increase if needed
+        limit=1000,
     )
 
     return {"messages": [
@@ -424,9 +488,9 @@ def get_messages_by_day(
             "remembered": msg.get("remembered", False),
             "is_deleted": msg.get("is_deleted", False),
             "project_id": str(msg["project_id"]) if msg.get("project_id") else None,
+            "thread_ids": msg.get("thread_ids", []),
             "flags": msg.get("flags", []),
             "metadata": msg.get("metadata", {}),
-            # Add any other custom fields you need for the UI
         }
         for msg in logs
     ]}
