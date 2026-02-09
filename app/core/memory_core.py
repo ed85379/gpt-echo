@@ -9,7 +9,8 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from sentence_transformers import SentenceTransformer, util
 from app import config
-from app.config import muse_config
+from app.config import muse_config, MONGO_URI, MONGO_DB, MONGO_CONVERSATION_COLLECTION, MONGO_PROJECTS_COLLECTION, \
+    MONGO_THREADS_COLLECTION, MONGO_MEMORY_COLLECTION, QDRANT_CONVERSATION_COLLECTION, QDRANT_MEMORY_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 from app.core.utils import write_system_log, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
 from app.core import utils
 from app.databases.mongo_connector import mongo
@@ -28,7 +29,7 @@ from app.core.states_core import get_active_time_skip_window
 PROJECT_ROOT = config.PROJECT_ROOT
 PROFILE_DIR = config.PROFILE_DIR
 VALID_ROLES = {"user", "muse", "friend"}
-model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
+model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
 
 
 # </editor-fold>
@@ -102,7 +103,7 @@ async def log_message(
 
     try:
         log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
-        mongo.insert_log(muse_config.get("MONGO_CONVERSATION_COLLECTION"), log_entry)
+        mongo.insert_log(MONGO_CONVERSATION_COLLECTION, log_entry)
         if not skip_index:
             await memory_indexer.build_index(message_id=log_entry["message_id"])
     except Exception as e:
@@ -122,7 +123,7 @@ async def log_message(
 
 async def do_import(collection):
     temp_coll = mongo.db[collection]
-    main_coll = mongo.db[muse_config.get("MONGO_CONVERSATION_COLLECTION")]
+    main_coll = mongo.db[MONGO_CONVERSATION_COLLECTION]
 
     imported = 0
     total = temp_coll.count_documents({"imported": {"$ne": True}})
@@ -162,7 +163,7 @@ def get_excluded_project_ids(public: bool = False) -> set:
 
     projection = {"_id": 1}
     projects = mongo.find_documents(
-        collection_name="muse_projects",
+        collection_name=MONGO_PROJECTS_COLLECTION,
         query=query,
         projection=projection,
     )
@@ -182,7 +183,7 @@ def get_excluded_thread_ids(public: bool = False) -> set:
 
     projection = {"_id": 0, "thread_id": 1}
     threads = mongo.find_documents(
-        collection_name="muse_threads",
+        collection_name=MONGO_THREADS_COLLECTION,
         query=query,
         projection=projection,
     )
@@ -207,7 +208,7 @@ def get_immediate_context(
     if anchor_message_id is not None:
         anchor_message_query = {"message_id": anchor_message_id}
         anchor = mongo.find_one_document(
-            collection_name="muse_conversations",
+            collection_name=MONGO_CONVERSATION_COLLECTION,
             query=anchor_message_query,
         )
         if not anchor:
@@ -307,7 +308,7 @@ def get_immediate_context(
 
     # 6) Fetch + post-filter to n conversational messages
     raw_messages = mongo.find_logs(
-        collection_name="muse_conversations",
+        collection_name=MONGO_CONVERSATION_COLLECTION,
         query=final_query,
         limit=overfetch_limit,
         sort_field="timestamp",
@@ -365,7 +366,7 @@ def search_indexed_memory(
     blend_ratio=1.0,            # float: 1.0 = hard project focus, 0.1–0.99 = blended
     thread_id=None,
     top_k=10,
-    collection_name="muse_memory",
+    collection_name=QDRANT_CONVERSATION_COLLECTION,
     bias_author_id=None,
     bias_source=None,
     score_boost=0.1,
@@ -467,31 +468,21 @@ def search_indexed_memory(
         results.append(entry)
 
     filtered_results = []
-    # Filter out entries with only hidden project_ids (for files, etc.)
     for entry in results:
         pids = entry.get("project_ids")
-        if pids is not None:
-            if not pids:
-                filtered_results.append(entry)
-            elif all(pid in excluded_project_ids for pid in pids):
-                continue
-            else:
-                filtered_results.append(entry)
-        else:
-            filtered_results.append(entry)
-
-    # Filter out entries with only hidden thread_ids
-    for entry in results:
         tids = entry.get("thread_ids")
-        if tids is not None:
-            if not tids:
-                filtered_results.append(entry)
-            elif all(tid in excluded_thread_ids for tid in tids):
+
+        # Project filter
+        if pids is not None and pids:
+            if all(pid in excluded_project_ids for pid in pids):
                 continue
-            else:
-                filtered_results.append(entry)
-        else:
-            filtered_results.append(entry)
+
+        # Thread filter
+        if tids is not None and tids:
+            if all(tid in excluded_thread_ids for tid in tids):
+                continue
+
+        filtered_results.append(entry)
 
     if thread_id:
         for i, entry in enumerate(filtered_results):
@@ -554,15 +545,17 @@ def search_indexed_memory(
         # Optionally print a sample of result IDs
         print("  IDs:", [entry.get("message_id")[:6] for entry in filtered_results[:5]])
 
+
     sorted_results = sorted(filtered_results, key=lambda x: x["score"], reverse=True)
-    #print("[Final Results] Top entries after blending/filtering:")
-    #for i, entry in enumerate(sorted_results[:5]):
-    #    print(
-    #        f"  Rank {i + 1}: id={entry.get('message_id')[:6]}..., "
-    #        f"score={entry['score']:.3f}, "
-    #        f"proj_id={entry.get('project_id')}, "
-    #        f"proj_ids={entry.get('project_ids')}"
-    #    )
+    print("[Final Results] Top entries after blending/filtering:")
+    for i, entry in enumerate(sorted_results[:5]):
+        print(
+            f"  Rank {i + 1}: id={entry.get('message_id')[:6]}..., "
+            f"score={entry['score']:.3f}, "
+            f"proj_id={entry.get('project_id')}, "
+            f"proj_ids={entry.get('project_ids')}"
+        )
+
     return sorted_results[:top_k]
 
 def get_semantic_episode_context(
@@ -763,10 +756,10 @@ class MuseCortexInterface:
 
 class MongoCortexClient(MuseCortexInterface):
     def __init__(self):
-        uri = muse_config.get("MONGO_URI")
+        uri = MONGO_URI
         self.client = MongoClient(uri)
-        self.db = self.client["muse_memory"]
-        self.collection = self.db["muse_cortex"]
+        self.db = self.client[MONGO_DB]
+        self.collection = self.db[MONGO_MEMORY_COLLECTION]
 
     def add_memory(self, layer: str, entry: dict):
         # applies charter rules, timestamps, etc
@@ -938,7 +931,7 @@ class MemoryLayerManager:
         self.cortex.update_doc(doc_id, doc)
         self._log("delete_entry", f"Deleted entry {entry_id} from {doc_id}")
         if doc_id not in ("inner_monologue", "reminders"):
-            delete_point(entry_id, "muse_memory_layers")
+            delete_point(entry_id, QDRANT_MEMORY_COLLECTION)
         return True
 
     def search_entries(self, doc_id, mongo_query=None, limit=5):
