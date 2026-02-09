@@ -2,7 +2,7 @@
 import json
 from sentence_transformers import SentenceTransformer
 from app import config
-from app.config import muse_config
+from app.config import muse_config, QDRANT_JOURNAL_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 from app.databases import qdrant_connector
 from app.core import utils
 from app.core.time_location_utils import get_formatted_datetime
@@ -21,7 +21,7 @@ JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
 def search_journal(query_vector, top_k=5):
     client = qdrant_connector.get_qdrant_client()
     results = client.search(
-        collection_name="muse_journal",
+        collection_name=QDRANT_JOURNAL_COLLECTION,
         query_vector=query_vector,
         limit=top_k,
         with_payload=True
@@ -64,7 +64,7 @@ def save_journal_catalog(entries):
 # ----------------------
 
 def search_indexed_journal(query, top_k=5, include_private=False):
-    query_vector = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode(query).tolist()
+    query_vector = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL).encode(query).tolist()
     results = []
 
     qdrant_results = search_journal(query_vector, top_k=top_k)
@@ -133,7 +133,7 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
     # Chunk, embed, index (private and public both included)
     paragraphs = [p for p in body.split("\n\n") if p.strip()]
     for i, paragraph in enumerate(paragraphs):
-        vector = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL")).encode(paragraph).tolist()
+        vector = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL).encode(paragraph).tolist()
         metadata = {
             "entry_id": filename,
             "paragraph_index": i,
@@ -148,5 +148,5 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
         qdrant_connector.upsert_embedding(
             vector=vector,
             metadata=metadata,
-            collection="muse_journal"
+            collection=QDRANT_JOURNAL_COLLECTION
         )

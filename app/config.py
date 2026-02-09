@@ -28,6 +28,37 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 PRIMARY_USER_DISCORD_ID = os.getenv("PRIMARY_USER_DISCORD_ID")
 OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
 
+API_URL = os.getenv("API_URL")
+WEBSOCKET_URL = os.getenv("WEBSOCKET_URL")
+
+MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DB = os.getenv("MONGO_DB")
+MONGO_SYSTEM_DB = os.getenv("MONGO_SYSTEM_DB")
+MONGO_CONVERSATION_COLLECTION = os.getenv("MONGO_CONVERSATION_COLLECTION")
+MONGO_FILES_COLLECTION = os.getenv("MONGO_FILES_COLLECTION")
+MONGO_MEMORY_COLLECTION = os.getenv("MONGO_MEMORY_COLLECTION")
+MONGO_PROJECTS_COLLECTION = os.getenv("MONGO_PROJECTS_COLLECTION")
+MONGO_PROFILE_COLLECTION = os.getenv("MONGO_PROFILE_COLLECTION")
+MONGO_STATES_COLLECTION = os.getenv("MONGO_STATES_COLLECTION")
+MONGO_THREADS_COLLECTION = os.getenv("MONGO_THREADS_COLLECTION")
+MONGO_LOGS_COLLECTION = os.getenv("MONGO_LOGS_COLLECTION")
+
+ADMIN_MONGO_URI = os.getenv("ADMIN_MONGO_URI")
+ADMIN_MONGO_DB = os.getenv("ADMIN_MONGO_DB")
+ADMIN_MONGO_COLLECTION = os.getenv("ADMIN_MONGO_COLLECTION")
+
+QDRANT_CONVERSATION_COLLECTION = os.getenv("QDRANT_CONVERSATION_COLLECTION")
+QDRANT_MEMORY_COLLECTION = os.getenv("QDRANT_MEMORY_COLLECTION")
+QDRANT_ENTITY_COLLECTION = os.getenv("QDRANT_ENTITY_COLLECTION")
+QDRANT_JOURNAL_COLLECTION = os.getenv("QDRANT_JOURNAL_COLLECTION")
+QDRANT_HOST = os.getenv("QDRANT_HOST")
+QDRANT_PORT = os.getenv("QDRANT_PORT")
+
+GRAPHDB_HOST = os.getenv("GRAPHDB_HOST")
+GRAPHDB_PORT = os.getenv("GRAPHDB_PORT")
+
+SENTENCE_TRANSFORMER_ENTITY_MODEL = os.getenv("SENTENCE_TRANSFORMER_ENTITY_MODEL")
+SENTENCE_TRANSFORMER_MODEL = os.getenv("SENTENCE_TRANSFORMER_MODEL")
 
 class MuseConfig:
     def __init__(self, mongo_uri, db_name, live_collection, default_collection):
@@ -168,8 +199,8 @@ class MuseConfig:
         return grouped
 
 muse_config = MuseConfig(
-    mongo_uri="mongodb://localhost:27017/",
-    db_name="muse_system",
+    mongo_uri=MONGO_URI,
+    db_name=MONGO_SYSTEM_DB,
     live_collection="muse_config",
     default_collection="default_config"
 )
@@ -205,23 +236,12 @@ JOURNAL_CATALOG_PATH = JOURNAL_DIR / get_setting("system_settings.JOURNAL_CATALO
 OPENAI_MODEL = get_setting("system_settings.OPENAI_MODEL", "gpt-4.1-mini")
 OPENAI_JOURNALING_MODEL = get_setting("system_settings.OPENAI_JOURNALING_MODEL", "gpt-4.1")
 OPENAI_WHISPER_MODEL = get_setting("system_settings.OPENAI_WHISPER_MODEL", "gpt-4.1-nano")
-SENTENCE_TRANSFORMER_MODEL = get_setting("system_settings.SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2")
 OPENWEATHERMAP_API_URL = get_setting("system_settings.OPENWEATHERMAP_API_URL", "https://api.openweathermap.org/data/2.5/weather")
 UNITS = get_setting("system_settings.DEFAULT_UNITS", "imperial")
 DISCOVERY_FEEDS = get_setting("system_settings.DISCOVERY_FEEDS", PROFILE_DIR / "discoveryfeeds_sources.json")
 MUSE_INTEREST_FEEDS = get_setting("system_settings.MUSE_INTEREST_FEEDS", PROFILE_DIR / "muse_interests_sources.json")
 DISCORD_GUILD_NAME = get_setting("system_settings.DISCORD_GUILD_NAME" ,"The Threshold")
 DISCORD_CHANNEL_NAME = get_setting("system_settings.DISCORD_CHANNEL_NAME", "echo-chamber")
-THRESHOLD_API_URL = get_setting("system_settings.THRESHOLD_API_URL", "http://localhost:5000")
-QDRANT_HOST = get_setting("system_settings.QDRANT_HOST", "localhost")
-QDRANT_PORT = get_setting("system_settings.QDRANT_PORT", 6333)
-QDRANT_COLLECTION = get_setting("system_settings.QDRANT_COLLECTION", "muse_memory")
-QDRANT_JOURNAL_COLLECTION = get_setting("system_settings.QDRANT_JOURNAL_COLLECTION", "muse_journal")
-MONGO_DBNAME = get_setting("system_settings.MONGO_DBNAME", "muse_memory")
-MONGO_CONVERSATION_COLLECTION = get_setting("system_settings.MONGO_CONVERSATION_COLLECTION", "muse_conversation_logs")
-GRAPHDB_HOST = get_setting("system_settings.GRAPHDB_HOST", "localhost")
-GRAPHDB_PORT = get_setting("system_settings.GRAPHDB_PORT", 7687)
-MONGO_URI = get_setting("system_settings.MONGO_URL", "mongodb://localhost:27017/")
 ENABLE_PRIVATE_JOURNAL = get_setting("system_settings.ENABLE_PRIVATE_JOURNAL", "False")
 # voice settings
 VOICE_SYSTEM = get_setting("voice_settings.VOICE_SYSTEM", "coqui")
@@ -239,3 +259,44 @@ REFLECT_TARGETS = get_setting("behavior_settings.REFLECT_TARGETS", [])
 MUSE_PRIMARY_FLAVOR = get_setting("behavior_settings.MUSE_PRIMARY_FLAVOR", "poetic-reflective")
 MAX_ARTICLE_WORDS_BEFORE_SUMMARIZE = get_setting("behavior_settings.MAX_ARTICLE_WORDS_BEFORE_SUMMARIZE", 500)
 
+class AdminConfig:
+    def __init__(self, mongo_uri, db_name, collection, doc_id="instance_flags"):
+        client = MongoClient(mongo_uri)
+        self.collection = client[db_name][collection]
+        self.doc_id = doc_id
+
+    def get_all(self):
+        doc = self.collection.find_one({"_id": self.doc_id}) or {}
+        return doc.get("flags", {})
+
+    def get(self, key, default=None):
+        flags = self.get_all()
+        return flags.get(key, default)
+
+    def set(self, key, value):
+        self.collection.update_one(
+            {"_id": self.doc_id},
+            {"$set": {f"flags.{key}": value}},
+            upsert=True,
+        )
+
+class UserSettings:
+    def __init__(self, mongo_uri, db_name, collection, user_id="primary"):
+        client = MongoClient(mongo_uri)
+        self.collection = client[db_name][collection]
+        self.user_id = user_id
+
+    def get_all(self):
+        doc = self.collection.find_one({"_id": self.user_id}) or {}
+        return doc
+
+    def get_section(self, section, default=None):
+        doc = self.get_all()
+        return doc.get(section, default or {})
+
+    def update_section(self, section, data):
+        self.collection.update_one(
+            {"_id": self.user_id},
+            {"$set": {section: data}},
+            upsert=True,
+        )

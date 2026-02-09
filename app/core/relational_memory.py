@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from pymongo import ASCENDING
 from sentence_transformers import SentenceTransformer, util
-from app.config import muse_config
+from app.config import muse_config, MONGO_CONVERSATION_COLLECTION, QDRANT_CONVERSATION_COLLECTION, QDRANT_ENTITY_COLLECTION, SENTENCE_TRANSFORMER_ENTITY_MODEL
 from app.core.utils import serialize_doc
 from app.databases.mongo_connector import mongo
 from app.databases.graphdb_connector import GraphDBConnector
@@ -27,10 +27,10 @@ class RelationalMemory:
     def __init__(self):
         self.graph = GraphDBConnector()
         self.mongo = mongo
-        self.embedder = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_ENTITY_MODEL"))
+        self.embedder = SentenceTransformer(SENTENCE_TRANSFORMER_ENTITY_MODEL)
         ensure_qdrant_collection(
             vector_size=384,
-            collection_name=muse_config.get("QDRANT_ENTITY_COLLECTION")
+            collection_name=QDRANT_ENTITY_COLLECTION
         )
 
     # === Mnemosyne Developer Prompt ===
@@ -222,7 +222,7 @@ class RelationalMemory:
     # === Semantic Recall ===
     def semantic_recall(self, embedding, top_k=10, depth=2):
 
-        results = search_collection(collection_name=muse_config.get("QDRANT_ENTITY_COLLECTION"),
+        results = search_collection(collection_name=QDRANT_ENTITY_COLLECTION,
                                     query_vector=embedding,
                                     limit=top_k,
                                     )
@@ -455,7 +455,7 @@ class RelationalMemory:
     # === These were methods used to test the logic during development
     # <editor-fold desc="Test Methods">
     def similarity_test(self, start_date, end_date):
-        collection = self.mongo.db[muse_config.get("MONGO_CONVERSATION_COLLECTION")]
+        collection = self.mongo.db[MONGO_CONVERSATION_COLLECTION]
         log_collection = self.mongo.db["similarity_tests"]
 
         model = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2", local_files_only=True)
@@ -525,7 +525,7 @@ class RelationalMemory:
     ):
         query_text, window_ids = self.build_test_query_from_message_id(
             message_id=message_id,
-            collection_name="muse_conversations"
+            collection_name=MONGO_CONVERSATION_COLLECTION
         )
 
 
@@ -551,7 +551,7 @@ class RelationalMemory:
         }
 
         qd_results = search_collection(
-            collection_name=muse_config.get("QDRANT_COLLECTION"),
+            collection_name=QDRANT_CONVERSATION_COLLECTION,
             search_query=query_text,
             query_vector=None,
             limit=top_k * 2,
@@ -587,7 +587,7 @@ class RelationalMemory:
             msgs = []
             for mid in ids:
                 message_query = {"message_id": mid}
-                m = mongo.find_one_document(collection_name="muse_conversations",
+                m = mongo.find_one_document(collection_name=MONGO_CONVERSATION_COLLECTION,
                                                  query=message_query
                                                  )
                 if not m:
@@ -685,7 +685,7 @@ class RelationalMemory:
     # === Message Retrieval for Indexing ===
     def get_messages_for_indexing(
             self,
-            collection=muse_config.get("MONGO_CONVERSATION_COLLECTION"),
+            collection=MONGO_CONVERSATION_COLLECTION,
             message_ids=None,
             date_range=None,
     ):
@@ -780,7 +780,7 @@ class RelationalMemory:
         if not entities:
             return []
 
-        collection_name = muse_config.get("QDRANT_ENTITY_COLLECTION")
+        collection_name = QDRANT_ENTITY_COLLECTION
         vector_size = self.embedder.get_sentence_embedding_dimension()
         ensure_qdrant_collection(vector_size, collection_name)
 
@@ -903,7 +903,7 @@ class RelationalMemory:
           - In batch mode: accept a date range, fetch messages, flush at end.
           - In live mode: accept explicit messages (usually 1), do NOT flush at end.
         """
-        convo_col = self.mongo.db[muse_config.get("MONGO_CONVERSATION_COLLECTION")]
+        convo_col = self.mongo.db[MONGO_CONVERSATION_COLLECTION]
         buffer_col = self.mongo.db["mnemosyne_buffer"]
 
         # Resolve messages source
@@ -1090,7 +1090,7 @@ class RelationalMemory:
             )
 
         # 3b) Build episode_doc from real conversation messages
-        convo_col = self.mongo.db[muse_config.get("MONGO_CONVERSATION_COLLECTION")]
+        convo_col = self.mongo.db[MONGO_CONVERSATION_COLLECTION]
         message_ids = [m["message_id"] for m in active_doc["messages"]]
 
         messages = list(convo_col.find({"message_id": {"$in": message_ids}}))
@@ -1318,7 +1318,7 @@ class RelationalMemory:
         run Mnemosyne analysis, reconcile entities with Qdrant,
         and ingest results into Memgraph.
         """
-        collection = self.mongo.db[muse_config.get("MONGO_CONVERSATION_COLLECTION")]
+        collection = self.mongo.db[MONGO_CONVERSATION_COLLECTION]
         date_range = [start_date, end_date]
 
         messages = self.get_messages_for_indexing(collection, date_range=date_range)

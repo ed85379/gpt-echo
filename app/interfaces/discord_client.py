@@ -9,7 +9,7 @@ import re
 import websockets
 import json
 from app import config
-from app.config import muse_config
+from app.config import muse_config, WEBSOCKET_URL
 from app.core.memory_core import log_message
 from app.services.openai_client import get_openai_response, discord_openai_client
 from app.core.prompt_profiles import build_discord_prompt
@@ -18,6 +18,7 @@ DISCORD_TOKEN = config.DISCORD_TOKEN
 PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
 DISCORD_GUILD_NAME = muse_config.get("DISCORD_GUILD_NAME")
 DISCORD_CHANNEL_NAME = muse_config.get("DISCORD_CHANNEL_NAME")
+
 
 
 
@@ -40,8 +41,7 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 async def subscribe_to_broadcasts():
-    ws_url = f"ws://localhost:5000/ws"  # adjust host/port
-    async with websockets.connect(ws_url) as ws:
+    async with websockets.connect(WEBSOCKET_URL) as ws:
         # Identify as Discord listener
         await ws.send(json.dumps({"listen_as": "discord"}))
         print("🔌 Subscribed to broadcast as discord")

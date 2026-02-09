@@ -1,20 +1,17 @@
+# app/core/files_core.py
 import os
-from fastapi import APIRouter, HTTPException, Body, Query, UploadFile, File, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import UploadFile
+
 from bson import ObjectId
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from app.databases.mongo_connector import mongo
-from app.config import muse_config
+from app.config import muse_config, MONGO_MEMORY_COLLECTION, MONGO_FILES_COLLECTION, MONGO_CONVERSATION_COLLECTION, MONGO_PROJECTS_COLLECTION
 from app.core.utils import chunk_file, ensure_list
 from app.core.memory_core import log_message
 
-collection_name = muse_config.get("MONGO_PROJECTS_COLLECTION")
-MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
-MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
-MONGO_FACTS_COLLECTION = "muse_cortex"
-MONGO_MESSAGES_COLLECTION = "muse_conversations"
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 FILES_DIR = PROJECT_ROOT / "uploadedfiles"
 
@@ -166,7 +163,7 @@ async def handle_image_file_upload(project_ids: Optional[List[str]], file: Uploa
         "mimetype": mimetype,
         "created_at": datetime.utcnow(),
     }
-    mongo.insert_one_document("muse_cortex", cortex_doc)
+    mongo.insert_one_document(MONGO_MEMORY_COLLECTION, cortex_doc)
 
     # Link file to all specified projects
     for pid in project_obj_ids:
@@ -213,10 +210,10 @@ async def modify_file_project_link_core(
         id_list = ensure_list(ids)
         for idx in id_list:
             if key == "fact_id":
-                collection = MONGO_FACTS_COLLECTION
+                collection = MONGO_MEMORY_COLLECTION
                 filter_query = {"_id": ObjectId(idx)}
             else:  # key == "message_ids"
-                collection = MONGO_MESSAGES_COLLECTION
+                collection = MONGO_CONVERSATION_COLLECTION
                 filter_query = {"message_id": idx}  # <-- Use message_id as primary key
             # Include your update fields here (with updated_on, etc)
             update_fields = {
@@ -229,7 +226,7 @@ async def modify_file_project_link_core(
                 update_data=update_fields
             )
             # Re-index if message
-            if collection == MONGO_MESSAGES_COLLECTION:
+            if collection == MONGO_CONVERSATION_COLLECTION:
                 await index_queue.put(idx)
 
     return { "ok": True, "action": action, "indexing_queued": True }

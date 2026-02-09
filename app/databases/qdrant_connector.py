@@ -4,12 +4,10 @@ from qdrant_client.http import models as qmodels
 from qdrant_client import models as rest
 from sentence_transformers import SentenceTransformer
 import uuid, bson
-from app.config import muse_config
+from app.config import muse_config, QDRANT_HOST, QDRANT_PORT, QDRANT_CONVERSATION_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 
-QDRANT_HOST = muse_config.get("QDRANT_HOST")
-QDRANT_PORT = muse_config.get("QDRANT_PORT")
 BATCH_SIZE = 128  # or 256 if the entries are tiny
-model = SentenceTransformer(muse_config.get("SENTENCE_TRANSFORMER_MODEL"))
+model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
 
 # Qdrant client connection
 qdrant = QdrantClient(
@@ -17,7 +15,6 @@ qdrant = QdrantClient(
     port=int(QDRANT_PORT)
 )
 
-QDRANT_COLLECTION = "muse_memory"
 
 def get_qdrant_client():
     return qdrant
@@ -84,7 +81,7 @@ def safe_str(val):
     return val
 
 ## build_index() calls this for embedding records.
-def upsert_single(entry, vector, collection=QDRANT_COLLECTION):
+def upsert_single(entry, vector, collection=QDRANT_CONVERSATION_COLLECTION):
     metadata = entry.get("metadata", {})
     payload = {
         "timestamp": entry.get("timestamp"),
@@ -121,7 +118,7 @@ def upsert_single(entry, vector, collection=QDRANT_COLLECTION):
 
 
 def ensure_qdrant_collection(vector_size, collection_name=None):
-    collection_name = collection_name or QDRANT_COLLECTION
+    collection_name = collection_name or QDRANT_CONVERSATION_COLLECTION
     if collection_name not in [c.name for c in qdrant.get_collections().collections]:
         qdrant.recreate_collection(
             collection_name=collection_name,
@@ -165,7 +162,7 @@ def index_to_qdrant(entries, vectors, batch_size=128):
 
     for i in range(0, len(points), batch_size):
         batch = points[i:i + batch_size]
-        qdrant.upsert(collection_name=QDRANT_COLLECTION, points=batch)
+        qdrant.upsert(collection_name=QDRANT_CONVERSATION_COLLECTION, points=batch)
 
 def delete_point(point_id_str: str, collection_name: str):
     point_id = message_id_to_uuid(point_id_str)
@@ -178,7 +175,7 @@ def delete_point(point_id_str: str, collection_name: str):
 
 def update_payload_for_messages(
     updates: List[Dict[str, Any]],
-    collection: str = QDRANT_COLLECTION,
+    collection: str = QDRANT_CONVERSATION_COLLECTION,
 ):
     """
     updates: list of {"message_id": str, "payload": {...}} dicts.

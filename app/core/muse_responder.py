@@ -18,7 +18,7 @@ from app.core.utils import (write_system_log,
                             )
 from app.core.time_location_utils import is_quiet_hour, _load_user_location, parse_iso_datetime
 from app.services.openai_client import get_openai_response
-from app.config import muse_config
+from app.config import muse_config, API_URL
 from app.core.states_core import set_motd
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
@@ -987,7 +987,7 @@ def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay
     for attempt in range(1, retries + 1):
         try:
             response = httpx.post(
-                f"{muse_config.get('API_URL')}/api/muse/speak",
+                f"{API_URL}/api/muse/speak",
                 json=payload,
                 timeout=5
             )

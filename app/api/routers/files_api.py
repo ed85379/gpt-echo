@@ -1,21 +1,18 @@
-from fastapi import APIRouter, HTTPException, Body, Form, Query, UploadFile, File, Request
+# app/routers/files_api.py
+from fastapi import APIRouter, HTTPException, Form, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Optional
 from datetime import datetime
 import os
 from bson import ObjectId
 from app.databases.mongo_connector import mongo
-from app.config import muse_config
+from app.config import MONGO_PROJECTS_COLLECTION, MONGO_FILES_COLLECTION, MONGO_MEMORY_COLLECTION, MONGO_CONVERSATION_COLLECTION
 from app.core import files_core
 from app.core.utils import serialize_doc
 from app.api.queues import index_queue
 
 
 router = APIRouter(prefix="/api/files", tags=["files"])
-MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
-MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
-MONGO_FACTS_COLLECTION = "muse_cortex"
-MONGO_MESSAGES_COLLECTION = "muse_conversations"
 
 @router.get("/")
 def get_files(
@@ -167,7 +164,7 @@ async def delete_file(file_id: str):
     # 2. Mark linked messages and facts as deleted & update timestamps
     for mid in file_doc.get("message_ids", []):
         mongo.update_one_document_array(
-            MONGO_MESSAGES_COLLECTION,
+            MONGO_CONVERSATION_COLLECTION,
             {"message_id": mid},
             {"$set": {"is_deleted": True, "updated_on": now}}
         )
@@ -176,7 +173,7 @@ async def delete_file(file_id: str):
     fact_id = file_doc.get("fact_id")
     if fact_id:
         mongo.update_one_document_array(
-            MONGO_FACTS_COLLECTION,
+            MONGO_MEMORY_COLLECTION,
             {"_id": fact_id},
             {"$set": {"is_deleted": True, "updated_on": now}}
         )
@@ -310,7 +307,7 @@ async def update_file(
         # Mark old messages as superseded
         for mid in file_doc.get("message_ids", []):
             mongo.update_one_document_array(
-                MONGO_MESSAGES_COLLECTION,
+                MONGO_CONVERSATION_COLLECTION,
                 {"message_id": mid},
                 {"$set": {"superseded": True, "updated_on": now}}
             )
@@ -327,7 +324,7 @@ async def update_file(
         old_fact_id = file_doc.get("fact_id")
         if old_fact_id:
             mongo.update_one_document_array(
-                MONGO_FACTS_COLLECTION,
+                MONGO_MEMORY_COLLECTION,
                 {"_id": old_fact_id},
                 {"$set": {"superseded": True, "updated_on": now}}
             )

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 import asyncio
 import humanize
-from app.config import muse_config
+from app.config import muse_config, MONGO_STATES_COLLECTION, MONGO_CONVERSATION_COLLECTION
 from app.api.queues import log_queue
 from app.databases.mongo_connector import mongo_system, mongo
 from app.databases.memory_indexer import assign_message_id
@@ -11,13 +11,13 @@ from app.databases.memory_indexer import assign_message_id
 
 SOURCES_CHAT = ["frontend", "discord", "chatgpt"]
 
-STATES_COLLECTION = "muse_states"
+
 STATES_DOC = "states"
 
 def get_states_doc():
     filter_query = {"type": STATES_DOC}
     states_doc = mongo_system.find_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         query=filter_query,
         projection=None,
     )
@@ -28,7 +28,7 @@ def get_per_project_states():
     projection = {"_id": 0, "projects.per_project": 1}
 
     per_projects_doc = mongo_system.find_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         query=filter_query,
         projection=projection
     )
@@ -40,7 +40,7 @@ def extract_pollable_states() -> dict:
     whose value is a dict with `pollable: True`.
     """
     states_doc = mongo_system.find_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         {"type": STATES_DOC},
         projection=None,
     ) or {}
@@ -64,7 +64,7 @@ def set_active_project(project_id: str):
     projection = {"projects": 1}
 
     state_doc = mongo_system.find_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         query=filter_query,
         projection=projection,
     )
@@ -76,7 +76,7 @@ def set_active_project(project_id: str):
             "projects.project_id": project_id,
             "projects.default_project_settings": { "auto_assign": True, "blend_ratio": 0.5 }
         }
-        mongo_system.insert_one_document("muse_states", new_doc)
+        mongo_system.insert_one_document(MONGO_STATES_COLLECTION, new_doc)
 
         return {
             "project_id": {
@@ -109,7 +109,7 @@ def set_active_project(project_id: str):
 
     if updates:
         mongo_system.update_one_document(
-            STATES_COLLECTION,
+            MONGO_STATES_COLLECTION,
             filter_query=filter_query,
             update_data=updates,
         )
@@ -139,7 +139,7 @@ def set_project_states(project_id: str, updates: dict) -> bool:
 
     # Just $set these fields; no $setOnInsert, no upsert
     result = mongo_system.update_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         {"type": STATES_DOC},
         set_fields,
     )
@@ -155,7 +155,7 @@ def set_motd(text: str):
         return False
     now = datetime.now(timezone.utc)
     result = mongo_system.update_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         {"type": STATES_DOC},
         {"motd.text": text, "motd.updated_on": now},
     )
@@ -167,7 +167,7 @@ async def create_time_skip(message_id: str):
     time_start_mid = message_id
     # Find timestamp from message_id
     start_msg = mongo.find_one_document(
-        "muse_conversations",
+        MONGO_CONVERSATION_COLLECTION,
         { "message_id": time_start_mid },
         { "timestamp": 1, "project_id": 1, "_id": 0 }
     )
@@ -222,7 +222,7 @@ async def create_time_skip(message_id: str):
         "time_skip.active": True
     }
     mongo_system.update_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         {"type": STATES_DOC},
         set_fields,
     )
@@ -230,7 +230,7 @@ async def create_time_skip(message_id: str):
     # Set the active project_id for the UI
     if project_id is not None:
         mongo_system.update_one_document(
-            STATES_COLLECTION,
+            MONGO_STATES_COLLECTION,
             {"type": STATES_DOC},
             {"projects.project_id": str(project_id)},
         )
@@ -245,7 +245,7 @@ def get_active_time_skip_window(
     after applying the auto-expire rule.
     """
     state = mongo_system.find_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         {"type": STATES_DOC},
         {"time_skip": 1, "_id": 0},
     )
@@ -292,7 +292,7 @@ def get_active_time_skip_window(
             query["$and"].extend(thread_scope)
 
     recent_count = mongo.count_logs(
-        "muse_conversations",
+        MONGO_CONVERSATION_COLLECTION,
         query,
     )
     print(f"DEBUG: RECENT COUNT: {recent_count}")
@@ -306,7 +306,7 @@ def get_active_time_skip_window(
 def clear_time_skip():
     # 1) Grab current time_skip block
     state = mongo_system.find_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         {"type": STATES_DOC},
         {"time_skip": 1, "_id": 0},
     )
@@ -315,7 +315,7 @@ def clear_time_skip():
 
     # 2) Clear the active flag
     mongo_system.update_one_document(
-        STATES_COLLECTION,
+        MONGO_STATES_COLLECTION,
         {"type": STATES_DOC},
         {"time_skip.active": False},
     )
@@ -323,7 +323,7 @@ def clear_time_skip():
     # 3) Soft-delete the end system message, if present
     if end_mid:
         mongo.update_one_document(
-            "muse_conversations",
+            MONGO_CONVERSATION_COLLECTION,
             {"message_id": end_mid},
             {"is_deleted": True},
         )
@@ -347,7 +347,7 @@ def update_thread_state(payload: dict):
         raise ValueError("No valid thread state fields to update.")
 
     updated = mongo_system.update_one_document(
-        collection_name=STATES_COLLECTION,
+        collection_name=MONGO_STATES_COLLECTION,
         filter_query={"type": STATES_DOC},  # your fixed states doc locator
         update_data=updates
     )
@@ -377,7 +377,7 @@ def update_nav_state(payload: dict):
         raise ValueError("No valid nav state fields to update.")
 
     updated = mongo_system.update_one_document(
-        collection_name=STATES_COLLECTION,
+        collection_name=MONGO_STATES_COLLECTION,
         filter_query={"type": STATES_DOC},  # your fixed states doc locator
         update_data=updates
     )

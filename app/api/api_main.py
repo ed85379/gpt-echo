@@ -18,10 +18,6 @@ from app.api.routers.files_api import router as files_router
 from app.api.routers.threads_api import router as threads_router
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
 
-JOURNAL_DIR = config.JOURNAL_DIR
-JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
-MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
-QDRANT_COLLECTION = muse_config.get("QDRANT_COLLECTION")
 
 
 app = FastAPI(debug=True)

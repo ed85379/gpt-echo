@@ -5,16 +5,9 @@ from datetime import datetime, timezone
 import hashlib
 import pymongo
 from sentence_transformers import SentenceTransformer
-from app.config import muse_config
+from app.config import muse_config, MONGO_URI, MONGO_DB, MONGO_CONVERSATION_COLLECTION, MONGO_MEMORY_COLLECTION, QDRANT_MEMORY_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 from app.core import utils
 from app.databases import qdrant_connector, graphdb_connector
-
-MONGO_URI = muse_config.get("MONGO_URI")
-MONGO_DBNAME = muse_config.get("MONGO_DBNAME")
-MONGO_CONVERSATION_COLLECTION = muse_config.get("MONGO_CONVERSATION_COLLECTION")
-MONGO_MEMORY_COLLECTION = muse_config.get("MONGO_MEMORY_COLLECTION")
-CORTEX_DB = "muse_memory"
-CORTEX_COLLECTION = "muse_cortex"
 
 def assign_message_id(msg, filename=None, index=None):
     # Convert timestamp to ISO string if it's a datetime
@@ -40,8 +33,8 @@ async def build_index(dryrun=False, message_id=None):
     - If not, updates all messages that are new or changed.
     """
     client = pymongo.MongoClient(MONGO_URI)
-    coll = client[MONGO_DBNAME][MONGO_CONVERSATION_COLLECTION]
-    mg = graphdb_connector.get_graphdb_connector().mg
+    coll = client[MONGO_DB][MONGO_CONVERSATION_COLLECTION]
+    #mg = graphdb_connector.get_graphdb_connector().mg
 
     # Build the query
     if message_id:
@@ -74,7 +67,7 @@ async def build_index(dryrun=False, message_id=None):
         if not dryrun:
             text = qdrant_entry["message"]  # Get the message text
             vector = SentenceTransformer(
-                muse_config.get("SENTENCE_TRANSFORMER_MODEL"),
+                SENTENCE_TRANSFORMER_MODEL,
                 local_files_only=True
             ).encode([text])[0]  # Generate the embedding vector
             qdrant_connector.upsert_single(qdrant_entry, vector)  # Upsert to Qdrant
@@ -101,7 +94,7 @@ async def build_memory_index(dryrun=False, entry_id=None):
     - If not, updates all entries that are new or changed.
     """
     client = pymongo.MongoClient(MONGO_URI)
-    coll = client[MONGO_DBNAME][MONGO_MEMORY_COLLECTION]  # your memory layer collection
+    coll = client[MONGO_DB][MONGO_MEMORY_COLLECTION]  # your memory layer collection
     total = 0
     updated_qdrant = 0
 
@@ -147,7 +140,7 @@ async def build_memory_index(dryrun=False, entry_id=None):
     print(f"Starting memory indexing... (entry_id={entry_id or 'ALL/NEW'})")
 
     model = SentenceTransformer(
-        muse_config.get("SENTENCE_TRANSFORMER_MODEL"),
+        SENTENCE_TRANSFORMER_MODEL,
         local_files_only=True
     )
     for entry in entries:
@@ -178,7 +171,7 @@ async def build_memory_index(dryrun=False, entry_id=None):
             qdrant_connector.upsert_embedding(
                 vector=vector,
                 metadata=metadata,
-                collection="muse_memory_layers",
+                collection=QDRANT_MEMORY_COLLECTION,
                 point_id=point_id
             )
 
@@ -211,7 +204,7 @@ async def update_qdrant_metadata_for_messages(message_ids: List[str]):
         return 0
 
     client = pymongo.MongoClient(MONGO_URI)
-    coll = client[MONGO_DBNAME][MONGO_CONVERSATION_COLLECTION]
+    coll = client[MONGO_DB][MONGO_CONVERSATION_COLLECTION]
 
     cursor = coll.find(
         {"message_id": {"$in": message_ids}},

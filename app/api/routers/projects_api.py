@@ -1,8 +1,8 @@
-
+# /api/routers/projects_api.py
 from fastapi import APIRouter, HTTPException
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
-from app.config import muse_config
+from app.config import MONGO_FILES_COLLECTION, MONGO_PROJECTS_COLLECTION, MONGO_MEMORY_COLLECTION, MONGO_CONVERSATION_COLLECTION
 from app.core import projects_core
 from app.core.files_core import modify_file_project_link_core
 from app.core.utils import serialize_doc, ensure_list
@@ -11,10 +11,6 @@ from app.databases.mongo_connector import mongo
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
-MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
-MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
-MONGO_FACTS_COLLECTION = "muse_cortex"
-MONGO_MESSAGES_COLLECTION = "muse_conversations"
 
 @router.get("/")
 def get_projects():
@@ -93,7 +89,7 @@ def create_project():
             "created_at": now,
             "updated_at": now
         }
-        mongo.insert_one_document(MONGO_FACTS_COLLECTION, project_facts)
+        mongo.insert_one_document(MONGO_MEMORY_COLLECTION, project_facts)
 
         return serialize_doc(project)
     except Exception as e:
@@ -142,7 +138,7 @@ def get_project_tags(key: str):
         {"$group": {"_id": "$user_tags", "count": {"$sum": 1}}},
         {"$sort": {"count": -1, "_id": 1}}
     ]
-    tag_docs = list(mongo.db.muse_conversations.aggregate(pipeline))
+    tag_docs = list(mongo.db[MONGO_CONVERSATION_COLLECTION].aggregate(pipeline))
     return {"tags": [{"tag": doc["_id"], "count": doc["count"]} for doc in tag_docs]}
 
 @router.get("/files")

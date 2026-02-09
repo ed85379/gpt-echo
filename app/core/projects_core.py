@@ -3,12 +3,9 @@ from bson import ObjectId
 from datetime import datetime
 from pathlib import Path
 from app.databases.mongo_connector import mongo
-from app.config import muse_config
+from app.config import MONGO_PROJECTS_COLLECTION
 
 
-collection_name = muse_config.get("MONGO_PROJECTS_COLLECTION")
-MONGO_PROJECTS_COLLECTION = muse_config.get("MONGO_PROJECTS_COLLECTION")
-MONGO_FILES_COLLECTION = muse_config.get("MONGO_FILES_COLLECTION")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PROJECTFILES_DIR = PROJECT_ROOT / "projectfiles"
 
@@ -21,13 +18,13 @@ def toggle_visibility(filter_query):
             # Defensive: fallback to string if not a valid ObjectId
             pass
 
-    project = mongo.find_one_document(collection_name, filter_query)
+    project = mongo.find_one_document(MONGO_PROJECTS_COLLECTION, filter_query)
     if not project:
         raise ValueError("Project not found")
 
     new_hidden = not project.get("is_hidden", False)
     updated = mongo.update_one_document(
-        collection_name,
+        MONGO_PROJECTS_COLLECTION,
         filter_query,
         {"is_hidden": new_hidden}
     )
@@ -43,13 +40,13 @@ def toggle_privacy(filter_query):
             # Defensive: fallback to string if not a valid ObjectId
             pass
 
-    project = mongo.find_one_document(collection_name, filter_query)
+    project = mongo.find_one_document(MONGO_PROJECTS_COLLECTION, filter_query)
     if not project:
         raise ValueError("Project not found")
 
     new_private = not project.get("is_private", False)
     updated = mongo.update_one_document(
-        collection_name,
+        MONGO_PROJECTS_COLLECTION,
         filter_query,
         {"is_private": new_private}
     )
@@ -67,18 +64,18 @@ def toggle_archived(filter_query):
             # Defensive: fallback to string if not a valid ObjectId
             pass
 
-    project = mongo.find_one_document(collection_name, filter_query)
+    project = mongo.find_one_document(MONGO_PROJECTS_COLLECTION, filter_query)
     if not project:
         raise ValueError("Project not found")
 
     new_archived = not project.get("archived", False)
     visibility = mongo.update_one_document(
-        collection_name,
+        MONGO_PROJECTS_COLLECTION,
         filter_query,
         {"is_hidden": new_archived}
     )
     updated = mongo.update_one_document(
-        collection_name,
+        MONGO_PROJECTS_COLLECTION,
         filter_query,
         {"archived": new_archived}
     )
@@ -93,7 +90,7 @@ def edit_project_fields(filter_query, patch_fields):
         except Exception:
             pass
 
-    project = mongo.find_one_document(collection_name, filter_query)
+    project = mongo.find_one_document(MONGO_PROJECTS_COLLECTION, filter_query)
     if not project:
         raise ValueError("Project not found")
 
@@ -131,7 +128,7 @@ def edit_project_fields(filter_query, patch_fields):
         raise ValueError("No valid fields to update.")
 
     updated = mongo.update_one_document(
-        collection_name,
+        MONGO_PROJECTS_COLLECTION,
         filter_query,
         updates
     )

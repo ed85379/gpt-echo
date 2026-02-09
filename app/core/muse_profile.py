@@ -1,18 +1,18 @@
 # muse_profile.py
 from datetime import datetime, timezone
 from app.databases.mongo_connector import mongo
+from app.config import MONGO_PROFILE_COLLECTION
 
-PROFILE_COLLECTION = "muse_profile"
 
 
 class MuseProfile:
     def get_section(self, section):
-        return mongo.get_collection(PROFILE_COLLECTION).find_one({"section": section})
+        return mongo.get_collection(MONGO_PROFILE_COLLECTION).find_one({"section": section})
 
     def get_sections(self, sections):
         """Return a list of section docs matching any of the given names."""
         return list(
-            mongo.get_collection(PROFILE_COLLECTION)
+            mongo.get_collection(MONGO_PROFILE_COLLECTION)
             .find({"section": {"$in": sections}})
         )
 
@@ -20,7 +20,7 @@ class MuseProfile:
         """Return a list of section docs set pollable: true."""
         return list(
             mongo.find_documents(
-                PROFILE_COLLECTION,
+                MONGO_PROFILE_COLLECTION,
                 {"pollable": True},
                 projection={"section": 1, "content": 1, "_id": 0},
             )
@@ -29,12 +29,12 @@ class MuseProfile:
     def get_sections_except(self, exceptions):
         """Return all section docs *not* in the exceptions list."""
         return list(
-            mongo.get_collection(PROFILE_COLLECTION)
+            mongo.get_collection(MONGO_PROFILE_COLLECTION)
             .find({"section": {"$nin": exceptions}})
         )
 
     def set_section(self, section, content):
-        mongo.get_collection(PROFILE_COLLECTION).update_one(
+        mongo.get_collection(MONGO_PROFILE_COLLECTION).update_one(
             {"section": section},
             {
                 "$set": {
@@ -48,7 +48,7 @@ class MuseProfile:
     def get_sections_by_category(self, category):
         """Return all section docs in the given category."""
         return list(
-            mongo.get_collection(PROFILE_COLLECTION)
+            mongo.get_collection(MONGO_PROFILE_COLLECTION)
             .find({"category": category})
         )
 
@@ -58,14 +58,14 @@ class MuseProfile:
         if sections:
             query["section"] = {"$in": sections}
         return list(
-            mongo.get_collection(PROFILE_COLLECTION)
+            mongo.get_collection(MONGO_PROFILE_COLLECTION)
             .find(query)
         )
 
     def get_sections_exclude_category(self, category):
         """Return all docs *not* in the given category."""
         return list(
-            mongo.get_collection(PROFILE_COLLECTION)
+            mongo.get_collection(MONGO_PROFILE_COLLECTION)
             .find({"category": {"$ne": category}})
         )
 
@@ -77,11 +77,11 @@ class MuseProfile:
         if sections:
             query["section"] = {"$nin": sections}
         return list(
-            mongo.get_collection(PROFILE_COLLECTION)
+            mongo.get_collection(MONGO_PROFILE_COLLECTION)
             .find(query)
         )
 
     def all_sections(self):
-        return list(mongo.get_collection(PROFILE_COLLECTION).find({}))
+        return list(mongo.get_collection(MONGO_PROFILE_COLLECTION).find({}))
 
 muse_profile = MuseProfile()

@@ -1,7 +1,7 @@
 # graphdb_connector.py
 
 from gqlalchemy import Memgraph
-from app.config import muse_config
+from app.config import muse_config, GRAPHDB_HOST, GRAPHDB_PORT
 from app.core.utils import write_system_log
 
 host = muse_config.get("GRAPHDB_HOST")
@@ -321,6 +321,6 @@ def delete_fact_by_id(mg, fact_id):
 import logging
 
 def get_graphdb_connector():
-    host = muse_config.get("GRAPHDB_HOST")
-    port = muse_config.get("GRAPHDB_PORT")
+    host = GRAPHDB_HOST
+    port = GRAPHDB_PORT
     return GraphDBConnector(host=host, port=port)
