@@ -97,7 +97,7 @@ export default function ProjectsPanel({
             <span className="text-neutral-400 text-xs w-10 text-right">Global</span>
             <input
               type="range"
-              min={0}
+              min={0.5}
               max={1}
               step={0.1}
               value={focus}
