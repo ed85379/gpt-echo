@@ -8,7 +8,7 @@ import pgeocode
 from astral import LocationInfo
 from astral.sun import sun, daylight, night, twilight, blue_hour, golden_hour
 from astral.moon import phase as moon_phase, moonrise, moonset
-from app.config import muse_config
+from app.config import muse_config, MONGO_CONVERSATION_COLLECTION
 
 
 @dataclass
@@ -232,7 +232,7 @@ def get_last_user_activity_timestamp() -> Optional[str]:
     """
     from app.databases.mongo_connector import mongo
     last_user_entry = mongo.find_logs(
-        collection_name="muse_conversations",
+        collection_name=MONGO_CONVERSATION_COLLECTION,
         query={"role": "user"},
         limit=1,
         sort_field="timestamp",
@@ -327,3 +327,18 @@ def build_date_query(date_str: str):
         "timestamp": {"$gte": utc_start, "$lt": utc_end}
     }
     return query
+
+def build_month_range_query(start: str, end: str) -> dict:
+    """
+    Given start/end as 'YYYY-MM-DD', build a timestamp range using
+    the same timezone logic as build_date_query, but spanning multiple days.
+    """
+    # Use build_date_query on the start date to get the correct utc_start
+    start_query = build_date_query(start)
+    utc_start = start_query["timestamp"]["$gte"]
+
+    # For the end, we want the *end* of that day, then plus one to make it exclusive.
+    end_query = build_date_query(end)
+    utc_end = end_query["timestamp"]["$lt"]  # already 'end of day' exclusive
+
+    return {"timestamp": {"$gte": utc_start, "$lt": utc_end}}
