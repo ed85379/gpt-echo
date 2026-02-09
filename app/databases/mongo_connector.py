@@ -4,11 +4,12 @@ from pymongo import MongoClient, ASCENDING
 from pymongo.database import Database
 from pymongo.collection import Collection
 from datetime import datetime
+from app.config import MONGO_URI, MONGO_DB, MONGO_SYSTEM_DB
 
-MONGO_URI = "mongodb://localhost:27017/"
+
 
 class MongoConnector:
-    def __init__(self, uri, db_name="muse_memory"):
+    def __init__(self, uri, db_name=MONGO_DB):
         self.client = MongoClient(uri)
         self.db = self.client[db_name]
         # Example: self.db['muse_log']
@@ -48,6 +49,10 @@ class MongoConnector:
     def ensure_index(self, collection_name, field):
         self.db[collection_name].create_index([(field, ASCENDING)])
 
+    def count_matching_documents(self, collection_name, query):
+        count = self.db[collection_name].count_documents(query)
+        return count
+
     def insert_log(self, collection_name, log_entry):
         self.db[collection_name].insert_one(log_entry)
 
@@ -84,6 +89,9 @@ class MongoConnector:
             return_document=True  # pymongo.ReturnDocument.AFTER
         )
 
+    def delete_one_document(self, collection_name, query):
+        return self.db[collection_name].delete_one(query)
+
     def find_logs(self, collection_name, query=None, limit=100, sort_field="timestamp", ascending=True):
         cursor = self.db[collection_name].find(query or {})
         if ascending:
@@ -110,5 +118,5 @@ class MongoConnector:
     # Add more as needed
 
 
-mongo = MongoConnector(uri=MONGO_URI, db_name="muse_memory")
-mongo_system = MongoConnector(uri=MONGO_URI, db_name="muse_system")
+mongo = MongoConnector(uri=MONGO_URI, db_name=MONGO_DB)
+mongo_system = MongoConnector(uri=MONGO_URI, db_name=MONGO_SYSTEM_DB)
