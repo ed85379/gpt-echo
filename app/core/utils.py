@@ -1,13 +1,14 @@
-# utils.py
+# core/utils.py
 from datetime import datetime, timedelta, timezone
 import re, json, humanize
+from typing import List, Optional
 from bson import ObjectId
 from charset_normalizer import from_bytes
 from cryptography.fernet import Fernet
 from zoneinfo import ZoneInfo
 from typing import Union
 from nanoid import generate
-from app.config import muse_config
+from app.config import muse_config, MONGO_CONVERSATION_COLLECTION, MONGO_THREADS_COLLECTION, MONGO_PROJECTS_COLLECTION
 from app.core.text_filters import get_text_filter_config, filter_text
 from app.databases.mongo_connector import mongo, mongo_system
 from app.core.time_location_utils import get_formatted_datetime, _load_user_location
@@ -174,7 +175,7 @@ def is_conversation_active():
     Return True if there has been frontend chat activity within the last `minutes`.
     Used by Whispergate to decide whether 'speak' should be offered.
     """
-    collection = muse_config.get("MONGO_CONVERSATION_COLLECTION")
+    collection = MONGO_CONVERSATION_COLLECTION
     docs = mongo.find_logs(
         collection_name=collection,
         query={"source": "frontend"},
@@ -189,10 +190,17 @@ def is_conversation_active():
     minutes = 10
     return (now - last_ts) <= timedelta(minutes=minutes)
 
+def build_thread_lookup():
+    threads = mongo.find_documents(
+        MONGO_THREADS_COLLECTION,
+        query={},
+        projection={"_id": 0, "thread_id": 1, "title": 1}
+    )
+    return {t["thread_id"]: t.get("title", "Unnamed Thread") for t in threads}
 
 def build_project_lookup():
     projects = mongo.find_documents(
-        "muse_projects",
+        MONGO_PROJECTS_COLLECTION,
         query={},
         projection={"_id": 1, "name": 1}
     )
@@ -200,7 +208,7 @@ def build_project_lookup():
 
 def build_project_filter_lookup():
     projects = mongo.find_documents(
-        "muse_projects",
+        MONGO_PROJECTS_COLLECTION,
         query={},
         projection={ "_id": 1, "code_intensity": 1}
     )
@@ -227,6 +235,17 @@ def prompt_projects_helper(project_id=None):
         project_code_intensity = project_filter_lookup.get(project_id)
 
     return project_id, project_name, project_meta, project_code_intensity
+
+def prompt_threads_helper(thread_id=None):
+    thread_lookup = build_thread_lookup()
+    thread_meta = ""
+    thread_title = ""
+    if thread_id and thread_lookup:
+        thread_title = thread_lookup.get(thread_id)
+        if thread_title:
+            thread_meta = f"[Thread: {thread_title}] "
+
+    return thread_title, thread_meta
 
 def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", purpose=None):
     loc = _load_user_location()
@@ -522,3 +541,54 @@ def get_adaptive_top_k(min_top_k, default_top_k, num_injected_chunks):
 def generate_new_id(size=8):
     # default alphabet: [A-Za-z0-9_-]
     return generate(size=size)
+
+def build_message_match_filter(
+    start_dt: datetime,
+    end_dt: datetime,
+    source: Optional[str] = None,
+    tag: Optional[List[str]] = None,
+    project_id: Optional[str] = None,
+    thread_id: Optional[List[str]] = None,
+    search_text: Optional[str] = None,
+    include_hidden: bool = False,
+    include_forgotten: bool = False,
+    include_private: bool = False,
+):
+    match_filter: dict = {
+        "timestamp": {"$gte": start_dt, "$lt": end_dt}
+    }
+
+    # Source
+    if source:
+        match_filter["source"] = source.lower()
+    else:
+        match_filter["source"] = {"$ne": "chatgpt"}
+
+    # Tags
+    if tag:
+        match_filter["user_tags"] = {"$in": tag}
+
+    # Project
+    if project_id:
+        try:
+            match_filter["project_id"] = ObjectId(project_id)
+        except Exception:
+            pass
+
+    # Threads
+    if thread_id:
+        match_filter["thread_ids"] = {"$in": thread_id}
+
+    # Flags
+    if not include_hidden:
+        match_filter["is_hidden"] = {"$ne": True}
+    if not include_forgotten:
+        match_filter["is_forgotten"] = {"$ne": True}
+    if not include_private:
+        match_filter["is_private"] = {"$ne": True}
+
+    # Text search (Mongo text index)
+    if search_text:
+        match_filter["$text"] = {"$search": search_text}
+
+    return match_filter
