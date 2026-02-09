@@ -19,9 +19,10 @@ import HistoryTab from './HistoryTab';
 import PresencePanel from './PresencePanel';
 import MotdBar from './MotdBar';
 import TabbedToolPanel from './TabbedToolPanel';
+import ThreadManagerPanel from '@/components/app/ThreadManagerPanel';
 // Utils
 import { trimMessages } from '@/utils/utils';
-import { createThreadWithMessages } from '@/utils/threadActions.js'
+import { createThreadWithMessages, clearOpenThread, setThreadHidden } from '@/utils/threadActions.js'
 import { updateNavState, updateThreadsState } from "@/utils/statesFunctions";
 import {
   addToThread,
@@ -29,14 +30,14 @@ import {
   handleMultiAction,
    } from "@/utils/messageActions";
  // Icons
-import { Split } from "lucide-react";
+import { Split, CircleX } from "lucide-react";
 
 // General props
 const TABS = [
   { key: "chat", label: "Chat" },
-  { key: "thread", label: "Thread" },
   { key: "history", label: "History" },
-];
+  { key: "thread", label: "Thread" },
+  ];
 
 export default function ChatPage() {
   // General controls
@@ -119,6 +120,7 @@ export default function ChatPage() {
   const [threadMap, setThreadMap] = useState({});
   const initialOpenThreadId = uiStates?.threads?.open_thread_id ?? "";
   const [openThreadId, setOpenThreadId] = useState(initialOpenThreadId);
+  const [threadManagerOpen, setThreadManagerOpen] = useState(false)
 
 
   const fetchProjects = async () => {
@@ -161,7 +163,8 @@ export default function ChatPage() {
   );
   const openThread = threads.find(thread => thread.thread_id === openThreadId);
   const openThreadTitle = openThread?.title ?? 'Thread';
- //const openThreadTitle = "Thread"
+  const closedThreadTitle = "Threads - Select/Manage";
+
 
   // ------------------------------------
   // End - Projects and Threads States and Functions
@@ -215,7 +218,7 @@ export default function ChatPage() {
         break;
       default:
         // simple actions go straight through
-        handleMultiAction(setMessages, setThreadMessages, selectedMessageIds, action, options);
+        handleMultiAction(setMessages, setThreadMessages, null, selectedMessageIds, action, options);
         clearSelectionAndExit();
     }
   };
@@ -230,7 +233,7 @@ export default function ChatPage() {
 
   const handleConfirmProject = (project_id) => {
     setShowProjectPanel(false);
-    handleMultiAction(setMessages, selectedMessageIds, "set_project", {
+    handleMultiAction(setMessages, setThreadMessages, null, selectedMessageIds, "set_project", {
       project_id,
     });
     clearSelectionAndExit();
@@ -238,7 +241,7 @@ export default function ChatPage() {
 
   const handleConfirmTagsAdd = (tagsToAdd) => {
     setShowTagPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "add_tags", {
+    handleMultiAction(setMessages, setThreadMessages, null, selectedMessageIds, "add_tags", {
       tagsToAdd,
     });
     clearSelectionAndExit();
@@ -246,7 +249,7 @@ export default function ChatPage() {
 
   const handleConfirmTagsRemove = (tagsToRemove) => {
     setShowTagPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "remove_tags", {
+    handleMultiAction(setMessages, setThreadMessages, null, selectedMessageIds, "remove_tags", {
       tagsToRemove,
     });
     clearSelectionAndExit();
@@ -254,19 +257,19 @@ export default function ChatPage() {
 
   const handleConfirmThreadJoin = (thread_id) => {
     setShowThreadPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "add_threads");
+    handleMultiAction(setMessages, setThreadMessages, null, selectedMessageIds, "add_threads");
     clearSelectionAndExit();
   };
 
   const handleConfirmThreadRemove = (thread_id) => {
     setShowThreadPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "remove_threads");
+    handleMultiAction(setMessages, setThreadMessages, null, selectedMessageIds, "remove_threads");
     clearSelectionAndExit();
   };
 
   const handleConfirmThreadCreate = () => {
     setShowThreadPanel(null);
-    handleMultiAction(setMessages, selectedMessageIds, "add_threads");
+    handleMultiAction(setMessages, setThreadMessages, null, selectedMessageIds, "add_threads");
     clearSelectionAndExit();
   };
 
@@ -314,43 +317,34 @@ export default function ChatPage() {
     setActiveTab("chat");
   };
 
-  const handleCreateBulkThread = (msg, title) => {
-    createThreadWithMessages({
-      setMessages,
-      selectedMessageIds: [msg.message_id],
-      setOpenThreadId,
-      setActiveTab,
-      fetchThreads,
-      title,
-    });
-    setShowThreadPanel(false);
-  };
 
   const handleCreateThread = (msg_ids, title) => {
     createThreadWithMessages({
       setMessages,
-      setThreads,
       setThreadMessages,
+      setAltMessages: null,
       selectedMessageIds: msg_ids,
       setOpenThreadId,
       setActiveTab,
       updateThreadsState,
       fetchThreads,
       title,
+      setThreads,
     });
     setShowSingleThreadPanel(false);
     setShowThreadPanel(false);
   };
 
   const handleJoinThread = (msg, threadId) => {
-    addToThread(setMessages, setThreadMessages, msg, threadId);
+    addToThread(setMessages, setThreadMessages, null, msg, threadId);
+    console.log("MainJoin", msg);
     // you might or might not want to auto-open the thread tab here
     setShowSingleThreadPanel(false);
     setShowThreadPanel(false);
   };
 
   const handleLeaveThread = (msg, threadId) => {
-    removeFromThread(setMessages, setThreadMessages, msg, threadId);
+    removeFromThread(setMessages, setThreadMessages, null, msg, threadId);
     setShowSingleThreadPanel(false);
     setShowThreadPanel(false);
   };
@@ -607,34 +601,134 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-full w-full min-h-0">
       {/* Sub-tab selector */}
-      <div className="flex gap-2 border-b border-neutral-800 px-6">
-        {visibleTabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => {
-              setActiveTab(tab.key);
-              updateNavState({ main_tab: tab.key });
-            }}
-            title={tab.key === "history" ? "View, search, and filter conversation logs" : ""}
-            className={`px-4 py-2 rounded-t-lg border-b-2 transition-all
-              ${activeTab === tab.key
-                ? "border-purple-400 text-purple-200 font-bold bg-neutral-900"
-                : "border-transparent text-purple-400 hover:bg-neutral-900/50"
-              }`
-            }
-          >
-            <span className="inline-flex items-center gap-1 align-middle">
-              {tab.key === "thread" && openThreadId && (
-                <Split className="w-4 h-4 translate-y-[1px]" />
-              )}
-              <span className="leading-none">
-                {tab.key === "thread" ? openThreadTitle || tab.label : tab.label}
-              </span>
-            </span>
-          </button>
-        ))}
-      </div>
+        <div className="flex gap-2 border-b border-neutral-800 px-6">
+          {TABS.map(tab => {
+            const isThread = tab.key === "thread";
+            const isActive = activeTab === tab.key;
+            const hasOpenThread = !!openThreadId;
 
+            const baseLabel = isThread
+              ? openThreadId
+                ? openThreadTitle || "Active thread"
+                : closedThreadTitle
+              : tab.label;
+
+            const handleTabClick = () => {
+              if (isThread) {
+                if (hasOpenThread) {
+                  // normal behavior: go to thread view
+                  setActiveTab("thread");
+                  updateNavState({ main_tab: "thread" });
+                } else {
+                  // no active thread: just open the manager
+                  if (threadManagerOpen) {
+                    setThreadManagerOpen(false);
+                  } else {
+                    setThreadManagerOpen(true);
+                  }
+                }
+              } else {
+                // non-thread tab
+                setActiveTab(tab.key);
+                updateNavState({ main_tab: tab.key });
+              }
+            };
+
+            return (
+              <div
+                key={tab.key}
+                className={`
+                  flex items-center
+                  px-4 py-2 rounded-t-lg border-b-2 transition-all
+                  ${isActive
+                    ? "border-purple-400 text-purple-200 font-bold bg-neutral-900"
+                    : "border-transparent text-purple-400 hover:bg-neutral-900/50"
+                  }
+                `}
+              >
+                {/* Main tab button: label + (optional) Split icon */}
+                <button
+                  type="button"
+                  onClick={handleTabClick}
+                  title={
+                    tab.key === "history"
+                      ? "View, search, and filter conversation logs"
+                      : isThread && openThreadId
+                      ? "View this thread"
+                      : isThread
+                      ? "Select or manage threads"
+                      : ""
+                  }
+                  className="inline-flex items-center gap-1 align-middle"
+                >
+                  {isThread && (
+                    <Split className="w-4 h-4 translate-y-[1px]" />
+                  )}
+
+                  <span className="leading-none">
+                    {baseLabel}
+                  </span>
+                </button>
+
+                {/* Close icon, only when a thread is active */}
+                {isThread && openThreadId && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      clearOpenThread({
+                        setOpenThreadId,
+                        setActiveTab,
+                        updateThreadsState,
+                      })
+                    }
+                    className="ml-1 text-neutral-500 hover:text-neutral-200"
+                    title="Close thread"
+                  >
+                    <CircleX className="w-3 h-3" />
+                  </button>
+                )}
+
+                {/* Manager dropdown trigger: always present for thread tab */}
+                {isThread && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // however you currently toggle the manager
+                      if (threadManagerOpen) {
+                        setThreadManagerOpen(false);
+                      } else {
+                        setThreadManagerOpen(true);
+                      }
+                      // optional: ensure we're on the thread tab when manager opens
+                      //setActiveTab("thread");
+                      //updateNavState({ main_tab: "thread" });
+                    }}
+                    className="ml-1 text-xs text-neutral-400 hover:text-neutral-100"
+                    title="Open thread manager"
+                  >
+                    ▼
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {threadManagerOpen && (
+          <div className="absolute left-52 top-28 mt-0 z-20 flex justify-end">
+            <ThreadManagerPanel
+              threads={threads}
+              setThreads={setThreads}
+              fetchThreads={fetchThreads}
+              setMessages={setMessages}
+              setThreadMessages={setThreadMessages}
+              setThreadManagerOpen={setThreadManagerOpen}
+              openThreadId={openThreadId}
+              setOpenThreadId={setOpenThreadId}
+              setActiveTab={setActiveTab}
+              updateThreadsState={updateThreadsState}
+            />
+          </div>
+        )}
       {/* Sub-tab content */}
       {activeTab === "chat" && (
         <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0 px-6">
@@ -649,6 +743,7 @@ export default function ChatPage() {
               setMessages={setMessages}
               threadMessages={threadMessages}
               setThreadMessages={setThreadMessages}
+              setAltMessages={null}
               wsRef={wsRef}
               connecting={connecting}
               thinking={thinking}
@@ -755,6 +850,7 @@ export default function ChatPage() {
               setMessages={setMessages}
               threadMessages={threadMessages}
               setThreadMessages={setThreadMessages}
+              setAltMessages={null}
               wsRef={wsRef}
               connecting={connecting}
               thinking={thinking}
@@ -860,6 +956,9 @@ export default function ChatPage() {
             projectsLoading={projectsLoading}
 
             // Message Actions
+            threadMessages={threadMessages}
+            setThreadMessages={setThreadMessages}
+            setChatMessages={setMessages}
             clearSelectionAndExit={clearSelectionAndExit}
             onReturnToThisMoment={handleReturnToThisMoment}
             createThreadWithMessages={createThreadWithMessages}
@@ -881,8 +980,6 @@ export default function ChatPage() {
             tagDialogOpen={tagDialogOpen}
             setTagDialogOpen={setTagDialogOpen}
             handleConfirmProject={handleConfirmProject}
-            handleConfirmTagsAdd={handleConfirmTagsAdd}
-            handleConfirmTagsRemove={handleConfirmTagsRemove}
             existingTagsForSelection={existingTagsForSelection}
             existingThreadsForSelection={existingThreadsForSelection}
             clearSelectionAndExit={clearSelectionAndExit}

@@ -102,6 +102,7 @@ const MessageItem = React.memo(
       msg,
       setMessages,
       setThreadMessages,
+      setAltMessages,
       projects,
       projectsLoading,
       projectMap,
@@ -475,6 +476,7 @@ const MessageItem = React.memo(
             msg={msg}
             setMessages={setMessages}
             setThreadMessages={setThreadMessages}
+            setAltMessages={setAltMessages}
             projects={projects}
             projectsLoading={projectsLoading}
             tagDialogOpen={tagDialogOpen}

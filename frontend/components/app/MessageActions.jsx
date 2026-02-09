@@ -43,6 +43,7 @@ export default function MessageActions({
   msg,
   setMessages,
   setThreadMessages,
+  setAltMessages,
   projects,
   projectsLoading,
   tagDialogOpen,
@@ -152,7 +153,7 @@ export default function MessageActions({
         </button>
         {/* Remembered toggle */}
         <button
-          onClick={() => handleToggleRemembered(setMessages, msg.message_id, !isRemembered)}
+          onClick={() => handleToggleRemembered(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isRemembered)}
           title={isRemembered ? "Unhighlight message in memory" : "Highlight message in memory"}
           className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -165,7 +166,7 @@ export default function MessageActions({
         <span className="mx-1 h-3 border-l self-center border-neutral-400" aria-hidden="true" />
         {/* Private toggle */}
         <button
-          onClick={() => handleTogglePrivate(setMessages, msg.message_id, !isPrivate)}
+          onClick={() => handleTogglePrivate(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isPrivate)}
           title={isPrivate ? "Set as public" : "Mark as private"}
           className={`transition-colors ${isPrivate ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -174,7 +175,7 @@ export default function MessageActions({
         </button>
         {/* Hidden toggle */}
         <button
-          onClick={() => handleToggleHidden(setMessages, msg.message_id, !isHidden)}
+          onClick={() => handleToggleHidden(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isHidden)}
           title={isHidden ? "Set as visible" : "Mark as hidden"}
           className={`transition-colors ${isHidden ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -183,7 +184,7 @@ export default function MessageActions({
         </button>
         {/* Delete */}
         <button
-          onClick={() => handleDelete(setMessages, msg.message_id, !isDeleted)}
+          onClick={() => handleDelete(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isDeleted)}
           title={isDeleted ? "Restore message" : "Forget message"}
           className="text-neutral-400 hover:text-red-400 transition-colors"
           style={{ background: "none", border: "none", cursor: "pointer" }}
@@ -224,7 +225,7 @@ export default function MessageActions({
                 {tag}
                 <button
                   className="ml-1 text-purple-300 hover:text-red-300"
-                  onClick={() => removeTag(setMessages, msg.message_id, tag)}
+                  onClick={() => removeTag(setMessages, setThreadMessages, setAltMessages, msg.message_id, tag)}
                 >
                   ×
                 </button>
@@ -250,7 +251,7 @@ export default function MessageActions({
               className="ml-2 text-purple-300 hover:text-purple-100"
               onClick={() => {
                 if (newTag.trim()) {
-                  addTag(setMessages, msg.message_id, newTag.trim());
+                  addTag(setMessages, setThreadMessages, setAltMessages, msg.message_id, newTag.trim());
                   setNewTag("");
                 }
               }}
@@ -287,7 +288,7 @@ export default function MessageActions({
                         : "bg-neutral-800 text-purple-100 hover:bg-purple-900"
                     }`}
                     onClick={() => {
-                      setProjectOnMessage(setMessages, msg.message_id, proj._id);
+                      setProjectOnMessage(setMessages, setThreadMessages, setAltMessages, msg.message_id, proj._id);
                       setProjectDialogOpen(null);
                     }}
                   >
@@ -301,7 +302,7 @@ export default function MessageActions({
             <button
               className="mt-2 w-full px-2 py-1 rounded bg-neutral-700 text-purple-200 hover:bg-red-800"
               onClick={() => {
-                clearProject(setMessages, msg.message_id);
+                clearProject(setMessages, setThreadMessages, setAltMessages, msg.message_id);
                 setProjectDialogOpen(null);
               }}
             >

@@ -61,6 +61,8 @@ export default function ThreadPanel({
     clearSelectionAndExit();
   };
 
+
+
   return (
     <div className="w-[420px] bg-neutral-900 border border-neutral-700 rounded p-3 shadow-lg">
       {/* Header */}

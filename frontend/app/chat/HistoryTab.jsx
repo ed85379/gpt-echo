@@ -10,13 +10,16 @@ import MessageItem from "@/components/app/MessageItem";
 import MultiActionBar from "@/components/app/MultiActionBar"
 import ProjectPickerPanel from "@/components/app/ProjectPickerPanel"
 import TagPanel from "@/components/app/TagPanel"
+import ThreadPanel from "@/components/app/ThreadPanel";
 // Utils
 import {
     handleDelete,
     handleTogglePrivate,
     handleToggleHidden,
     handleToggleRemembered,
-    handleMultiAction
+    handleMultiAction,
+    addToThread,
+    removeFromThread,
   } from "@/utils/messageActions";
 import { getMonthRange } from "@/utils/utils";
 
@@ -54,28 +57,32 @@ const HistoryTab = (
     setShowTagPanel,
     showThreadPanel,
     setShowThreadPanel,
+    showSingleThreadPanel,
+    setShowSingleThreadPanel,
     handleToggleMultiSelect,
     handleToggleSelect,
     handleCreateThread,
-    handleJoinThread,
-    handleLeaveThread,
     tagDialogOpen,
     setTagDialogOpen,
     handleConfirmProject,
-    handleConfirmTagsAdd,
-    handleConfirmTagsRemove,
     existingTagsForSelection,
+    existingThreadsForSelection,
+    setChatMessages,
+    setThreadMessages,
   }
 ) => {
   // Initial states
   const [source, setSource] = useState("Frontend");
-  const [messages, setMessages] = useState([]);
+  const [historyMessages, setHistoryMessages] = useState([]);
+
 
   // ------------------------------------
   // Message Filters
   // ------------------------------------
   const [projectFilter, setProjectFilter] = useState("")
+  const [threadFilter, setThreadFilter] = useState("")
   const [tagFilter, setTagFilter] = useState([]);
+  const [searchText, setSearchText] = useState("")
   const [availableTags, setAvailableTags] = useState([]);
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const hasTags = availableTags.length > 0;
@@ -95,9 +102,16 @@ const HistoryTab = (
   // 1. Base: apply left-column filters (AND) to messages
   const baseFiltered = useMemo(
     () =>
-      messages.filter(msg => {
+      historyMessages.filter(msg => {
         // Project filter (AND)
         if (projectFilter && msg.project_id !== projectFilter) return false;
+        // Thread filter (AND)
+        const threads = msg.thread_ids || [];
+        if (threadFilter && threadFilter.length > 0) {
+          const inFilter = threads.some(threadId => threadFilter.includes(threadId));
+          if (!inFilter) return false;
+        }
+
 
         // Hidden / Forgotten / Private flags (AND)
         if (!showHidden && msg.is_hidden) return false;
@@ -106,7 +120,7 @@ const HistoryTab = (
 
         return true;
       }),
-    [messages, projectFilter, showHidden, showForgotten, showPrivate, search]
+    [historyMessages, projectFilter, threadFilter, showHidden, showForgotten, showPrivate, search]
   );
 
   // 2. Helpers for right-column filters (OR)
@@ -135,16 +149,16 @@ const HistoryTab = (
   //    baseFiltered (AND) + (search OR tags) on top
   const filteredMessages = useMemo(
     () => {
-      const hasSearch = !!search.trim();
+      //const hasSearch = !!search.trim();
       const hasTags = tagFilter.length > 0;
 
       // No OR filters → just return the AND-filtered base set
-      if (!hasSearch && !hasTags) return baseFiltered;
+      if (!hasTags) return baseFiltered;
 
       // Otherwise, within that base set, keep anything that matches
       // search OR tags
       return baseFiltered.filter(msg =>
-        (hasSearch && matchesSearch(msg)) ||
+        //(hasSearch && matchesSearch(msg)) ||
         (hasTags && matchesAnyTag(msg))
       );
     },
@@ -181,6 +195,16 @@ const HistoryTab = (
       params += `&project_id=${encodeURIComponent(projectFilter)}`;
     }
 
+    // Thread filter
+    if (threadFilter) {
+      params += `&thread_id=${encodeURIComponent(threadFilter)}`;
+    }
+
+    // Text search filter
+    if (search && search.trim()) {
+      params += `&search_text=${encodeURIComponent(search.trim())}`;
+    }
+
     // Flags – decide how you want to represent them to the backend.
     // Example: send booleans for "include_hidden", etc.
     params += `&include_hidden=${showHidden ? "1" : "0"}`;
@@ -202,21 +226,64 @@ const HistoryTab = (
     displayMonth,
     tagFilter,
     projectFilter,
+    threadFilter,
+    search,
     showHidden,
     showForgotten,
     showPrivate,
   ]);
 
   useEffect(() => {
-    setMessages([]);
+    setHistoryMessages([]);
     if (!selectedDate) return;
+
     setLoading(true);
-    const dateStr = selectedDate.toISOString().slice(0,10);
-    fetch(`/api/messages/by_day?date=${dateStr}&source=${encodeURIComponent(source)}`)
+    const dateStr = selectedDate.toISOString().slice(0, 10);
+
+    let params = `date=${dateStr}&source=${encodeURIComponent(source)}`;
+
+    // Project filter
+    if (projectFilter) {
+      params += `&project_id=${encodeURIComponent(projectFilter)}`;
+    }
+
+    // Thread filter
+    if (threadFilter) {
+      // if threadFilter is an array, you might instead:
+      // threadFilter.forEach(t => { params += `&thread_id=${encodeURIComponent(t)}`; });
+      params += `&thread_id=${encodeURIComponent(threadFilter)}`;
+    }
+
+    // Text search filter
+    if (search && search.trim()) {
+      params += `&search_text=${encodeURIComponent(search.trim())}`;
+    }
+
+    // Flags
+    params += `&include_hidden=${showHidden ? "1" : "0"}`;
+    params += `&include_forgotten=${showForgotten ? "1" : "0"}`;
+    params += `&include_private=${showPrivate ? "1" : "0"}`;
+
+    // Tags
+    tagFilter.forEach(t => {
+      params += `&tag=${encodeURIComponent(t)}`;
+    });
+
+    fetch(`/api/messages/by_day?${params}`)
       .then(res => res.json())
-      .then(data => setMessages(data.messages || []))
+      .then(data => setHistoryMessages(data.messages || []))
       .finally(() => setLoading(false));
-  }, [selectedDate, source]);
+  }, [
+    selectedDate,
+    source,
+    projectFilter,
+    threadFilter,
+    search,
+    showHidden,
+    showForgotten,
+    showPrivate,
+    tagFilter,
+  ]);
 
   // ------------------------------------
   // End - Calendar Functions and Message Load
@@ -227,6 +294,7 @@ const HistoryTab = (
   // Message Actions States and Functions
   // ------------------------------------
   const [projectDialogOpen, setProjectDialogOpen] = useState(null)
+  const [threadPanelOpen, setThreadPanelOpen] = useState(null);
   const onHistoryMultiAction = (action, options = {}) => {
     console.log("onMultiAction called with:", action);
     switch (action) {
@@ -242,13 +310,49 @@ const HistoryTab = (
         console.log(">>> setting showTagPanel = 'remove'");
         setShowTagPanel("remove");
         break;
+      case "add_threads":
+        console.log(">>> setting showThreadPanel = 'add'");
+        setShowThreadPanel("add");
+        break;
+      case "remove_threads":
+        console.log(">>> setting showThreadPanel = 'remove'");
+        setShowThreadPanel("remove");
+        break;
       default:
         // simple actions go straight through
-        handleMultiAction(setMessages, selectedMessageIds, action, options);
+        handleMultiAction(setHistoryMessages, setThreadMessages, setChatMessages, selectedMessageIds, action, options);
         clearSelectionAndExit();
     }
   };
 
+  const handleJoinThreadFromHistory = (msg, threadId) => {
+    // Update chat + thread truth
+    addToThread(setHistoryMessages, setThreadMessages, setChatMessages, msg, threadId);
+    setShowSingleThreadPanel(false);
+    setShowThreadPanel(false);
+  };
+
+  const handleLeaveThreadFromHistory = (msg, threadId) => {
+    removeFromThread(setHistoryMessages, setThreadMessages, setChatMessages, msg, threadId);
+    setShowSingleThreadPanel(false);
+    setShowThreadPanel(false);
+  };
+
+  const handleConfirmTagsAdd = (tagsToAdd) => {
+    setShowTagPanel(null);
+    handleMultiAction(setHistoryMessages, setThreadMessages, setChatMessages, selectedMessageIds, "add_tags", {
+      tagsToAdd,
+    });
+    clearSelectionAndExit();
+  };
+
+  const handleConfirmTagsRemove = (tagsToRemove) => {
+    setShowTagPanel(null);
+    handleMultiAction(setHistoryMessages, setThreadMessages, setChatMessages, selectedMessageIds, "remove_tags", {
+      tagsToRemove,
+    });
+    clearSelectionAndExit();
+  };
   // ------------------------------------
   // End - Message Actions States and Functions
   // ------------------------------------
@@ -313,6 +417,23 @@ const HistoryTab = (
                   {projects.map(p => (
                     <option key={p._id} value={p._id}>
                       {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Thread */}
+              <label className="flex items-center gap-2 text-sm text-neutral-300">
+                <span className="whitespace-nowrap">Thread:</span>
+                <select
+                  value={threadFilter}
+                  onChange={e => setThreadFilter(e.target.value)}
+                  className="flex-1 px-2 py-1 rounded bg-neutral-900 text-white border border-neutral-700"
+                >
+                  <option value="">All</option>
+                  {threads.map(t => (
+                    <option key={t.thread_id} value={t.thread_id}>
+                      {t.title}
                     </option>
                   ))}
                 </select>
@@ -451,6 +572,21 @@ const HistoryTab = (
                   />
                 </div>
               )}
+              {showThreadPanel && (
+                <div className="absolute right-8 top-44 mt-0 z-20 flex justify-end">
+                  <ThreadPanel
+                    mode={showThreadPanel}
+                    msg_ids={selectedMessageIds}
+                    threads={threads}
+                    memberThreadIds={existingThreadsForSelection}
+                    onCreateThread={handleCreateThread}
+                    onJoinThread={handleJoinThreadFromHistory}
+                    onLeaveThread={handleLeaveThreadFromHistory}
+                    clearSelectionAndExit={clearSelectionAndExit}
+                    onCancel={() => setShowThreadPanel(false)}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -480,17 +616,28 @@ const HistoryTab = (
                   {filteredMessages.map((msg, idx) => (
                     <MessageItem
                       key={msg.message_id || idx}
+                      audioControls={audioControls}
                       msg={msg}
-                      setMessages={setMessages}
+                      setMessages={setHistoryMessages}
+                      setAltMessages={setChatMessages}
+                      threads={threads}
+                      setThreadMessages={setThreadMessages}
+                      clearSelectionAndExit={clearSelectionAndExit}
                       projects={projects}
                       projectsLoading={projectsLoading}
                       projectMap={projectMap}
+                      handleCreateThread={handleCreateThread}
+                      handleJoinThread={handleJoinThreadFromHistory}
+                      handleLeaveThread={handleLeaveThreadFromHistory}
                       tagDialogOpen={tagDialogOpen}
                       setTagDialogOpen={setTagDialogOpen}
                       projectDialogOpen={projectDialogOpen}
                       setProjectDialogOpen={setProjectDialogOpen}
+                      setThreadPanelOpen={setThreadPanelOpen}
                       museName={museName}
                       setShowThreadPanel={setShowThreadPanel}
+                      showSingleThreadPanel={showSingleThreadPanel}
+                      setShowSingleThreadPanel={setShowSingleThreadPanel}
                       mode={mode}
                       audioControls={audioControls}
                       onReturnToThisMoment={onReturnToThisMoment}
