@@ -20,7 +20,7 @@ import ThreadPanel from "@/components/app/ThreadPanel";
 import { assignMessageId, toPythonIsoString, fileToBase64, trimMessages } from '@/utils/utils';
 
 // Icons
-import { ArrowBigDownDash, Paperclip, Pin, Sparkles, History, Slash } from 'lucide-react';
+import { ArrowBigDownDash, Paperclip, Pin, Sparkles, History, Slash, Split } from 'lucide-react';
 function HistoryOffIcon(props) {
   return (
     <span className="relative inline-flex h-4 w-4" {...props}>
@@ -41,6 +41,7 @@ const ChatTab = (
     setMessages,
     threadMessages,
     setThreadMessages,
+    setAltMessages,
     wsRef,
     connecting,
     thinking,
@@ -642,7 +643,16 @@ const ChatTab = (
       </div>
       */}
         {/* Right side: Message actions */}
-
+        {threadId && (
+          <div className="absolute left-1/3 top-20 mt-0 z-20 flex justify-end">
+            <span className="bg-purple-900 text-sm text-purple-300 px-4 py-0.5 rounded-lg flex items-center gap-1">
+              <Split size={14} className="inline" />
+              <span className="font-semibold">
+                You are currently in thread: {threadMap.threads[threadId].title || "Thread"}
+              </span>
+            </span>
+          </div>
+        )}
         <MultiActionBar
           multiSelectEnabled={multiSelectEnabled}
           onToggleMultiSelect={handleToggleMultiSelect}
@@ -751,6 +761,7 @@ const ChatTab = (
               msg,
               setMessages,
               setThreadMessages,
+              setAltMessages,
               projects,
               projectsLoading,
               projectMap,
