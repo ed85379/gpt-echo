@@ -13,7 +13,7 @@ from app.config import muse_config, MONGO_URI, MONGO_DB, MONGO_CONVERSATION_COLL
     MONGO_THREADS_COLLECTION, MONGO_MEMORY_COLLECTION, QDRANT_CONVERSATION_COLLECTION, QDRANT_MEMORY_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 from app.core.utils import write_system_log, SOURCES_CHAT, SOURCES_CONTEXT, SOURCES_ALL
 from app.core import utils
-from app.databases.mongo_connector import mongo
+from app.databases.mongo_connector import mongo, mongo_system
 from app.services.openai_client import get_openai_autotags
 from app.databases import memory_indexer
 from app.api.queues import index_memory_queue
@@ -122,7 +122,7 @@ async def log_message(
 
 
 async def do_import(collection):
-    temp_coll = mongo.db[collection]
+    temp_coll = mongo_system.db[collection]
     main_coll = mongo.db[MONGO_CONVERSATION_COLLECTION]
 
     imported = 0
@@ -137,7 +137,7 @@ async def do_import(collection):
         temp_coll.update_one({"_id": doc["_id"]}, {"$set": {"imported": True}})
         imported += 1
 
-    mongo.db.import_history.update_one(
+    mongo_system.db.import_history.update_one(
         {"collection": collection},
         {"$set": {"processing": False, "status": "imported"}}
     )

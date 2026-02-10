@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks
 from datetime import datetime, timezone
 import json, uuid
-from app.databases.mongo_connector import mongo
+from app.databases.mongo_connector import mongo_system
 from app.core.memory_core import do_import
 
 router = APIRouter(prefix="/api/import", tags=["import"])
@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/import", tags=["import"])
 @router.post("/upload")
 async def upload_import(file: UploadFile = File(...)):
     collection_name = f"import_{uuid.uuid4().hex[:10]}"
-    temp_coll = mongo.db[collection_name]
+    temp_coll = mongo_system.db[collection_name]
     imported = 0
     malformed = 0
     batch = []
@@ -31,7 +31,7 @@ async def upload_import(file: UploadFile = File(...)):
         imported += len(batch)
 
     # Record in import_history collection
-    mongo.db.import_history.insert_one({
+    mongo_system.db.import_history.insert_one({
         "collection": collection_name,
         "filename": file.filename,
         "total": imported + malformed,
@@ -46,7 +46,7 @@ async def upload_import(file: UploadFile = File(...)):
 @router.get("/list")
 def list_imports():
     entries = list(
-        mongo.db.import_history.find(
+        mongo_system.db.import_history.find(
             {"deleted": {"$ne": "true"}},  # Only show not-deleted
             {"_id": 0}
         ).sort("created_on", -1)  # Sort by newest first
@@ -58,9 +58,9 @@ from fastapi import Query
 @router.delete("/delete")
 def delete_import(collection: str = Query(...)):
     # Drop the temp import collection
-    mongo.db[collection].drop()
+    mongo_system.db[collection].drop()
     # Update import_history if pending
-    import_history = mongo.db.import_history
+    import_history = mongo_system.db.import_history
     entry = import_history.find_one({"collection": collection})
     import_history.update_one(
         {"collection": collection},
@@ -73,7 +73,7 @@ def delete_import(collection: str = Query(...)):
 @router.post("/process")
 def process_import(collection: str = Query(...), background_tasks: BackgroundTasks = None):
     # Mark as processing
-    mongo.db.import_history.update_one(
+    mongo_system.db.import_history.update_one(
         {"collection": collection},
         {"$set": {"processing": True, "status": "pending"}}
     )
@@ -83,7 +83,7 @@ def process_import(collection: str = Query(...), background_tasks: BackgroundTas
 
 @router.get("/progress")
 def import_progress(collection: str = Query(...)):
-    temp_coll = mongo.db[collection]
+    temp_coll = mongo_system.db[collection]
     total = temp_coll.count_documents({})
     done = temp_coll.count_documents({"imported": True})
     return {"done": done, "total": total}
