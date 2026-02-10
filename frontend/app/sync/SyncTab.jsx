@@ -33,7 +33,7 @@ export default function SyncTab() {
   // Fetch calendar for push
   useEffect(() => {
     if (llmTab === "push") {
-      fetch("/api/messages/calendar_status")
+      fetch("/api/messages/calendar_status_exported")
         .then(res => res.json())
         .then(data => setCalendarStatus(data.days || {}));
     }

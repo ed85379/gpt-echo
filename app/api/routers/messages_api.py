@@ -304,7 +304,7 @@ def get_user_tags(
     tag_docs = list(mongo.db[MONGO_CONVERSATION_COLLECTION].aggregate(pipeline))
     return {"tags": [{"tag": doc["_id"], "count": doc["count"]} for doc in tag_docs]}
 
-@router.get("/calendar_status")
+@router.get("/calendar_status_exported")
 def get_calendar_status(
     days: int = Query(30, ge=1, le=366),
     source: str = Query(None, description="Optional source filter (Frontend, ChatGPT)")
