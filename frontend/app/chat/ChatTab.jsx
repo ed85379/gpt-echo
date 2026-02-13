@@ -32,6 +32,8 @@ function HistoryOffIcon(props) {
 
 const ChatTab = (
   {
+    // Feature flags
+    enableTTS,
     // General and nav
     audioControls,
     ephemeralFiles,
@@ -608,41 +610,46 @@ const ChatTab = (
     <div className="relative flex flex-col h-full ">
       <div className="flex items-center justify-between mt-4">
         {/* Left side: Auto-TTS controls */}
-        <div className="flex gap-2 items-center">
-          <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={autoTTS}
-              onChange={(e) => setAutoTTS(e.target.checked)}
-              disabled={thinking || connecting}
-            />
-            <span className="text-sm text-neutral-300">Auto-TTS</span>
-          </label>
+        {enableTTS ? (
+          <div className="flex gap-2 items-center">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={autoTTS}
+                onChange={(e) => setAutoTTS(e.target.checked)}
+                disabled={thinking || connecting}
+              />
+              <span className="text-sm text-neutral-300">Auto-TTS</span>
+            </label>
+          </div>
+        ) : (
+          // Spacer to preserve layout
+          <div className="h-6" />
+        )}
+        {/* // Uncomment this to experiment with different renderers
+        <div className="flex items-center justify-end px-2 py-1 text-xs text-neutral-400 gap-2">
+          <span>Renderer:</span>
+          <button
+            type="button"
+            className={`px-2 py-0.5 rounded ${
+              !useLabRenderer ? "bg-purple-700 text-white" : "bg-neutral-800"
+            }`}
+            onClick={() => setUseLabRenderer(false)}
+          >
+            Legacy
+          </button>
+          <button
+            type="button"
+            className={`px-2 py-0.5 rounded ${
+              useLabRenderer ? "bg-purple-700 text-white" : "bg-neutral-800"
+            }`}
+            onClick={() => setUseLabRenderer(true)}
+          >
+            Markdown Lab
+          </button>
         </div>
-      {/* // Uncomment this to experiment with different renderers
-      <div className="flex items-center justify-end px-2 py-1 text-xs text-neutral-400 gap-2">
-        <span>Renderer:</span>
-        <button
-          type="button"
-          className={`px-2 py-0.5 rounded ${
-            !useLabRenderer ? "bg-purple-700 text-white" : "bg-neutral-800"
-          }`}
-          onClick={() => setUseLabRenderer(false)}
-        >
-          Legacy
-        </button>
-        <button
-          type="button"
-          className={`px-2 py-0.5 rounded ${
-            useLabRenderer ? "bg-purple-700 text-white" : "bg-neutral-800"
-          }`}
-          onClick={() => setUseLabRenderer(true)}
-        >
-          Markdown Lab
-        </button>
-      </div>
-      */}
-        {/* Right side: Message actions */}
+        */}
+
         {threadId && (
           <div className="absolute left-1/3 top-20 mt-0 z-20 flex justify-end">
             <span className="bg-purple-900 text-sm text-purple-300 px-4 py-0.5 rounded-lg flex items-center gap-1">
@@ -653,16 +660,19 @@ const ChatTab = (
             </span>
           </div>
         )}
-        <MultiActionBar
-          multiSelectEnabled={multiSelectEnabled}
-          onToggleMultiSelect={handleToggleMultiSelect}
-          selectedCount={selectedMessageIds.length}
-          onAction={onMultiAction}
-          disabled={thinking || connecting}
-          setShowProjectPanel={setShowProjectPanel}
-          setShowTagPanel={setShowTagPanel}
-          setShowThreadPanel={setShowThreadPanel}
-        />
+        {/* Right side: Message actions */}
+        <div className="ml-auto">
+          <MultiActionBar
+            multiSelectEnabled={multiSelectEnabled}
+            onToggleMultiSelect={handleToggleMultiSelect}
+            selectedCount={selectedMessageIds.length}
+            onAction={onMultiAction}
+            disabled={thinking || connecting}
+            setShowProjectPanel={setShowProjectPanel}
+            setShowTagPanel={setShowTagPanel}
+            setShowThreadPanel={setShowThreadPanel}
+          />
+        </div>
         {/* Overlay row for complex actions */}
         {showProjectPanel && (
           <div className="absolute right-0 top-12 mt-0 z-20 flex justify-end">

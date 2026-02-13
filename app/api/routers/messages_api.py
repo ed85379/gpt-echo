@@ -7,7 +7,7 @@ from typing import Any
 from bson import ObjectId
 from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.memory_indexer import update_qdrant_metadata_for_messages
-from app.config import muse_config, MONGO_CONVERSATION_COLLECTION, MONGO_STATES_COLLECTION
+from app.config import muse_settings, MONGO_CONVERSATION_COLLECTION, MONGO_STATES_COLLECTION
 from app.api.queues import index_queue, log_queue
 from app.core.memory_core import get_excluded_thread_ids
 
@@ -16,7 +16,7 @@ from app.core.memory_core import get_excluded_thread_ids
 
 router = APIRouter(prefix="/api/messages", tags=["messages"])
 
-USER_TIMEZONE = muse_config.get("USER_TIMEZONE")
+USER_TIMEZONE = muse_settings.get_section('user_config').get('USER_TIMEZONE')
 
 @router.get("/")
 def get_messages(

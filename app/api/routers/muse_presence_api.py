@@ -5,7 +5,7 @@ from app.services.tts_core import synthesize_speech, stream_speech
 from collections import defaultdict
 from bson import ObjectId
 from datetime import datetime, timezone
-from app.config import muse_config
+from app.config import JOURNAL_DIR
 from app.core.muse_profile import muse_profile
 from app.core.files_core import get_all_message_ids_for_files
 from app.core.utils import get_adaptive_top_k, slugify
@@ -175,8 +175,6 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
 
 @muse_router.post("/journal")
 async def create_journal_entry(request: Request):
-    journal_dir = muse_config.get("JOURNAL_DIR")
-    journal_catalog_path = muse_config.get("JOURNAL_CATALOG_PATH")
     data = await request.json()
 
     title = data.get("title", "Untitled Entry")
@@ -193,10 +191,10 @@ async def create_journal_entry(request: Request):
     # Prepare filenames
     slug_title = slugify(title)[:50]  # Limit slug length
     filename = f"{now.strftime('%Y-%m-%dT%H-%M-%S')}_{slug_title}.md"
-    filepath = journal_dir / filename
+    filepath = JOURNAL_DIR / filename
 
     # Ensure journal directory exists
-    os.makedirs(journal_dir, exist_ok=True)
+    os.makedirs(JOURNAL_DIR, exist_ok=True)
 
     # Write Markdown file
     with open(filepath, "w", encoding="utf-8") as f:

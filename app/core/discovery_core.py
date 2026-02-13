@@ -1,20 +1,13 @@
 import os
 import json
-import requests
 import feedparser
-from datetime import datetime
-from zoneinfo import ZoneInfo
 import re
 import requests
 from bs4 import BeautifulSoup
 from readability import Document
-from app import config
-from app.config import muse_config
+from app.config import PROFILE_DIR
 
-# Configs
-PROJECT_ROOT = config.PROJECT_ROOT
-OPENWEATHERMAP_API_KEY = config.OPENWEATHERMAP_API_KEY
-PROFILE_DIR = config.PROFILE_DIR
+
 
 # --- Loaders ---
 

@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { nanoid } from "nanoid";
 // Hooks
 import { useConfig } from '@/hooks/ConfigContext';
+import { useFeatures } from '@/hooks/FeaturesContext';
 import { useAudioControls } from "@/hooks/useAudioControls";
 // Components
 import ChatTab from './ChatTab';
@@ -60,7 +61,9 @@ export default function ChatPage() {
   timeSkipOverride !== null
     ? timeSkipOverride
     : Boolean(uiStates?.time_skip?.active);
-
+  const { adminConfig, adminLoading } = useFeatures();
+  const mm = adminConfig?.mm_features || {};
+  const enableTTS = !!mm.ENABLE_TTS;
 
   useEffect(() => {
     if (!uiStatesLoading) {
@@ -734,6 +737,8 @@ export default function ChatPage() {
         <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0 px-6">
           <div className=" relative md:col-span-2 overflow-y-auto">
             <ChatTab
+              // Feature flags
+              enableTTS={enableTTS}
               // General and nav
               audioControls={audioControls}
               ephemeralFiles={ephemeralFiles}
@@ -840,6 +845,8 @@ export default function ChatPage() {
         <div className="relative grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0 px-6">
           <div className=" relative md:col-span-2 overflow-y-auto">
             <ChatTab
+              // Feature flags
+              enableTTS={enableTTS}
               // General and nav
               threadId={openThreadId}
               audioControls={audioControls}
@@ -943,6 +950,8 @@ export default function ChatPage() {
       {activeTab === "history" && (
         <div className="flex-1 min-h-0 px-6 bg-neutral-950 text-white">
           <HistoryTab
+            // Feature flags
+            enableTTS={enableTTS}
             // General and nav
             audioControls={audioControls}
 

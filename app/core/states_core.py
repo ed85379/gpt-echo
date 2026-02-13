@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 import asyncio
 import humanize
-from app.config import muse_config, MONGO_STATES_COLLECTION, MONGO_CONVERSATION_COLLECTION
+from app.config import muse_settings, MONGO_STATES_COLLECTION, MONGO_CONVERSATION_COLLECTION
 from app.api.queues import log_queue
 from app.databases.mongo_connector import mongo_system, mongo
 from app.databases.memory_indexer import assign_message_id
@@ -187,7 +187,7 @@ async def create_time_skip(message_id: str):
     source = "system"
     role = "system"
     message = (
-        f"{muse_config.get('USER_NAME')} has returned to a previous conversation from {htime}.\n"
+        f"{muse_settings.get_section('user_config').get('USER_NAME')} has returned to a previous conversation from {htime}.\n"
         "The previous messages will appear to be from the past, but consider them directly preceding "
         "the following messages."
     )

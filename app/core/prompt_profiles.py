@@ -12,7 +12,7 @@ from app.core.utils import (prompt_projects_helper,
                             is_conversation_active
                             )
 from app.core.time_location_utils import is_quiet_hour, _load_user_location
-from app.config import muse_config
+from app.config import muse_settings
 
 # ============================
 # Prompt Segment Reference
@@ -42,14 +42,14 @@ SEGMENT_MANIFEST = [
 def build_api_prompt(user_input, **kwargs):
     loc = _load_user_location()
     builder = PromptBuilder()
-    muse_name = muse_config.get("MUSE_NAME")
+    muse_name = muse_settings.get_section('muse_config').get('MUSE_NAME')
     # Set variables for certain builder segments
     timestamp = kwargs.get("timestamp", "")
     ts_utc = datetime.fromisoformat(timestamp)
     local_timestamp = ts_utc.astimezone(ZoneInfo(loc.timezone)).strftime("%Y-%m-%d %H:%M:%S")
     source = kwargs.get("source", "")
     source_name = LOCATIONS.get(source, source or "Unknown Source")
-    author_name = muse_config.get("USER_NAME", "Unknown Person")
+    author_name = muse_settings.get_section('user_config').get('USER_NAME', 'Unknown Person')
     active_project_report = kwargs.get("active_project_report", {})
     project_id, project_name, project_meta, project_code_intensity = prompt_projects_helper(kwargs.get("project_id"))
     thread_id = kwargs.get("thread_id")
@@ -103,7 +103,7 @@ def build_api_prompt(user_input, **kwargs):
     footer = f"[{local_timestamp}] {project_meta}[Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
-    user_prompt += f"\n\nRight now - {muse_config.get("USER_NAME")} said:\n{user_input}\n{footer}\n\n{muse_name}:"
+    user_prompt += f"\n\nRight now - {muse_settings.get_section('user_config').get('USER_NAME')} said:\n{user_input}\n{footer}\n\n{muse_name}:"
     return dev_prompt, user_prompt, ephemeral_images
 
 def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwargs):
@@ -138,7 +138,7 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwa
 
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
-    user_prompt += f"\n\nTopic: {subject}\n{muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\nTopic: {subject}\n{muse_settings.get_section('muse_config').get('MUSE_NAME')}:"
     return dev_prompt, user_prompt
 
 def build_journal_prompt(subject=None, payload=None, entry_type="public"):
@@ -163,14 +163,14 @@ def build_journal_prompt(subject=None, payload=None, entry_type="public"):
 
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt += f"\n\nTopic: {subject}\n{muse_config.get("MUSE_NAME")}:"
+    user_prompt += f"\n\nTopic: {subject}\n{muse_settings.get_section('muse_config').get('MUSE_NAME')}:"
     return dev_prompt, user_prompt
 
-def build_discord_prompt(user_input, muse_config, **kwargs):
+def build_discord_prompt(user_input, **kwargs):
     loc = _load_user_location()
     builder = PromptBuilder(destination="discord")
     # Set variables for certain builder segments
-    muse_name = muse_config.get("MUSE_NAME")
+    muse_name = muse_settings.get_section('muse_config').get('MUSE_NAME')
     timestamp = kwargs.get("timestamp", "")
     ts_utc = datetime.fromisoformat(timestamp)
     local_timestamp = ts_utc.astimezone(ZoneInfo(loc.timezone)).strftime("%Y-%m-%d %H:%M:%S")
@@ -279,7 +279,7 @@ def build_discoveryfeeds_lookup_prompt():
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
     return dev_prompt, user_prompt
 
-def build_dropped_threads_check_prompt(muse_config):
+def build_dropped_threads_check_prompt():
     loc = _load_user_location()
     builder = PromptBuilder()
     # Developer prompt
@@ -321,7 +321,7 @@ def build_dropped_threads_check_prompt(muse_config):
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
     return dev_prompt, user_prompt
 
-def build_inactivity_check_prompt(muse_config):
+def build_inactivity_check_prompt():
     loc = _load_user_location()
     builder = PromptBuilder()
     builder.add_laws()

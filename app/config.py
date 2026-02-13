@@ -8,25 +8,13 @@ from pymongo import MongoClient
 # Determine project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Load static settings
-CONFIG_PATH = PROJECT_ROOT / "muse_config.json"
-
-try:
-    with open(CONFIG_PATH, "r") as f:
-        _settings = json.load(f)
-except Exception as e:
-    print(f"Error loading muse_config.json: {e}")
-    _settings = {}
-
 # Load environment variables
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 # Secrets from .env
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-PRIMARY_USER_DISCORD_ID = os.getenv("PRIMARY_USER_DISCORD_ID")
-OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
+PROFILE_DIR = os.getenv("PROFILE_DIR")
+VOICE_OUTPUT_DIR = os.getenv("VOICE_OUTPUT_DIR")
+AUDIO_OUTPUT_PATH = os.getenv("AUDIO_OUTPUT_PATH")
 
 API_URL = os.getenv("API_URL")
 WEBSOCKET_URL = os.getenv("WEBSOCKET_URL")
@@ -34,31 +22,38 @@ WEBSOCKET_URL = os.getenv("WEBSOCKET_URL")
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB = os.getenv("MONGO_DB")
 MONGO_SYSTEM_DB = os.getenv("MONGO_SYSTEM_DB")
+# memory collections
 MONGO_CONVERSATION_COLLECTION = os.getenv("MONGO_CONVERSATION_COLLECTION")
 MONGO_FILES_COLLECTION = os.getenv("MONGO_FILES_COLLECTION")
 MONGO_MEMORY_COLLECTION = os.getenv("MONGO_MEMORY_COLLECTION")
 MONGO_PROJECTS_COLLECTION = os.getenv("MONGO_PROJECTS_COLLECTION")
 MONGO_PROFILE_COLLECTION = os.getenv("MONGO_PROFILE_COLLECTION")
-MONGO_STATES_COLLECTION = os.getenv("MONGO_STATES_COLLECTION")
 MONGO_THREADS_COLLECTION = os.getenv("MONGO_THREADS_COLLECTION")
+MONGO_JOURNAL_COLLECTION = os.getenv("MONGO_JOURNAL_COLLECTION")
+# system collections
+MONGO_STATES_COLLECTION = os.getenv("MONGO_STATES_COLLECTION")
 MONGO_LOGS_COLLECTION = os.getenv("MONGO_LOGS_COLLECTION")
+MONGO_USER_SETTINGS_COLLECTION = os.getenv("MONGO_USER_SETTINGS_COLLECTION")
 
 ADMIN_MONGO_URI = os.getenv("ADMIN_MONGO_URI")
 ADMIN_MONGO_DB = os.getenv("ADMIN_MONGO_DB")
 ADMIN_MONGO_COLLECTION = os.getenv("ADMIN_MONGO_COLLECTION")
 
+QDRANT_HOST = os.getenv("QDRANT_HOST")
+QDRANT_PORT = os.getenv("QDRANT_PORT")
 QDRANT_CONVERSATION_COLLECTION = os.getenv("QDRANT_CONVERSATION_COLLECTION")
 QDRANT_MEMORY_COLLECTION = os.getenv("QDRANT_MEMORY_COLLECTION")
 QDRANT_ENTITY_COLLECTION = os.getenv("QDRANT_ENTITY_COLLECTION")
 QDRANT_JOURNAL_COLLECTION = os.getenv("QDRANT_JOURNAL_COLLECTION")
-QDRANT_HOST = os.getenv("QDRANT_HOST")
-QDRANT_PORT = os.getenv("QDRANT_PORT")
 
 GRAPHDB_HOST = os.getenv("GRAPHDB_HOST")
 GRAPHDB_PORT = os.getenv("GRAPHDB_PORT")
 
 SENTENCE_TRANSFORMER_ENTITY_MODEL = os.getenv("SENTENCE_TRANSFORMER_ENTITY_MODEL")
 SENTENCE_TRANSFORMER_MODEL = os.getenv("SENTENCE_TRANSFORMER_MODEL")
+# Temporary until journal overhaul
+JOURNAL_CATALOG_PATH = os.getenv("JOURNAL_CATALOG_PATH")
+JOURNAL_DIR = os.getenv("JOURNAL_DIR")
 
 class MuseConfig:
     def __init__(self, mongo_uri, db_name, live_collection, default_collection):
@@ -205,89 +200,45 @@ muse_config = MuseConfig(
     default_collection="default_config"
 )
 
-def get_setting(key, default=None):
-    """
-    Supports nested keys like "user_settings.USER_NAME".
-    """
-    keys = key.split(".")
-    value = _settings
-    for k in keys:
-        if isinstance(value, dict) and k in value:
-            value = value[k]
-        else:
-            return default
-    return value
-
-## Shortcuts to established config options
-# user settngs
-USER_NAME = get_setting("user_settings.USER_NAME", "User")
-USER_TIMEZONE = get_setting("user_settings.USER_TIMEZONE", "UTC")
-USER_ZIPCODE = get_setting("user_settings.USER_ZIPCODE", "67449")
-USER_COUNTRYCODE = get_setting("user_settings.USER_COUNTRYCODE", "US")
-QUIET_HOURS_START = get_setting("user_settings.QUIET_HOURS_START", 22)
-QUIET_HOURS_END = get_setting("user_settings.QUIET_HOURS_END", 10)
-# system settings
-MUSE_NAME = get_setting("system_settings.MUSE_NAME", "Muse")
-PROFILE_DIR = PROJECT_ROOT / get_setting("system_settings.PROFILE_DIR", "profiles/")
-SYSTEM_LOGS_DIR = PROJECT_ROOT / get_setting("system_settings.SYSTEM_LOGS_DIR", "logs/system/")
-LOG_VERBOSITY = get_setting("system_settings.LOG_VERBOSITY", "warn") # error, warn, info, debug
-JOURNAL_DIR = PROJECT_ROOT / get_setting("system_settings.JOURNAL_DIR", "journal/")
-JOURNAL_CATALOG_PATH = JOURNAL_DIR / get_setting("system_settings.JOURNAL_CATALOG_FILE", "journal_catalog.json")
-OPENAI_MODEL = get_setting("system_settings.OPENAI_MODEL", "gpt-4.1-mini")
-OPENAI_JOURNALING_MODEL = get_setting("system_settings.OPENAI_JOURNALING_MODEL", "gpt-4.1")
-OPENAI_WHISPER_MODEL = get_setting("system_settings.OPENAI_WHISPER_MODEL", "gpt-4.1-nano")
-OPENWEATHERMAP_API_URL = get_setting("system_settings.OPENWEATHERMAP_API_URL", "https://api.openweathermap.org/data/2.5/weather")
-UNITS = get_setting("system_settings.DEFAULT_UNITS", "imperial")
-DISCOVERY_FEEDS = get_setting("system_settings.DISCOVERY_FEEDS", PROFILE_DIR / "discoveryfeeds_sources.json")
-MUSE_INTEREST_FEEDS = get_setting("system_settings.MUSE_INTEREST_FEEDS", PROFILE_DIR / "muse_interests_sources.json")
-DISCORD_GUILD_NAME = get_setting("system_settings.DISCORD_GUILD_NAME" ,"The Threshold")
-DISCORD_CHANNEL_NAME = get_setting("system_settings.DISCORD_CHANNEL_NAME", "echo-chamber")
-ENABLE_PRIVATE_JOURNAL = get_setting("system_settings.ENABLE_PRIVATE_JOURNAL", "False")
-# voice settings
-VOICE_SYSTEM = get_setting("voice_settings.VOICE_SYSTEM", "coqui")
-TTS_VOICE_ID = get_setting("voice_settings.TTS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
-TTS_SPEED = get_setting("voice_settings.TTS_SPEED", "1.0")
-VOICE_OUTPUT_DIR = PROJECT_ROOT / get_setting("voice_settings.VOICE_OUTPUT_DIR", "voice/")
-AUDIO_OUTPUT_PATH = get_setting("voice_settings.AUDIO_OUTPUT_PATH", VOICE_OUTPUT_DIR / "response.mp3")
-INPUT_DEVICE = get_setting("voice_settings.INPUT_DEVICE", "default")
-OUTPUT_DEVICE = get_setting("voice_settings.OUTPUT_DEVICE", "default")
-SPEAK_OUT_LOUD = get_setting("voice_settings.SPEAK_OUT_LOUD", "False")
-# behavior_settings
-HEARTBEAT_INTERVAL_SECONDS = get_setting("behavior_settings.HEARTBEAT_INTERVAL_SECONDS", 600)
-SPEAK_ENDPOINTS = get_setting("behavior_settings.SPEAK_ENDPOINTS", ["discord"])
-REFLECT_TARGETS = get_setting("behavior_settings.REFLECT_TARGETS", [])
-MUSE_PRIMARY_FLAVOR = get_setting("behavior_settings.MUSE_PRIMARY_FLAVOR", "poetic-reflective")
-MAX_ARTICLE_WORDS_BEFORE_SUMMARIZE = get_setting("behavior_settings.MAX_ARTICLE_WORDS_BEFORE_SUMMARIZE", 500)
-
 class AdminConfig:
-    def __init__(self, mongo_uri, db_name, collection, doc_id="instance_flags"):
+    def __init__(self, mongo_uri, db_name, collection, doc_id="instance_configs"):
         client = MongoClient(mongo_uri)
         self.collection = client[db_name][collection]
         self.doc_id = doc_id
 
     def get_all(self):
         doc = self.collection.find_one({"_id": self.doc_id}) or {}
-        return doc.get("flags", {})
+        return doc
 
-    def get(self, key, default=None):
-        flags = self.get_all()
-        return flags.get(key, default)
+    def get_section(self, section, default=None):
+        doc = self.get_all()
+        return doc.get(section, default or {})
 
-    def set(self, key, value):
+    def get(self, section, key, default=None):
+        data = self.get_section(section)
+        return data.get(key, default)
+
+    def set(self, section, key, value):
         self.collection.update_one(
             {"_id": self.doc_id},
-            {"$set": {f"flags.{key}": value}},
+            {"$set": {f"{section}.{key}": value}},
             upsert=True,
         )
 
-class UserSettings:
-    def __init__(self, mongo_uri, db_name, collection, user_id="primary"):
+admin_config = AdminConfig(
+    mongo_uri=ADMIN_MONGO_URI,
+    db_name=ADMIN_MONGO_DB,
+    collection=ADMIN_MONGO_COLLECTION,
+)
+
+class MuseSettings:
+    def __init__(self, mongo_uri, db_name, collection, doc_id="user_settings"):
         client = MongoClient(mongo_uri)
         self.collection = client[db_name][collection]
-        self.user_id = user_id
+        self.doc_id = doc_id
 
     def get_all(self):
-        doc = self.collection.find_one({"_id": self.user_id}) or {}
+        doc = self.collection.find_one({"_id": self.doc_id}) or {}
         return doc
 
     def get_section(self, section, default=None):
@@ -296,7 +247,13 @@ class UserSettings:
 
     def update_section(self, section, data):
         self.collection.update_one(
-            {"_id": self.user_id},
+            {"_id": self.doc_id},
             {"$set": {section: data}},
             upsert=True,
         )
+
+muse_settings = MuseSettings(
+    mongo_uri=MONGO_URI,
+    db_name=MONGO_SYSTEM_DB,
+    collection=MONGO_USER_SETTINGS_COLLECTION,
+)

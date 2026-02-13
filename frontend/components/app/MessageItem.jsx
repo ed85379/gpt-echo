@@ -5,8 +5,9 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import MessageActions from "./MessageActions";
+import TTSController from "./TTSController";
 import { CandleHolderLit } from "@/utils/messageActions";
-import { BookMarked, EyeOff, Shredder, CirclePlay, CirclePause } from "lucide-react";
+import { BookMarked, EyeOff, Shredder } from "lucide-react";
 
 const formatTimestamp = (utcString) => {
   if (!utcString) return "";
@@ -98,6 +99,7 @@ function MuseBlock({ museType, text }) {
 const MessageItem = React.memo(
   React.forwardRef(function MessageItemInner(props, ref) {
     const {
+
       audioControls,
       msg,
       setMessages,
@@ -135,16 +137,6 @@ const MessageItem = React.memo(
     } = props;
   if (!msg) return <div>[No message]</div>;
 
-  const {
-    audioSourceRef,
-    audioCtxRef,
-    isTTSPlaying,
-    setIsTTSPlaying,
-    speak,
-    setSpeaking,
-    Equalizer,
-    speakingMessageId,
-  } = audioControls;
 
   const rawText = msg.message || msg.text || "";
   const blocks = splitCustomBlocks(rawText);
@@ -192,9 +184,6 @@ const MessageItem = React.memo(
     if (e.target?.closest?.("button, a, summary")) return;
     onToggleSelect && onToggleSelect(msg.message_id);
   };
-
-  const isThisPlaying =
-    isTTSPlaying && speakingMessageId === msg.message_id;
 
   const headingBase = "font-semibold text-purple-100";
 
@@ -414,64 +403,12 @@ const MessageItem = React.memo(
               return null;
             })}
           </div>
-
-          <div
-            className={`
-              absolute bottom-2 left-3 flex items-center gap-2 z-30
-              ${isThisPlaying ? "" : "hidden group-hover:flex"}
-            `}
-          >
-            {effectiveRole === "muse" && (
-              <button
-                onClick={() => {
-                  if (isThisPlaying) {
-                    if (audioSourceRef.current) {
-                      try {
-                        audioSourceRef.current.stop();
-                      } catch (e) {}
-                      audioSourceRef.current = null;
-                    }
-                    if (audioCtxRef.current) {
-                      try {
-                        audioCtxRef.current.close();
-                      } catch (e) {}
-                      audioCtxRef.current = null;
-                    }
-                    setIsTTSPlaying(false);
-                    setSpeaking(false);
-                    // setSpeakingMessageId(null); // if you’re not already doing this in speak()
-                  } else if (msg && !connecting) {
-                    speak(msg, () => {
-                      setIsTTSPlaying(false);
-                      // setSpeakingMessageId(null);
-                    });
-                  }
-                }}
-                title={
-                  isThisPlaying ? "Stop Playing Audio" : "Start Playing Audio"
-                }
-                className="text-sm text-purple-300 hover:underline disabled:opacity-50"
-                disabled={connecting || !msg}
-              >
-                {isThisPlaying ? (
-                  <CirclePause
-                    size={18}
-                    className="transition-colors text-purple-400 hover:text-purple-300"
-                  />
-                ) : (
-                  <CirclePlay
-                    size={18}
-                    className={`transition-colors ${
-                      isTTSPlaying ? "text-purple-400" : "text-neutral-400"
-                    } hover:text-purple-300`}
-                  />
-                )}
-              </button>
-            )}
-
-            <Equalizer isActive={isThisPlaying} />
-          </div>
-
+          <TTSController
+            msg={msg}
+            audioControls={audioControls}
+            effectiveRole={effectiveRole}
+            connecting={connecting}
+          />
           <MessageActions
             msg={msg}
             setMessages={setMessages}

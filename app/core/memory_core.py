@@ -26,8 +26,6 @@ from app.core.states_core import get_active_time_skip_window
 # Setup and Configuration
 # --------------------------
 # <editor-fold desc="🗂 Directory Setup & Constants">
-PROJECT_ROOT = config.PROJECT_ROOT
-PROFILE_DIR = config.PROFILE_DIR
 VALID_ROLES = {"user", "muse", "friend"}
 model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
 

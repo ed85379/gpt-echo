@@ -1,18 +1,10 @@
 
 import json
 from sentence_transformers import SentenceTransformer
-from app import config
-from app.config import muse_config, QDRANT_JOURNAL_COLLECTION, SENTENCE_TRANSFORMER_MODEL
+from app.config import muse_settings, QDRANT_JOURNAL_COLLECTION, SENTENCE_TRANSFORMER_MODEL, JOURNAL_DIR, JOURNAL_CATALOG_PATH
 from app.databases import qdrant_connector
 from app.core import utils
 from app.core.time_location_utils import get_formatted_datetime
-
-# ----------------------
-# Config & Constants
-# ----------------------
-PROJECT_ROOT = config.PROJECT_ROOT
-JOURNAL_DIR = config.JOURNAL_DIR
-JOURNAL_CATALOG_PATH = config.JOURNAL_CATALOG_PATH
 
 # ----------------------
 # Qdrant Search Helper
@@ -104,7 +96,7 @@ def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="
     encrypted = False
     encrypted_body = body
     if entry_type == "private":
-        if not muse_config.get("ENABLE_PRIVATE_JOURNAL"):
+        if not muse_settings.get_section('muse_features').get('ENABLE_PRIVATE_JOURNAL'):
             raise Exception("Private journal entries are disabled in config.")
         encrypted_body = utils.encrypt_text(body)
         encrypted = True

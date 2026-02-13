@@ -1,11 +1,11 @@
 # graphdb_connector.py
 
 from gqlalchemy import Memgraph
-from app.config import muse_config, GRAPHDB_HOST, GRAPHDB_PORT
+from app.config import GRAPHDB_HOST, GRAPHDB_PORT
 from app.core.utils import write_system_log
 
-host = muse_config.get("GRAPHDB_HOST")
-port = muse_config.get("GRAPHDB_PORT")
+host = GRAPHDB_HOST
+port = GRAPHDB_PORT
 
 class GraphDBConnector:
     def __init__(self, host=host, port=port):

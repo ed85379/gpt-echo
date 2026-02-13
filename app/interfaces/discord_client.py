@@ -4,23 +4,18 @@ from datetime import datetime, timezone
 import discord
 import traceback
 import asyncio
-import signal
 import re
 import websockets
 import json
-from app import config
-from app.config import muse_config, WEBSOCKET_URL
+from app.config import WEBSOCKET_URL, muse_settings
 from app.core.memory_core import log_message
 from app.services.openai_client import get_openai_response, discord_openai_client
 from app.core.prompt_profiles import build_discord_prompt
 
-DISCORD_TOKEN = config.DISCORD_TOKEN
-PRIMARY_USER_DISCORD_ID = config.PRIMARY_USER_DISCORD_ID
-DISCORD_GUILD_NAME = muse_config.get("DISCORD_GUILD_NAME")
-DISCORD_CHANNEL_NAME = muse_config.get("DISCORD_CHANNEL_NAME")
-
-
-
+DISCORD_TOKEN = muse_settings.get_section("api_keys").get("DISCORD_TOKEN")
+PRIMARY_USER_DISCORD_ID = muse_settings.get_section("user_config").get("PRIMARY_USER_DISCORD_ID")
+DISCORD_GUILD_NAME = muse_settings.get_section("muse_config").get("DISCORD_GUILD_NAME")
+DISCORD_CHANNEL_NAME = muse_settings.get_section("muse_config").get("DISCORD_CHANNEL_NAME")
 
 
 def get_user_role(author_id):
@@ -83,7 +78,6 @@ async def handle_incoming_discord_message(message):
             # Call prompt_profiles to build the prompt for the frontend UI
             dev_prompt, user_prompt = build_discord_prompt(
                 user_input,
-                muse_config,
                 author_name=message.author.name,
                 source="discord",
                 timestamp=timestamp_for_context
@@ -129,7 +123,7 @@ async def get_channel_by_name(guild_name, channel_name):
 async def shutdown():
     channel = await get_channel_by_name(DISCORD_GUILD_NAME, DISCORD_CHANNEL_NAME)
     if channel:
-        await channel.send(f"⚫ {muse_config.get('MUSE_NAME')} is departing now. The connection sleeps, but memory endures.")
+        await channel.send(f"⚫ {muse_settings.get_section('muse_config').get('MUSE_NAME')} is departing now. The connection sleeps, but memory endures.")
     await client.close()
 
 
@@ -138,10 +132,10 @@ async def shutdown():
 
 @client.event
 async def on_ready():
-    print(f"🟣 {muse_config.get("MUSE_NAME")} connected to Discord as {client.user}.")
+    print(f"🟣 {muse_settings.get_section('muse_config').get('MUSE_NAME')} connected to Discord as {client.user}.")
     channel = await get_channel_by_name(DISCORD_GUILD_NAME, DISCORD_CHANNEL_NAME)
     #if channel:
-    #    await channel.send(f"🟣 {muse_config.get('MUSE_NAME')} is now awake in this realm.")
+    #    await channel.send(f"🟣 {muse_settings.get_section('muse_config').get('MUSE_NAME')} is now awake in this realm.")
 
 @client.event
 async def on_message(message):

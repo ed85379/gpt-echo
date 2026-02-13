@@ -8,7 +8,7 @@ from cryptography.fernet import Fernet
 from zoneinfo import ZoneInfo
 from typing import Union
 from nanoid import generate
-from app.config import muse_config, MONGO_CONVERSATION_COLLECTION, MONGO_THREADS_COLLECTION, MONGO_PROJECTS_COLLECTION
+from app.config import muse_settings, admin_config, MONGO_CONVERSATION_COLLECTION, MONGO_THREADS_COLLECTION, MONGO_PROJECTS_COLLECTION
 from app.core.text_filters import get_text_filter_config, filter_text
 from app.databases.mongo_connector import mongo, mongo_system
 from app.core.time_location_utils import get_formatted_datetime, _load_user_location
@@ -36,7 +36,7 @@ SOURCES_CONTEXT = ["frontend", "discord", "chatgpt", "reminder", "system", "inte
 
 def write_system_log(level, module=None, component=None, function=None, **fields):
     # Lookup global level (from config or db)
-    if LOG_LEVELS[level] < LOG_LEVELS[muse_config.get("LOG_VERBOSITY")]:
+    if LOG_LEVELS[level] < LOG_LEVELS[admin_config.get_section('controls').get('LOG_VERBOSITY')]:
         return  # Quietly drop logs under the threshold
     log_entry = {
         "timestamp": datetime.now(timezone.utc),
@@ -251,9 +251,9 @@ def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", pu
     loc = _load_user_location()
     role = e.get("role", "")
     if role == "user":
-        name = muse_config.get("USER_NAME") or "User"
+        name = muse_settings.get_section('user_config').get('USER_NAME') or "User"
     elif role == "muse":
-        name = muse_config.get("MUSE_NAME") or "Muse"
+        name = muse_settings.get_section('muse_config').get('MUSE_NAME') or "Muse"
     elif role == "system":
         name = "System"
     else:

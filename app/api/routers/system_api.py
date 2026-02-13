@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Body, Request
 from typing import Any
+from pydantic import BaseModel
 from app.core.time_location_utils import reload_user_location
 from app.core.utils import serialize_doc
-from app.config import muse_config
+from app.config import muse_config, muse_settings, admin_config
 from app.core.muse_profile import muse_profile
 from app.core.states_core import (
     set_project_states,
@@ -30,7 +31,37 @@ def get_full_config():
 def get_grouped_config():
     return muse_config.as_grouped(include_meta=True)
 
+@config_router.get("/user")
+def get_user_config():
+    return muse_settings.get_all()
 
+@config_router.get("/admin")
+def get_admin_config():
+    return admin_config.get_all()
+
+class UserConfigPatch(BaseModel):
+    section: str
+    data: dict
+
+@config_router.patch("/user")
+def patch_user_config(patch: UserConfigPatch):
+    # validate allowed sections if you want
+    if patch.section not in {
+        "api_keys",
+        "user_config",
+        "model_config",
+        "muse_config",
+        "muse_features",
+    }:
+        raise HTTPException(status_code=400, detail="Invalid section")
+
+    # this uses your existing helper:
+    muse_settings.update_section(patch.section, patch.data)
+
+    # return merged doc
+    return muse_settings.get_all()
+
+# Old stuff
 @config_router.put("/{key}")
 def set_config_value(key: str, value: Any = Body(..., embed=True)):
     print(f"key: {key}, value: {value}")

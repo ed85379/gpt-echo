@@ -32,6 +32,8 @@ const SOURCE_CHOICES = [
 
 const HistoryTab = (
   {
+    // Feature flags
+    enableTTS,
     // General and nav
     audioControls,
 
@@ -616,6 +618,7 @@ const HistoryTab = (
                   {filteredMessages.map((msg, idx) => (
                     <MessageItem
                       key={msg.message_id || idx}
+                      enableTTS={enableTTS}
                       audioControls={audioControls}
                       msg={msg}
                       setMessages={setHistoryMessages}

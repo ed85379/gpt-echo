@@ -1,7 +1,6 @@
 import requests, json
 import xml.etree.ElementTree as ET
-from app import config
-from app.config import muse_config
+from app.config import admin_config, muse_settings
 
 # Tail thresholds, hex colors, human names, and severity descriptions
 GCP_COLOR_MAP = [
@@ -54,11 +53,11 @@ def get_dot_status(timeout=0.5):
 def get_openweathermap(timeout=0.5):
     from app.core.time_location_utils import _load_user_location
     loc = _load_user_location()
-    api_key = config.OPENWEATHERMAP_API_KEY
-    base_url = muse_config.get("OPENWEATHERMAP_API_URL")
+    api_key = muse_settings.get_section("api_keys").get("OPENWEATHERMAP_API_KEY")
+    base_url = admin_config.get_section("apis").get("WEATHER_API_URL")
     zip_code = loc.zip_code
     country_code = loc.country_code
-    temp_units = muse_config.get("MEASUREMENT_UNITS")
+    temp_units = muse_settings.get_section("user_config").get("MEASUREMENT_UNITS")
     full_url = f"{base_url}?zip={zip_code},{country_code}&units={temp_units}&appid={api_key}"
 
     def temp_mood_phrase(t: int) -> str:

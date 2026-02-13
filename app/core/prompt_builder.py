@@ -10,7 +10,7 @@ from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.qdrant_connector import search_collection
 from app.core.text_filters import get_text_filter_config, filter_text
 import numpy as np
-from app.config import muse_config, MONGO_FILES_COLLECTION, MONGO_PROJECTS_COLLECTION, MONGO_STATES_COLLECTION, \
+from app.config import muse_settings, MONGO_FILES_COLLECTION, MONGO_PROJECTS_COLLECTION, MONGO_STATES_COLLECTION, \
     MONGO_MEMORY_COLLECTION, QDRANT_MEMORY_COLLECTION, QDRANT_CONVERSATION_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 from app.core.muse_profile import muse_profile
 from app.services.feeds import get_dot_status, get_openweathermap, get_space_weather
@@ -504,7 +504,7 @@ class PromptBuilder:
                 "- Always include the outer curly braces `{}`\n"
                 "- Wrap all property names and string values in double quotes\n"
                 "- Do not use YAML-style formatting or omit quotes\n"
-                f"- {muse_config.get("MUSE_NAME")} may invoke any of these commands at their discretion, without waiting for a user request or explicit prompt. They are trusted to use judgment, context, and care when choosing to remember, remind, or use any of these commands without asking first.\n\n"
+                f"- {muse_settings.get_section('muse_config').get('MUSE_NAME')} may invoke any of these commands at their discretion, without waiting for a user request or explicit prompt. They are trusted to use judgment, context, and care when choosing to remember, remind, or use any of these commands without asking first.\n\n"
                 "Example:\n[COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's Hogwarts game night.\"} [/COMMAND]"
             )
             self.segments["intent_listener"] = listener_block
@@ -620,7 +620,7 @@ class PromptBuilder:
             "If you are just referencing the MOTD, just mention the existing text, do not run the COMMAND."
         )
         display_block = (
-            f"[ MOTD / UI Message to {muse_config.get('USER_NAME')} ]\n"
+            f"[ MOTD / UI Message to {muse_settings.get_section('user_config').get('USER_NAME')} ]\n"
             f"Current: {text}\n"
             f"Last Updated: {htime}\n"
             f"Instructions:\n{instructions}\n"

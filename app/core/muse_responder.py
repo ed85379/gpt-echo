@@ -18,13 +18,13 @@ from app.core.utils import (write_system_log,
                             )
 from app.core.time_location_utils import is_quiet_hour, _load_user_location, parse_iso_datetime
 from app.services.openai_client import get_openai_response
-from app.config import muse_config, API_URL
+from app.config import API_URL, muse_settings
 from app.core.states_core import set_motd
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
 from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
 from app.services.openai_client import speak_openai_client, journal_openai_client
-from app.api.queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, broadcast_queue, log_queue, index_queue, index_memory_queue
+from app.api.queues import log_queue
 from app.interfaces.websocket_server import broadcast_message
 
 
@@ -445,7 +445,7 @@ COMMANDS = {
         "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"{muse_config.get('MUSE_NAME')} has saved a fact: {entry.get('text')}",
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a fact: {entry.get('text')}",
             "hidden": entry
         }
     },
@@ -457,7 +457,7 @@ COMMANDS = {
             {"text": payload.get("text")}
         ),
         "filter": lambda entry: {
-            "visible": f"{muse_config.get('MUSE_NAME')} has saved a project fact: {entry.get('text')}",
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -474,7 +474,7 @@ COMMANDS = {
         "format": "[COMMAND: record_userinfo] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("user_info", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"{muse_config.get('MUSE_NAME')} has learned something about you: {entry.get('text')}",
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has learned something about you: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -491,7 +491,7 @@ COMMANDS = {
         "format": "[COMMAND: realize_insight] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("insights", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"{muse_config.get('MUSE_NAME')} has realized something: {entry.get('text')}",
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has realized something: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -508,7 +508,7 @@ COMMANDS = {
         "format": "[COMMAND: note_to_self] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("inner_monologue", {"text": payload.get("text")}),
         "filter": lambda entry: {
-            "visible": f"{muse_config.get('MUSE_NAME')} has remembered something: {entry.get('text')}",
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has remembered something: {entry.get('text')}",
             "hidden": entry
         },
         "note_schema": {
@@ -534,7 +534,7 @@ COMMANDS = {
         "filter": lambda results: {
             "visible": "\n".join([
                 (
-                    f"{muse_config.get('MUSE_NAME')} "
+                    f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} "
                     f"{'added to' if r['type']=='add' else 'edited in' if r['type']=='edit' else 'deleted from' if r['type']=='delete' else 'updated in'} "
                     f"{r['layer'].replace('_', ' ').title()}: "
                     f"{(r['entry'].get('text') or r['entry'].get('id', ''))}"
@@ -836,7 +836,7 @@ def route_user_input(
         client=client,
         prompt_type=prompt_type,
         images=images,
-        model=muse_config.get("OPENAI_MODEL")
+        model=muse_settings.get_section("model_config").get("OPENAI_MODEL")
     )
 
     # Normalize muse-experience tags outside of fenced code blocks
@@ -878,7 +878,7 @@ def handle_muse_decision(
     dev_prompt,
     user_prompt,
     client,
-    model=muse_config.get("OPENAI_WHISPER_MODEL"),
+    model=muse_settings.get_section("model_config").get("OPENAI_WHISPER_MODEL"),
     source=None,
     whispergate_data=None
 ) -> str:
@@ -1026,7 +1026,7 @@ def handle_set_motd(payload, source=None):
             except Exception as e:
                 print(f"Logging error: {e}")
         return {
-            "cmd": f"{muse_config.get("MUSE_NAME")} has set a new MOTD",
+            "cmd": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has set a new MOTD",
             "text": text,
         }
 
@@ -1051,7 +1051,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
 
     dev_prompt, user_prompt = build_speak_prompt(subject=subject, payload=payload, destination="frontend")
 
-    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_config.get("OPENAI_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_settings.get_section("model_config").get("OPENAI_MODEL"))
     # Normalize muse-experience tags outside of fenced code blocks
     response = normalize_muse_experience_tags(response)
 
@@ -1181,7 +1181,7 @@ async def handle_journal_command(payload, entry_type="public", source=None):
 
     dev_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
 
-    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, prompt_type="journal", model=muse_config.get("OPENAI_FULL_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, prompt_type="journal", model=muse_settings.get_section("model_config").get("OPENAI_FULL_MODEL"))
 
     journal_core.create_journal_entry(
         title=subject,

@@ -8,7 +8,7 @@ import pgeocode
 from astral import LocationInfo
 from astral.sun import sun, daylight, night, twilight, blue_hour, golden_hour
 from astral.moon import phase as moon_phase, moonrise, moonset
-from app.config import muse_config, MONGO_CONVERSATION_COLLECTION
+from app.config import muse_settings, MONGO_CONVERSATION_COLLECTION
 
 
 @dataclass
@@ -29,9 +29,9 @@ def _load_user_location(force_reload: bool = False) -> UserLocation:
     if _nom_cache is not None and not force_reload:
         return _nom_cache
 
-    zip_code = muse_config.get("USER_ZIPCODE")
-    tz = muse_config.get("USER_TIMEZONE")
-    country_code = muse_config.get("USER_COUNTRYCODE")
+    zip_code = muse_settings.get_section('user_config').get('USER_ZIPCODE')
+    tz = muse_settings.get_section('user_config').get('USER_TIMEZONE')
+    country_code = muse_settings.get_section('user_config').get('USER_COUNTRYCODE')
 
     nomi = pgeocode.Nominatim("US")
     loc = nomi.query_postal_code(zip_code)
@@ -202,8 +202,8 @@ def is_quiet_hour() -> bool:
     Quiet hours can span across midnight.
     """
     loc = _load_user_location()
-    quiet_start = muse_config.get("QUIET_HOURS_START")  # e.g., 23 = 11pm
-    quiet_end = muse_config.get("QUIET_HOURS_END")  # e.g., 10 = 10am
+    quiet_start = muse_settings.get_section('user_config').get('QUIET_HOURS_START')  # e.g., 23 = 11pm
+    quiet_end = muse_settings.get_section('user_config').get('QUIET_HOURS_END')  # e.g., 10 = 10am
     tz = loc.timezone
 
     current_hour = datetime.now(ZoneInfo(tz)).hour
@@ -217,7 +217,7 @@ def get_quiet_hours_end_today() -> datetime:
     loc = _load_user_location()
     tz = ZoneInfo(loc.timezone)
     now = datetime.now(tz)
-    end_hour = muse_config.get("QUIET_HOURS_END")  # e.g., 10
+    end_hour = muse_settings.get_section('user_config').get('QUIET_HOURS_END')  # e.g., 10
 
     # Create today's datetime at quiet hour end
     end_time = now.replace(hour=end_hour, minute=0, second=0, microsecond=0)
@@ -316,7 +316,7 @@ def ensure_aware_utc(dt):
 
 def build_date_query(date_str: str):
     # date_str is "YYYY-MM-DD" as clicked in the UI, in *local* terms
-    local_start = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=ZoneInfo(muse_config.get("USER_TIMEZONE")))
+    local_start = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=ZoneInfo(muse_settings.get_section('user_config').get('USER_TIMEZONE')))
     local_end = local_start + timedelta(days=1)
 
     # Convert to UTC for querying Mongo (timestamps are stored in UTC)
