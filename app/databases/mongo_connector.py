@@ -53,6 +53,9 @@ class MongoConnector:
         count = self.db[collection_name].count_documents(query)
         return count
 
+    def run_aggregate(self, collection_name, pipeline):
+        return self.db[collection_name].aggregate(pipeline)
+
     def insert_log(self, collection_name, log_entry):
         self.db[collection_name].insert_one(log_entry)
 
