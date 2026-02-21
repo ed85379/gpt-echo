@@ -9,14 +9,14 @@ export function FeaturesProvider({ children }) {
 
   const [adminLoading, setAdminLoading] = useState(true);
 
-  const POLL_MS = 30_000; // 1 minute; change to 300_000 for 5 minutes
+  const POLL_MS = 300_000; // 1 minute; change to 300_000 for 5 minutes
 
   // --- helpers ---
 
   async function loadAdminConfig(signal) {
     try {
       const res = await fetch('/api/config/admin', { signal });
-      if (!res.ok) throw new Error("Failed to fetch admin config");
+      if (!res.ok) throw Error("Failed to fetch admin config");
       const data = await res.json();
 
       // Strip out _id, keep the rest as-is

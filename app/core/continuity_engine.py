@@ -56,6 +56,7 @@ async def main():
     # launch queue consumers
     asyncio.create_task(run_log_queue(log_queue, log_message))
     asyncio.create_task(run_index_queue(index_queue, build_index))
+    asyncio.create_task(run_broadcast_queue(broadcast_queue, broadcast_message))
 
     # launch your scheduled tasks
     await asyncio.gather(

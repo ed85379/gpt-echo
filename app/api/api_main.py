@@ -11,7 +11,7 @@ from app.api.routers.system_api import config_router, uipolling_router, states_r
 from app.api.routers.muse_presence_api import profile_router, tts_router, muse_router
 from app.api.routers.messages_api import router as messages_router
 from app.api.routers.cortex_api import router as cortex_router
-from app.api.routers.memory_api import router as memory_router
+from app.api.routers.memory_api import memory_router, reminders_router
 from app.api.routers.import_api import router as import_router
 from app.api.routers.projects_api import router as projects_router
 from app.api.routers.files_api import router as files_router
@@ -26,6 +26,7 @@ app.include_router(config_router)
 app.include_router(messages_router)
 app.include_router(cortex_router)
 app.include_router(memory_router)
+app.include_router(reminders_router)
 app.include_router(import_router)
 app.include_router(projects_router)
 app.include_router(files_router)

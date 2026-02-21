@@ -21,8 +21,9 @@ export function useAudioControls() {
   }, []);
 
   const speak = useCallback(
-    async (msg, onDone) => {
+    async (msg, onDone, overrides) => {
       const text = msg.text;
+
 
       setSpeaking(true);
       setSpeakingMessageId(msg.message_id);
@@ -43,11 +44,15 @@ export function useAudioControls() {
 
       let cancelled = false;
 
+      const body = overrides
+        ? JSON.stringify({ text, overrides })
+        : JSON.stringify({ text });
+
       try {
         const response = await fetch("/api/tts/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
+          body,
         });
 
         if (!response.ok) throw new Error("TTS request failed");

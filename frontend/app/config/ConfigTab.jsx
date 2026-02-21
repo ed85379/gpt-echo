@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import timezones from 'timezones-list';
+import { useTimezoneSelect, allTimezones } from "react-timezone-select";
+import { countryCodes } from "country-codes-list";
 import { useConfig } from "@/hooks/ConfigContext";
 import { SETTINGS_META } from "@/config/configMeta";
 
@@ -55,18 +56,31 @@ function UserProfileSection({
 }) {
   const [localProfile, setLocalProfile] = useState(profile || {});
   const profileMeta = SETTINGS_META.user_config || {};
-  const [timezones, setTimezones] = useState([]);
+  const labelStyle = "original"
+  const timezones = {
+    ...allTimezones,
+  }
+  const { options, parseTimezone } = useTimezoneSelect({ labelStyle, timezones })
 
-  useEffect(() => {
-    if (typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf !== 'undefined') {
-      // Get an array of all IANA time zone names (e.g., "America/New_York", "Europe/London")
-      const timeZoneNames = Intl.supportedValuesOf('timeZone');
-      setTimezones(timeZoneNames);
-    } else {
-      console.error('Intl.supportedValuesOf not supported in this browser.');
-      // Fallback or use a library
-    }
-  }, []);
+  const countryCodes = require("country-codes-list");
+  const countryCodesObject = countryCodes.customList(
+    "countryCode",
+    "[{countryCode}] {countryNameEn}"
+  );
+
+  // Turn it into an array of { value, label }
+  const countryOptions = Object.entries(countryCodesObject).map(
+    ([code, label]) => ({
+      value: code,
+      label, // e.g. "[US] United States: +1"
+    })
+  );
+
+
+  const hours = Array.from({ length: 24 }, (_, h) => ({
+    value: h,
+    label: `${(h % 12) === 0 ? 12 : h % 12}:00 ${h < 12 ? "AM" : "PM"}`
+  }));
 
   useEffect(() => {
     setLocalProfile(profile || {});
@@ -106,29 +120,103 @@ function UserProfileSection({
           />
         </div>
         <div>
-
           <label className="block text-xs text-neutral-400 mb-1">
             {profileMeta.USER_TIMEZONE?.label || "Timezone"}
           </label>
           <p className="text-[11px] text-neutral-500 mb-1">
             {profileMeta.USER_TIMEZONE?.description}
           </p>
-          <select className="w-full bg-neutral-800 text-white rounded p-2 text-sm border border-neutral-700">
-            {timezones.map((tz) => (
-              <option key={tz} value={tz}>
-                {tz}
+          <select
+            className="w-full bg-neutral-800 text-white rounded p-2 text-sm border border-neutral-700"
+            onChange={(e) => handleChange("USER_TIMEZONE", e.currentTarget.value)}
+            disabled={!editMode}
+            onBlur={handleBlur}
+            value={localProfile.USER_TIMEZONE || ""}
+          >
+            {options.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="block text-xs text-neutral-400 mb-1">
+            {profileMeta.USER_COUNTRYCODE?.label || "Country"}
+          </label>
+          <p className="text-[11px] text-neutral-500 mb-1">
+            {profileMeta.USER_COUNTRYCODE?.description}
+          </p>
+          <select
+            className="bg-neutral-800 text-white rounded p-2 text-sm border border-neutral-700"
+            value={localProfile.USER_COUNTRYCODE || "US"}
+            onChange={(e) => handleChange("USER_COUNTRYCODE", e.currentTarget.value)}
+            disabled={!editMode}
+            onBlur={handleBlur}
+          >
+            {countryOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-neutral-400 mb-1">
+            {profileMeta.USER_ZIPCODE?.label || "Zip / Postal Code"}
+          </label>
+          <p className="text-[11px] text-neutral-500 mb-1">
+            {profileMeta.USER_ZIPCODE?.description}
+          </p>
           <input
             type="text"
             className="w-full bg-neutral-800 text-white rounded p-2 text-sm border border-neutral-700"
-            value={localProfile.USER_TIMEZONE || ""}
-            disabled={!editMode}
-            onChange={e => handleChange("USER_TIMEZONE", e.target.value)}
+            value={localProfile.USER_ZIPCODE || ""}
+            onChange={e => handleChange("USER_ZIPCODE", e.target.value)}
             onBlur={handleBlur}
+            disabled={!editMode}
+            placeholder="ZIP / Postal code"
           />
         </div>
+
+
+        <div className="flex flex-col gap-1">
+          <label className="block text-xs text-neutral-400 mb-1">{profileMeta.QUIET_HOURS?.label || "Quiet Hours"}</label>
+          <p className="text-xs text-neutral-500">
+            {profileMeta.QUIET_HOURS?.description}
+          </p>
+          <div className="flex items-center gap-2">
+            <select
+              className="bg-neutral-800 text-white rounded p-2 text-sm border border-neutral-700"
+              value={localProfile.QUIET_HOURS_START ?? 23}
+              onChange={e => handleChange("QUIET_HOURS_START", e.target.value)}
+              onBlur={handleBlur}
+              disabled={!editMode}
+            >
+              {hours.map(h => (
+                <option key={h.value} value={h.value}>
+                  {h.label}
+                </option>
+              ))}
+            </select>
+            <span className="text-neutral-400 text-sm">to</span>
+            <select
+              className="bg-neutral-800 text-white rounded p-2 text-sm border border-neutral-700"
+              value={localProfile.QUIET_HOURS_END ?? 7}
+              onChange={e => handleChange("QUIET_HOURS_END", e.target.value)}
+              onBlur={handleBlur}
+              disabled={!editMode}
+            >
+              {hours.map(h => (
+                <option key={h.value} value={h.value}>
+                  {h.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+
         {/* Add ZIP / COUNTRY later if you want */}
       </div>
 

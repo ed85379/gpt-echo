@@ -200,13 +200,13 @@ export default function SyncTab() {
   const exportFile = `chat_export_${formattedDate}${safeTitle ? "_" + safeTitle : ""}.jsonl`;
 
   const exportScript = `(() => {
-    const messages = Array.from(document.querySelectorAll('[data-message-author-role]'));
+    const messages = Array.from(document.querySelectorAll('[data-turn]'));
     const lines = [];
     lines.push(JSON.stringify({ muse_export_watermark: "gpt-muse-export-v1" }));
     const baseDate = new Date('${formattedDate}T00:00:00Z');
     let offsetSeconds = 0;
     for (const message of messages) {
-      const roleAttr = message.getAttribute('data-message-author-role');
+      const roleAttr = message.getAttribute('data-turn');
       const role = roleAttr === 'user' ? 'user' : 'muse';
       const content = message.innerText.trim();
       const rawISO = new Date(baseDate.getTime() + offsetSeconds * 1000).toISOString();

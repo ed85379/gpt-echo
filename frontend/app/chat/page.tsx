@@ -21,6 +21,19 @@ import PresencePanel from './PresencePanel';
 import MotdBar from './MotdBar';
 import TabbedToolPanel from './TabbedToolPanel';
 import ThreadManagerPanel from '@/components/app/ThreadManagerPanel';
+import SettingsPanel from '@/components/app/SettingsPanel';
+import RemindersPanel from '@/components/app/RemindersPanel';
+import RecycleBin from './RecycleBin';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 // Utils
 import { trimMessages } from '@/utils/utils';
 import { createThreadWithMessages, clearOpenThread, setThreadHidden } from '@/utils/threadActions.js'
@@ -31,7 +44,7 @@ import {
   handleMultiAction,
    } from "@/utils/messageActions";
  // Icons
-import { Split, CircleX } from "lucide-react";
+import { Split, CircleX, Settings, BellRing, BrushCleaning } from "lucide-react";
 
 // General props
 const TABS = [
@@ -52,7 +65,9 @@ export default function ChatPage() {
   // ------------------------------------
   // UI States Initial Load
   // ------------------------------------
-  const { uiStates, loading: uiStatesLoading } = useConfig();
+  const { uiStates, loading: uiStatesLoading, userConfig } = useConfig();
+  const enableMOTD = userConfig?.muse_features?.ENABLE_MOTD || false;
+  const enableReminders = userConfig?.muse_features?.ENABLE_REMINDERS || false;
   const initialMotd = uiStates?.motd?.text ?? "";
   const [motd, setMotd] = useState(initialMotd);
   const initialProjectId = uiStates?.projects?.project_id ?? "";
@@ -64,6 +79,8 @@ export default function ChatPage() {
   const { adminConfig, adminLoading } = useFeatures();
   const mm = adminConfig?.mm_features || {};
   const enableTTS = !!mm.ENABLE_TTS;
+  const enablePublic = !!mm.ENABLE_PUBLIC_INTERFACES;
+  const enableSync = !!mm.ENABLE_SYNC;
 
   useEffect(() => {
     if (!uiStatesLoading) {
@@ -596,6 +613,10 @@ export default function ChatPage() {
       }
     ]);
   };
+  const [showRecycleBin, setShowRecycleBin] = useState(false);
+  const handleShowRecycleBin = () => {
+    setShowRecycleBin((prev) => !prev);
+  };
 
   // ------------------------------------
   // End - Tool Panel / Files States and Functions
@@ -715,22 +736,168 @@ export default function ChatPage() {
               </div>
             );
           })}
+
+
+
+          <div className="ml-auto">
+            <span style={{ padding: 10}}>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <button className="inline-flex items-center gap-1 text-xs text-neutral-300 hover:text-white">
+                    <BrushCleaning className="w-3 h-3" />
+                    <span>Forgotten Messages</span>
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full w-[500px] sm:w-[600px] xl:w-[1000px] xl:max-w-none bg-neutral-900 border-l border-neutral-700">
+                  <SheetHeader>
+                    <SheetDescription className="sr-only">
+                      Forgotten Messages
+                    </SheetDescription>
+                  </SheetHeader>
+                  <div className="flex items-center justify-between mb-4">
+                    <SheetTitle className="text-sm font-semibold text-neutral-100">
+                      Forgotten Messages
+                    </SheetTitle>
+                  </div>
+
+                  <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-6rem)] pr-1">
+                <RecycleBin
+                  // Feature flags
+                  enableTTS={enableTTS}
+                  enablePublic={enablePublic}
+                  enableSync={enableSync}
+                  // General and nav
+                  audioControls={audioControls}
+
+                  // Project & Threads
+                  threads={threads}
+                  threadMap={threadMap}
+                  projects={projects}
+                  project={project}
+                  fetchProjects={fetchProjects}
+                  projectMap={projectMap}
+                  projectsLoading={projectsLoading}
+
+                  // Message Actions
+                  threadMessages={threadMessages}
+                  setThreadMessages={setThreadMessages}
+                  setChatMessages={setMessages}
+                  clearSelectionAndExit={clearSelectionAndExit}
+                  onReturnToThisMoment={handleReturnToThisMoment}
+                  createThreadWithMessages={createThreadWithMessages}
+                  multiSelectEnabled={multiSelectEnabled}
+                  selectedMessageIds={selectedMessageIds}
+                  showProjectPanel={showProjectPanel}
+                  setShowProjectPanel={setShowProjectPanel}
+                  showTagPanel={showTagPanel}
+                  setShowTagPanel={setShowTagPanel}
+                  showThreadPanel={showThreadPanel}
+                  setShowThreadPanel={setShowThreadPanel}
+                  showSingleThreadPanel={showSingleThreadPanel}
+                  setShowSingleThreadPanel={setShowSingleThreadPanel}
+                  handleToggleMultiSelect={handleToggleMultiSelect}
+                  handleToggleSelect={handleToggleSelect}
+                  handleCreateThread={handleCreateThread}
+                  handleJoinThread={handleJoinThread}
+                  handleLeaveThread={handleLeaveThread}
+                  tagDialogOpen={tagDialogOpen}
+                  setTagDialogOpen={setTagDialogOpen}
+                  handleConfirmProject={handleConfirmProject}
+                  existingTagsForSelection={existingTagsForSelection}
+                  existingThreadsForSelection={existingThreadsForSelection}
+                  clearSelectionAndExit={clearSelectionAndExit}
+                />
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                  {/* Perhaps save/cancel button here if we don't use onBlur */}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </span>
+            {enableReminders && (
+            <span style={{ padding: 10}}>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <button className="inline-flex items-center gap-1 text-xs text-neutral-300 hover:text-white">
+                    <BellRing className="w-3 h-3" />
+                    <span>Reminders</span>
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full sm:max-w-md bg-neutral-900 border-l border-neutral-700">
+                  <SheetHeader>
+                    <SheetDescription className="sr-only">
+                      Reminders panel
+                    </SheetDescription>
+                  </SheetHeader>
+                  <div className="flex items-center justify-between mb-4">
+                    <SheetTitle className="text-sm font-semibold text-neutral-100">
+                      Reminders
+                    </SheetTitle>
+                  </div>
+
+                  <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-6rem)] pr-1">
+                    <RemindersPanel
+
+                    />
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                  {/* Perhaps save/cancel button here if we don't use onBlur */}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </span>
+            )}
+            <span style={{ padding: 10}}>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <button className="inline-flex items-center gap-1 text-xs text-neutral-300 hover:text-white">
+                    <Settings className="w-3 h-3" />
+                    <span>Settings</span>
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full sm:max-w-md bg-neutral-900 border-l border-neutral-700">
+                  <SheetHeader>
+                    <SheetDescription className="sr-only">
+                      User configuration panel
+                    </SheetDescription>
+                  </SheetHeader>
+                  <div className="flex items-center justify-between mb-4">
+                    <SheetTitle className="text-sm font-semibold text-neutral-100">
+                      Settings
+                    </SheetTitle>
+                  </div>
+
+                  <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-6rem)] pr-1">
+                    <SettingsPanel
+                      audioControls={audioControls}
+                    />
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                  {/* Perhaps save/cancel button here if we don't use onBlur */}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </span>
+          </div>
         </div>
         {threadManagerOpen && (
-          <div className="absolute left-52 top-28 mt-0 z-20 flex justify-end">
-            <ThreadManagerPanel
-              threads={threads}
-              setThreads={setThreads}
-              fetchThreads={fetchThreads}
-              setMessages={setMessages}
-              setThreadMessages={setThreadMessages}
-              setThreadManagerOpen={setThreadManagerOpen}
-              openThreadId={openThreadId}
-              setOpenThreadId={setOpenThreadId}
-              setActiveTab={setActiveTab}
-              updateThreadsState={updateThreadsState}
-            />
-          </div>
+        <div className="absolute left-52 top-28 mt-0 z-20 flex justify-end">
+          <ThreadManagerPanel
+            threads={threads}
+            setThreads={setThreads}
+            fetchThreads={fetchThreads}
+            setMessages={setMessages}
+            setThreadMessages={setThreadMessages}
+            setThreadManagerOpen={setThreadManagerOpen}
+            openThreadId={openThreadId}
+            setOpenThreadId={setOpenThreadId}
+            setActiveTab={setActiveTab}
+            updateThreadsState={updateThreadsState}
+          />
+        </div>
         )}
       {/* Sub-tab content */}
       {activeTab === "chat" && (
@@ -806,11 +973,12 @@ export default function ChatPage() {
               clearSelectionAndExit={clearSelectionAndExit}
             />
           </div>
-          <div className="flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">
+          <div className="hidden md:flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">
             {/* Expandable/collapsible presence panel */}
             <PresencePanel speaking={audioControls.speaking} />
-            {/* MOTD Bar under the Presence Panel */}
-            <MotdBar motd={motd} />
+            {enableMOTD && (
+              <MotdBar motd={motd} />
+            )}
             {/* Always-scrollable tool panel below */}
             <div className="flex-1 overflow-y-auto">
             <TabbedToolPanel
@@ -952,6 +1120,8 @@ export default function ChatPage() {
           <HistoryTab
             // Feature flags
             enableTTS={enableTTS}
+            enablePublic={enablePublic}
+            enableSync={enableSync}
             // General and nav
             audioControls={audioControls}
 

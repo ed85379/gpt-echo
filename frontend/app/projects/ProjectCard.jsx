@@ -1,16 +1,17 @@
 "use client";
 import React, {useEffect, useState, useMemo} from "react";
+import { useFeatures } from '@/hooks/FeaturesContext';
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {Eye, EyeOff, DoorClosed, DoorClosedLocked, SquarePlus, SquarePen, Archive, ArchiveX} from 'lucide-react';
 import ProjectDetailsCard from "./ProjectDetailsCard";
-import ProjectMessages from "./ProjectMessages";
 import ProjectFacts from "./ProjectFacts";
 import ProjectFiles from "./ProjectFiles";
 
+
+
 const TABS = [
   {key: "details", label: "Details"},
-  {key: "messages", label: "Messages"},
   {key: "facts", label: "Facts"},
   {key: "files", label: "Files"},
 ];
@@ -206,6 +207,10 @@ export default function ProjectCard(props) {
   const [lastUploadedFileId, setLastUploadedFileId] = useState(null);
   const [tab, setTab] = useState("details");
 
+  const { adminConfig, adminLoading } = useFeatures();
+  const mm = adminConfig?.mm_features || {};
+  const enablePublic = !!mm.ENABLE_PUBLIC_INTERFACES ;
+
   // Only reset local state when switching projects (not on every save/edit)
   useEffect(() => {
     setEditing({name: false});
@@ -400,13 +405,16 @@ export default function ProjectCard(props) {
             loading={toggleLoading}
           />
           <EyeIcon is_hidden={project.is_hidden} />
-
+          {enablePublic && (
+          <>
           <TogglePrivacyButton
             is_private={project.is_private}
             onToggle={onTogglePrivacy}
             loading={toggleLoading}
           />
           <DoorIcon is_private={project.is_private} />
+          </>
+          )}
         </div>
 
         <CodeIntensitySelector
@@ -463,9 +471,6 @@ export default function ProjectCard(props) {
             onProjectChange={props.onProjectChange}
             {...rest}
           />
-        )}
-        {tab === "messages" && (
-          <ProjectMessages project={project} {...rest} />
         )}
         {tab === "facts" && (
           <ProjectFacts project={project} {...rest} />

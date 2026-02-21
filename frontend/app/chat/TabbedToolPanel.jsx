@@ -7,7 +7,6 @@ import { updateNavState } from "@/utils/statesFunctions";
 
 const TABS = [
   { key: "projects", label: "Projects" },
-  { key: "threads", label: "Threads" },
   { key: "muse", label: "Muse" },
   { key: "games", label: "Games" },
   { key: "files", label: "Files" }

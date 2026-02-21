@@ -9,16 +9,18 @@ module.exports = {
   ],
   theme: {
   	extend: {
-      fontFamily: {
-        mono: [
-          "Fira Code",
-          "JetBrains Mono",
-          "Cascadia Code",
-          ...defaultTheme.fontFamily.mono,
-        ],
-      },
+  		fontFamily: {
+  			mono: [
+  				'Fira Code',
+  				'JetBrains Mono',
+  				'Cascadia Code',
+                    ...defaultTheme.fontFamily.mono
+                ]
+  		},
   		animation: {
-  			'pulse-border': 'pulseBorder 1.5s ease-in-out infinite'
+  			'pulse-border': 'pulseBorder 1.5s ease-in-out infinite',
+  			'accordion-down': 'accordion-down 0.2s ease-out',
+  			'accordion-up': 'accordion-up 0.2s ease-out'
   		},
   		keyframes: {
   			pulseBorder: {
@@ -27,6 +29,22 @@ module.exports = {
   				},
   				'50%': {
   					boxShadow: '0 0 12px 4px rgba(168, 85, 247, 0.5)'
+  				}
+  			},
+  			'accordion-down': {
+  				from: {
+  					height: '0'
+  				},
+  				to: {
+  					height: 'var(--radix-accordion-content-height)'
+  				}
+  			},
+  			'accordion-up': {
+  				from: {
+  					height: 'var(--radix-accordion-content-height)'
+  				},
+  				to: {
+  					height: '0'
   				}
   			}
   		},

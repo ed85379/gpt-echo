@@ -35,13 +35,11 @@ if (loading || adminLoading || userLoading ) return null; // or a spinner, or a 
 const allTabs = [
   { name: "Chat", path: "/chat" },
   { name: "Projects", path: "/projects", },
-  { name: "Reminders", path: "/reminders", muse_feature: "ENABLE_REMINDERS" },
   { name: "Journal", path: "/journal", muse_feature: "ENABLE_JOURNAL"  },
   { name: "Memory", path: "/memory" },
   //{ name: "Muse", path: "/muse" },
   { name: "Games", path: "/games", feature: "ENABLE_GAMES" },
   { name: "Sync", path: "/sync", feature: "ENABLE_SYNC"  },
-  { name: "Config", path: "/config" },
   { name: "AdminConfig", path: "/admin_config", feature: "ENABLE_ADMIN" },
 ];
 
