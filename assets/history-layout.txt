@@ -1,7 +1,7 @@
 ┌───────────────────────────────────────────────────────────────────────────────────────┐
-│ MemoryMuse               Chat|Projects|Reminders|Journal|Memory|Muse|Games|Sync|Config│
+│ MemoryMuse                                Chat|Projects|Journal|Memory|Muse|Games|Sync│
 ├───────────────────────────────────────────────────────────────────────────────────────┤
-│ [ Chat ][ History ][ Threads ▼ ]                                                      │
+│ [ Chat ][ History ][ Threads ▼ ]                                [reminders][settings] │
 ├────────────────────────────────┬──────────────────────────────────────────────────────┤
 │  February 2026 [date picker]   │[Search text...]        [Bulk Mode ⦿][Action ▼][Apply]│
 │  Su  Mo  Tu  We  Th  Fr  Sa    ├──────────────────────────────────────────────────────┤
@@ -21,5 +21,3 @@
 │Filter by tag: (#tag1 [count])  │                                                      │
 │ (#tag2 [count] ...             │                                                      │
 └────────────────────────────────┴──────────────────────────────────────────────────────┘
-
-

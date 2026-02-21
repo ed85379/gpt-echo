@@ -1,7 +1,7 @@
 ┌───────────────────────────────────────────────────────────────────────────────────────┐
-│ MemoryMuse               Chat|Projects|Reminders|Journal|Memory|Muse|Games|Sync|Config│
+│ MemoryMuse                                Chat|Projects|Journal|Memory|Muse|Games|Sync│
 ├───────────────────────────────────────────────────────────────────────────────────────┤
-│ [ Chat ][ History ][ Threads ▼ ]                                                      │
+│ [ Chat ][ History ][ Threads ▼ ]                                [reminders][settings] │
 ├──────────────────────────────────────────────────────────────────┬────────────────────┤
 │[Auto-TTS □]                        [Bulk Mode ⦿][Action ▼][Apply]│    Muse_Portrait   │
 ├──────────────────────────────────────────────────────────────────┤      /  __|  \     │
