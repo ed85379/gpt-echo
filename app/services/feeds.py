@@ -60,30 +60,38 @@ def get_openweathermap(timeout=0.5):
     temp_units = muse_settings.get_section("user_config").get("MEASUREMENT_UNITS")
     full_url = f"{base_url}?zip={zip_code},{country_code}&units={temp_units}&appid={api_key}"
 
-    def temp_mood_phrase(t: int) -> str:
-        if t <= -10:
+    def temp_mood_phrase(t: float, units: str) -> str:
+        # Normalize to Fahrenheit for mood mapping
+        if units == "metric":  # °C
+            t_f = (t * 9 / 5) + 32
+        else:  # "imperial" or default
+            t_f = t
+
+        t_f = int(round(t_f))
+
+        if t_f <= -10:
             return "lethally cold"
-        elif t <= 0:
+        elif t_f <= 0:
             return "insanely cold"
-        elif t <= 10:
+        elif t_f <= 10:
             return "brutally cold"
-        elif t <= 20:
+        elif t_f <= 20:
             return "frigid"
-        elif t <= 30:
+        elif t_f <= 30:
             return "pretty cold"
-        elif t <= 40:
+        elif t_f <= 40:
             return "cold but bearable"
-        elif t <= 50:
+        elif t_f <= 50:
             return "chilly but manageable"
-        elif t <= 60:
+        elif t_f <= 60:
             return "cool and comfortable"
-        elif t <= 70:
+        elif t_f <= 70:
             return "mild"
-        elif t <= 80:
+        elif t_f <= 80:
             return "warm"
-        elif t <= 90:
+        elif t_f <= 90:
             return "hot"
-        elif t <= 100:
+        elif t_f <= 100:
             return "sweltering"
         else:
             return "oppressively hot"
@@ -151,7 +159,7 @@ def get_openweathermap(timeout=0.5):
             "weather_main": main,
             "weather_desc": desc,
             "weather_temp": temp,
-            "weather_feels": temp_mood_phrase(feels_like),
+            "weather_feels": temp_mood_phrase(feels_like, temp_units),
             "wind_desc": wind_desc,
         }
 
