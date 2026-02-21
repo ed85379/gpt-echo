@@ -1,4 +1,4 @@
-
+import os
 import json
 from sentence_transformers import SentenceTransformer
 from app.config import muse_settings, QDRANT_JOURNAL_COLLECTION, SENTENCE_TRANSFORMER_MODEL, JOURNAL_DIR, JOURNAL_CATALOG_PATH
@@ -9,6 +9,7 @@ from app.core.time_location_utils import get_formatted_datetime
 # ----------------------
 # Qdrant Search Helper
 # ----------------------
+
 
 def search_journal(query_vector, top_k=5):
     client = qdrant_connector.get_qdrant_client()
@@ -37,7 +38,8 @@ def save_journal_index(index):
         json.dump(index, f, ensure_ascii=False, indent=2)
 
 def ensure_journal_dir():
-    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    os.mkdirs(JOURNAL_DIR, parents=True, exist_ok=True)
+    #JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 
 def load_journal_catalog():
     if not JOURNAL_CATALOG_PATH.exists():

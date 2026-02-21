@@ -15,7 +15,7 @@ def load_discoveryfeeds_sources():
     """
     Loads external DiscoveryFeeds (world news, weather, etc).
     """
-    sources_path = PROFILE_DIR / "discoveryfeeds_sources.json"
+    sources_path = f"{PROFILE_DIR}/discoveryfeeds_sources.json"
     if not os.path.exists(sources_path):
         return []
     with open(sources_path, "r", encoding="utf-8") as f:
@@ -27,7 +27,7 @@ def load_muse_interests_sources():
     """
     Loads Muse's personal feeds.
     """
-    sources_path = PROFILE_DIR / "muse_interests_sources.json"
+    sources_path = f"{PROFILE_DIR}/muse_interests_sources.json"
     if not os.path.exists(sources_path):
         return []
     with open(sources_path, "r", encoding="utf-8") as f:
