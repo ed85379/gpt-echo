@@ -7,7 +7,8 @@ const MAX_HEIGHT = 400;
 const INITIAL_HEIGHT = 200;
 
 export default function PresencePanel({ speaking }) {
-  const { museProfile } = useConfig();
+  const { museProfile, userConfig } = useConfig();
+  const avatarImage = userConfig?.muse_config?.MUSE_IMAGE ?? "";
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
   const avatarName = museName?.toLowerCase() || "muse";
 
@@ -91,7 +92,7 @@ export default function PresencePanel({ speaking }) {
     >
       <div className="flex flex-col items-center justify-center h-full transition-all duration-200">
         <img
-          src={`/${avatarName}-new.jpg`}
+          src={`/${avatarImage}`}
           alt={museName}
           className={`rounded-xl border-2 border-purple-700 shadow-lg transition-all duration-200
             ${speaking ? "animate-pulse-border" : ""}

@@ -9,7 +9,8 @@ from app.core.utils import (prompt_projects_helper,
                             SOURCES_CHAT,
                             SOURCES_CONTEXT,
                             SOURCES_ALL,
-                            is_conversation_active
+                            is_conversation_active,
+                            command_is_allowed,
                             )
 from app.core.time_location_utils import is_quiet_hour, _load_user_location
 from app.config import muse_settings
@@ -67,14 +68,11 @@ def build_api_prompt(user_input, **kwargs):
         "note_to_self",
         "manage_memories",
         "set_reminder",
-#        "edit_reminder",
-#        "skip_reminder",
-#        "snooze_reminder",
-#        "toggle_reminder",
         "search_reminders",
     ]
     if kwargs.get("project_id"):
         commands.append("remember_project_fact")
+    commands = [c for c in commands if command_is_allowed(c)]
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
     # User role segments
@@ -119,12 +117,9 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwa
         "note_to_self",
         "manage_memories",
         "set_reminder",
-#        "edit_reminder",
-#        "skip_reminder",
-#        "snooze_reminder",
-#        "toggle_reminder",
         "search_reminders"
     ]
+    commands = [c for c in commands if command_is_allowed(c)]
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers(user_query=subject)
     # User role
@@ -251,6 +246,7 @@ def build_whispergate_prompt():
     commands = ["write_public_journal", "write_private_journal", "set_motd"]
     if not is_conversation_active():
         commands.insert(0, "speak")
+    commands = [c for c in commands if command_is_allowed(c)]
     builder.segments["whispergate_directive"] = make_whisper_directive(
         commands,
         quiet_hours=is_quiet_hour(),
@@ -271,6 +267,7 @@ def build_discoveryfeeds_lookup_prompt():
     commands = ["write_public_journal"]
     if not is_conversation_active():
         commands.insert(0, "speak")
+    commands = [c for c in commands if command_is_allowed(c)]
     builder.segments["whispergate_directive"] = make_whisper_directive(
         commands,
         quiet_hours=is_quiet_hour(),

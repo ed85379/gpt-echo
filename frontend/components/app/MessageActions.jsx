@@ -1,7 +1,7 @@
 // MessageActions.jsx
 "use client";
-
 import React, { useState } from "react";
+import { useFeatures } from '@/hooks/FeaturesContext';
 import {
   Tags,
   Eye,
@@ -67,6 +67,9 @@ export default function MessageActions({
   // Local input state for new tag field
   const [newTag, setNewTag] = useState("");
 
+  const { adminConfig, adminLoading } = useFeatures();
+  const mm = adminConfig?.mm_features || {};
+  const enablePublic = !!mm.ENABLE_PUBLIC_INTERFACES ;
 
   // Defensive: never let both dialogs be open for the same message
   function openTagDialog() {
@@ -165,6 +168,7 @@ export default function MessageActions({
         {/* Divider between clusters */}
         <span className="mx-1 h-3 border-l self-center border-neutral-400" aria-hidden="true" />
         {/* Private toggle */}
+        {enablePublic && (
         <button
           onClick={() => handleTogglePrivate(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isPrivate)}
           title={isPrivate ? "Set as public" : "Mark as private"}
@@ -173,6 +177,7 @@ export default function MessageActions({
         >
           {isPrivate ? <DoorClosedLocked size={18} /> : <DoorClosed size={18} />}
         </button>
+        )}
         {/* Hidden toggle */}
         <button
           onClick={() => handleToggleHidden(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isHidden)}

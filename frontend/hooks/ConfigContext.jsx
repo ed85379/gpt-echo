@@ -5,14 +5,14 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const ConfigContext = createContext();
 
 export function ConfigProvider({ children }) {
-  const [config, setConfig] = useState({});
+  //const [config, setConfig] = useState({});
   const [userConfig, setUserConfig] = useState({});
   const [adminConfig, setAdminConfig] = useState({});
   const [profile, setProfile] = useState(null);
   const [states, setStates] = useState(null);
   //const [pollstates, setPollstates] = useState(null);
 
-  const [loading, setLoading] = useState(true);
+  //const [loading, setLoading] = useState(true);
   const [userLoading, setUserLoading] = useState(true);
   const [adminLoading, setAdminLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -22,7 +22,7 @@ export function ConfigProvider({ children }) {
   //const POLL_MS = 600_000; // 1 minute; change to 300_000 for 5 minutes
 
   // --- helpers ---
-
+{/*
   async function loadConfig(signal) {
     try {
       const res = await fetch('/api/config/', { signal });
@@ -44,7 +44,7 @@ export function ConfigProvider({ children }) {
       console.error("Error loading config:", err);
     }
   }
-
+*/}
   async function loadUserConfig(signal) {
     try {
       const res = await fetch('/api/config/user', { signal });
@@ -134,7 +134,7 @@ export function ConfigProvider({ children }) {
   }
 
   useEffect(() => {
-    const configController = new AbortController();
+    //const configController = new AbortController();
     const userConfigController = new AbortController();
     const adminConfigController = new AbortController();
     const profileController = new AbortController();
@@ -142,7 +142,7 @@ export function ConfigProvider({ children }) {
     //const pollstatesController = new AbortController();
 
     // initial loads
-    loadConfig(configController.signal);
+    //loadConfig(configController.signal);
     loadUserConfig(userConfigController.signal);
     loadAdminConfig(adminConfigController.signal);
     loadProfile(profileController.signal);
@@ -178,8 +178,8 @@ export function ConfigProvider({ children }) {
   return (
     <ConfigContext.Provider
       value={{
-        config,
-        loading,
+        //config,
+        //loading,
         userConfig,
         userLoading,
         adminConfig,

@@ -7,15 +7,16 @@ import asyncio
 import re
 import websockets
 import json
+from app.core.utils import strip_muse_thoughts
 from app.config import WEBSOCKET_URL, muse_settings
 from app.core.memory_core import log_message
 from app.services.openai_client import get_openai_response, discord_openai_client
 from app.core.prompt_profiles import build_discord_prompt
 
-DISCORD_TOKEN = muse_settings.get_section("api_keys").get("DISCORD_TOKEN")
-PRIMARY_USER_DISCORD_ID = muse_settings.get_section("user_config").get("PRIMARY_USER_DISCORD_ID")
-DISCORD_GUILD_NAME = muse_settings.get_section("muse_config").get("DISCORD_GUILD_NAME")
-DISCORD_CHANNEL_NAME = muse_settings.get_section("muse_config").get("DISCORD_CHANNEL_NAME")
+DISCORD_TOKEN = muse_settings.get_section("social_config").get("DISCORD_TOKEN")
+PRIMARY_USER_DISCORD_ID = muse_settings.get_section("social_config").get("PRIMARY_USER_DISCORD_ID")
+DISCORD_GUILD_NAME = muse_settings.get_section("social_config").get("DISCORD_GUILD_NAME")
+DISCORD_CHANNEL_NAME = muse_settings.get_section("social_config").get("DISCORD_CHANNEL_NAME")
 
 
 def get_user_role(author_id):
@@ -103,7 +104,8 @@ async def handle_incoming_discord_message(message):
                 }
             )
             #print("✅ Muse response logged.")
-            muse_response = re.sub(r"<muse-experience>.*?</muse-experience>", "", muse_response, flags=re.DOTALL)
+            muse_response = strip_muse_thoughts(muse_response)
+            #muse_response = re.sub(r"<muse-experience>.*?</muse-experience>", "", muse_response, flags=re.DOTALL)
             # Send reply
             await message.channel.send(muse_response)
             #print("✅ Muse response sent to Discord.")

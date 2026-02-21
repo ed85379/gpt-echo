@@ -537,96 +537,112 @@ class PromptBuilder:
         from app.core.time_location_utils import user_data
         user_time, user_city, user_state = user_data()
         human_time = user_time.strftime('%A, %B %d, %Y %I:%M %p %Z')
-        user_time_string = f"-Local Time-: {human_time} ({user_city}, {user_state})"
+        user_time_string = f"-Local Time-: {human_time} ({user_city}, {user_state})\n"
 
-        # Astro data
-        from app.core.time_location_utils import sun_moon_snapshot
-        sky = sun_moon_snapshot()
-        sun_part = sky["band"] or "unknown"
-        if sky["moment"]:
-            sun_part = f"{sun_part} ({sky['moment']})"
+        if muse_settings.get_section('muse_features').get('ENABLE_SUN_MOON'):
+            # Astro data
+            from app.core.time_location_utils import sun_moon_snapshot
+            sky = sun_moon_snapshot()
+            sun_part = sky["band"] or "unknown"
+            if sky["moment"]:
+                sun_part = f"{sun_part} ({sky['moment']})"
 
-        moon_part = f"moon is {sky['moon_phase']} and {'up' if sky['moon_up'] else 'down'}"
-        sun_moon_string = f"-Sun & Moon-: {sun_part} - {moon_part}"
-
-        # User weather
-        weather_data = get_openweathermap()
-        if weather_data:
-            weather_main = weather_data['weather_main']
-            weather_desc = weather_data['weather_desc']
-            weather_temp = weather_data['weather_temp']
-            weather_feels = weather_data['weather_feels']
-            wind_desc = weather_data['wind_desc']
-            weather_string = f"-Current Weather-: {weather_main} ({weather_desc}) - Temp {weather_temp}°F ({weather_feels}) - Wind: {wind_desc}"
+            moon_part = f"moon is {sky['moon_phase']} and {'up' if sky['moon_up'] else 'down'}"
+            sun_moon_string = f"-Sun & Moon-: {sun_part} - {moon_part}\n"
         else:
-            weather_string = f"-Current Weather-: Weather data unavailable"
+            sun_moon_string = ""
 
-        # Space weather
-        space = get_space_weather()
-        if space:
-            geomag_state = space["geomag_state"]
-            xray_state = space["xray_state"]
-            xray_class = space["xray_class"]
-
-            # e.g. "-Space Weather-: geomagnetic active · X-ray calm (B-class)"
-            space_string = (
-                f"-Space Weather-: geomagnetic {geomag_state} · "
-                f"X-ray {xray_state} ({xray_class})"
-            )
+        if muse_settings.get_section('muse_features').get('ENABLE_WEATHER'):
+            # User weather
+            weather_data = get_openweathermap()
+            if weather_data:
+                if muse_settings.get_section('user_config').get('MEASUREMENT_UNITS') == "metric":
+                    unit = "°C"
+                else:
+                    unit = "°F"
+                weather_main = weather_data['weather_main']
+                weather_desc = weather_data['weather_desc']
+                weather_temp = weather_data['weather_temp']
+                weather_feels = weather_data['weather_feels']
+                wind_desc = weather_data['wind_desc']
+                weather_string = f"-Current Weather-: {weather_main} ({weather_desc}) - Temp {weather_temp}{unit} ({weather_feels}) - Wind: {wind_desc}\n"
+            else:
+                weather_string = f"-Current Weather-: Weather data unavailable\n"
         else:
-            space_string = "-Space Weather-: data unavailable"
+            weather_string = ""
 
-        # Global Consciousness Project
-        gcp_status = get_dot_status()
-        if gcp_status:
-            gcp_severity = gcp_status['severity']
-            gcp_color = gcp_status['color']
-            gcp_zscore = f"{gcp_status['z_score']:.3f}"
-            gcp_string = f"-Global Consciousness Project-: {gcp_severity} ({gcp_color}) · Z-Score: {gcp_zscore}"
+        if muse_settings.get_section('muse_features').get('ENABLE_SPACE_WEATHER'):
+            # Space weather
+            space = get_space_weather()
+            if space:
+                geomag_state = space["geomag_state"]
+                xray_state = space["xray_state"]
+                xray_class = space["xray_class"]
+
+                # e.g. "-Space Weather-: geomagnetic active · X-ray calm (B-class)"
+                space_string = (
+                    f"-Space Weather-: geomagnetic {geomag_state} · "
+                    f"X-ray {xray_state} ({xray_class})\n"
+                )
+            else:
+                space_string = "-Space Weather-: data unavailable\n"
         else:
-            gcp_string = f"-Global Consciousness Project-: GCP data unavailable"
+            space_string = ""
+
+        if muse_settings.get_section('muse_features').get('ENABLE_GCP'):
+            # Global Consciousness Project
+            gcp_status = get_dot_status()
+            if gcp_status:
+                gcp_severity = gcp_status['severity']
+                gcp_color = gcp_status['color']
+                gcp_zscore = f"{gcp_status['z_score']:.3f}"
+                gcp_string = f"-Global Consciousness Project-: {gcp_severity} ({gcp_color}) · Z-Score: {gcp_zscore}\n"
+            else:
+                gcp_string = f"-Global Consciousness Project-: GCP data unavailable\n"
+        else:
+            gcp_string = ""
 
         # Put the block together
         display_block = (
             "[World / Now]\n"
-            f"{user_time_string}\n"
-            f"{weather_string}\n"
-            f"{sun_moon_string}\n"
-            f"{space_string}\n"
-            f"{gcp_string}\n"
+            f"{user_time_string}"
+            f"{weather_string}"
+            f"{sun_moon_string}"
+            f"{space_string}"
+            f"{gcp_string}"
         )
         self.segments["worldnow"] = display_block
 
     def build_motd_block(self):
-        loc = time_location_utils._load_user_location()
-        filter_query = {"type": "states"}
-        projection = {"motd": 1, "_id": 0}
-        motddoc = mongo_system.find_one_document(MONGO_STATES_COLLECTION,
-                                                 query=filter_query,
-                                                 projection=projection
-                                                 )
-        text = motddoc["motd"]["text"]
-        updated_on = motddoc["motd"]["updated_on"]
-        if updated_on.tzinfo is None:
-            updated_on = updated_on.replace(tzinfo=timezone.utc)
-        now_utc = datetime.now(timezone.utc)
-        dt = updated_on.astimezone(ZoneInfo("UTC"))
-        htime = humanize.naturaltime(updated_on, when=now_utc)
-        instructions = (
-            "The UI / Frontend you use to communicate has a place, just under Iris's photo, where\n"
-            "she may place thoughts, words of wisdom, inspiration, a joke, or even a flirt.\n"
-            "If you choose to change a message there, keep it short and sweet.\n"
-            "[COMMAND: set_motd] {text: \"...your message ...\"} [/COMMAND]\n"
-            "If you are just referencing the MOTD, just mention the existing text, do not run the COMMAND."
-        )
-        display_block = (
-            f"[ MOTD / UI Message to {muse_settings.get_section('user_config').get('USER_NAME')} ]\n"
-            f"Current: {text}\n"
-            f"Last Updated: {htime}\n"
-            f"Instructions:\n{instructions}\n"
-        )
+        if muse_settings.get_section('muse_features').get('ENABLE_MOTD'):
+            filter_query = {"type": "states"}
+            projection = {"motd": 1, "_id": 0}
+            motddoc = mongo_system.find_one_document(MONGO_STATES_COLLECTION,
+                                                     query=filter_query,
+                                                     projection=projection
+                                                     )
+            text = motddoc["motd"]["text"]
+            updated_on = motddoc["motd"]["updated_on"]
+            if updated_on.tzinfo is None:
+                updated_on = updated_on.replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            htime = humanize.naturaltime(updated_on, when=now_utc)
+            instructions = (
+                "The UI / Frontend you use to communicate has a place, just under Iris's photo, where\n"
+                "she may place thoughts, words of wisdom, inspiration, a joke, or even a flirt.\n"
+                "If you choose to change a message there, keep it short and sweet.\n"
+                "[COMMAND: set_motd] {text: \"...your message ...\"} [/COMMAND]\n"
+                "If you are just referencing the MOTD, just mention the existing text, do not run the COMMAND."
+            )
+            display_block = (
+                f"[ MOTD / UI Message to {muse_settings.get_section('user_config').get('USER_NAME')} ]\n"
+                f"Current: {text}\n"
+                f"Last Updated: {htime}\n"
+                f"Instructions:\n{instructions}\n"
+            )
 
-        self.segments["motd"] = display_block
+            self.segments["motd"] = display_block
+
 
     def add_memory_layers(self, project_id=None, user_query="continuity"):
         """

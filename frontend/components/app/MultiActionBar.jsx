@@ -1,24 +1,10 @@
 // components/MessageActionsBar.jsx
 import React, { useState } from "react";
+import { useFeatures } from '@/hooks/FeaturesContext';
 
 
 
-const ACTIONS = [
-  { value: "", label: "Select action…" },
-  { value: "delete", label: "Forget messages" },
-  { value: "undelete", label: "Restore messages" },
-  { value: "hide", label: "Hide messages" },
-  { value: "unhide", label: "Unhide messages" },
-  { value: "make_private", label: "Set Private" },
-  { value: "make_public", label: "Set Public" },
-  { value: "highlight", label: "Highlight messages" },
-  { value: "unhighlight", label: "Unhighlight messages" },
-  { value: "set_project", label: "Add to project…" },
-  { value: "add_tags", label: "Add tags…" },
-  { value: "remove_tags", label: "Remove tags…" },
-  { value: "add_threads", label: "Add thread…" },
-  { value: "remove_threads", label: "Remove threads…" },
-];
+
 
 
 export default function MultiActionBar({
@@ -31,6 +17,33 @@ export default function MultiActionBar({
   setShowTagPanel,
   setShowThreadPanel
 }) {
+  const { adminConfig, adminLoading } = useFeatures();
+  const mm = adminConfig?.mm_features || {};
+  const enablePublic = !!mm.ENABLE_PUBLIC_INTERFACES ;
+
+  const ACTIONS = [
+    { value: "", label: "Select action…" },
+    { value: "delete", label: "Forget messages" },
+    { value: "undelete", label: "Restore messages" },
+    { value: "hide", label: "Hide messages" },
+    { value: "unhide", label: "Unhide messages" },
+    { value: "make_private", label: "Set Private" },
+    { value: "make_public", label: "Set Public" },
+    { value: "highlight", label: "Highlight messages" },
+    { value: "unhighlight", label: "Unhighlight messages" },
+    { value: "set_project", label: "Add to project…" },
+    { value: "add_tags", label: "Add tags…" },
+    { value: "remove_tags", label: "Remove tags…" },
+    { value: "add_threads", label: "Add thread…" },
+    { value: "remove_threads", label: "Remove threads…" },
+  ];
+
+  const availableActions = enablePublic
+    ? ACTIONS
+    : ACTIONS.filter(
+        (a) => a.value !== "make_private" && a.value !== "make_public"
+      );
+
   const [selectedAction, setSelectedAction] = useState("");
 
 
@@ -93,7 +106,7 @@ export default function MultiActionBar({
         onChange={(e) => setSelectedAction(e.target.value)}
         disabled={isDisabled}
       >
-        {ACTIONS.map((a) => (
+        {availableActions.map((a) => (
           <option key={a.value || "none"} value={a.value}>
             {a.label}
           </option>

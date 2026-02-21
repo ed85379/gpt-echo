@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from app.config import muse_settings
 from app.core import utils
 
-openai.api_key = muse_settings.get_section("api_keys").get("OPENAI_API_KEY")
+openai.api_key = muse_settings.get_section("llm_config").get("OPENAI_API_KEY")
 
 # Initialize the OpenAI client
 autotags_openai_client = openai.OpenAI()
@@ -194,7 +194,7 @@ def build_payload_for_model(model: str,
     return {"input": input_msgs, "kwargs": kwargs}
 
 
-def get_openai_response(dev_prompt, user_prompt, client, prompt_type="default", images=None, model=muse_settings.get_section('model_config').get('OPENAI_MODEL')):
+def get_openai_response(dev_prompt, user_prompt, client, prompt_type="default", images=None, model=muse_settings.get_section('llm_config').get('OPENAI_MODEL')):
     try:
         user_content = build_user_content(user_prompt, images)
         dev_content = build_dev_content(dev_prompt, muse_settings.get_section('muse_config').get('MUSE_NAME'))

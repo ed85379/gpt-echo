@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useFeatures } from '@/hooks/FeaturesContext';
 import {
   Eye,
   EyeOff,
@@ -38,6 +39,10 @@ export default function ThreadManagerPanel({
   updateThreadsState,
   onClose, // optional, if you want a close button on the panel itself
 }) {
+  const { adminConfig, adminLoading } = useFeatures();
+  const mm = adminConfig?.mm_features || {};
+  const enablePublic = !!mm.ENABLE_PUBLIC_INTERFACES ;
+
   const [sortField, setSortField] = React.useState("title"); // "title" | "created_at"
   const [sortDir, setSortDir] = React.useState("asc");       // "asc" | "desc"
   const [showArchived, setShowArchived] = React.useState(false);
@@ -373,6 +378,7 @@ export default function ThreadManagerPanel({
                 </button>
 
                 {/* Private toggle */}
+                {enablePublic && (
                 <button
                   type="button"
                   onClick={() => setPrivate(thread.thread_id, !thread.is_private)}
@@ -385,7 +391,7 @@ export default function ThreadManagerPanel({
                 >
                   {thread.is_private ? <DoorClosedLocked size={14} className="text-red-400" /> : <DoorClosed size={14} />}
                 </button>
-
+                )}
                 {/* Archive */}
                 <button
                   type="button"

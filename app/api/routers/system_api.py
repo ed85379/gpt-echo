@@ -49,9 +49,11 @@ def patch_user_config(patch: UserConfigPatch):
     if patch.section not in {
         "api_keys",
         "user_config",
-        "model_config",
         "muse_config",
         "muse_features",
+        "llm_config",
+        "tts_config",
+        "social_config",
     }:
         raise HTTPException(status_code=400, detail="Invalid section")
 

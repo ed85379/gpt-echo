@@ -23,17 +23,14 @@ import {
   } from "@/utils/messageActions";
 import { getMonthRange } from "@/utils/utils";
 
-// General props and functions
-const SOURCE_CHOICES = [
-  { key: "frontend", label: "Frontend" },
-  { key: "chatgpt", label: "ChatGPT" },
-  { key: "discord", label: "Discord" }
-];
+
 
 const HistoryTab = (
   {
     // Feature flags
     enableTTS,
+    enablePublic,
+    enableSync,
     // General and nav
     audioControls,
 
@@ -77,6 +74,50 @@ const HistoryTab = (
   const [source, setSource] = useState("Frontend");
   const [historyMessages, setHistoryMessages] = useState([]);
 
+  const [sourceStats, setSourceStats] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/messages/sources")
+      .then(res => res.json())
+      .then(setSourceStats)
+      .catch(err => console.error("Failed to load message sources", err));
+  }, []);
+
+  const SOURCE_LABELS = {
+    frontend: "Frontend",
+    chatgpt: "Imported",
+    discord: "Discord",
+    // fallbacks for future sources
+  };
+
+  const VISIBLE_SOURCES = new Set(["frontend", "chatgpt", "discord"]);
+
+  const availableSources = sourceStats
+    .filter(s => VISIBLE_SOURCES.has(s.source))
+    .map(s => ({
+      key: s.source,
+      label: SOURCE_LABELS[s.source] || s.source,
+      count: s.count,
+    }));
+
+  const PREFERRED_DEFAULT = "frontend";
+
+  useEffect(() => {
+    if (!availableSources.length) return;
+
+    const keys = availableSources.map(s => s.key);
+
+    let next;
+    if (keys.includes(PREFERRED_DEFAULT)) {
+      next = PREFERRED_DEFAULT;
+    } else {
+      next = keys[0]; // first available
+    }
+
+    if (!source || !keys.includes(source)) {
+      setSource(next);
+    }
+  }, [availableSources, source]);
 
   // ------------------------------------
   // Message Filters
@@ -92,6 +133,7 @@ const HistoryTab = (
   const [showForgotten, setShowForgotten] = useState(false)
   const [showPrivate, setShowPrivate] = useState(false)
   const [search, setSearch] = useState("")
+
   const selectedTagObjects = availableTags.filter(t =>
     tagFilter.includes(t.tag)
   );
@@ -99,6 +141,7 @@ const HistoryTab = (
   const { museProfile, museProfileLoading } = useConfig();
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
   const mode = "history";
+
 
 
   // 1. Base: apply left-column filters (AND) to messages
@@ -395,13 +438,13 @@ const HistoryTab = (
               <label className="flex items-center gap-2 text-sm text-neutral-300">
                 <span className="whitespace-nowrap">Source:</span>
                 <select
-                  value={source}
+                  value={source || ""}
                   onChange={e => setSource(e.target.value)}
                   className="flex-1 px-2 py-1 rounded bg-neutral-900 text-white border border-neutral-700"
                 >
-                  {SOURCE_CHOICES.map(opt => (
-                    <option key={opt.key} value={opt.key}>
-                      {opt.label}
+                  {availableSources.map(src => (
+                    <option key={src.key} value={src.key}>
+                      {src.label}
                     </option>
                   ))}
                 </select>
@@ -450,6 +493,7 @@ const HistoryTab = (
                 Show: (excluded by default)
               </div>
               <div className="text-xs flex gap-3">
+                {enablePublic && (
                 <label>
                   <input
                     type="checkbox"
@@ -459,6 +503,7 @@ const HistoryTab = (
                   />
                   Private
                 </label>
+                )}
                 <label>
                   <input
                     type="checkbox"

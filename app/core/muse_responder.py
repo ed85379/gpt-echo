@@ -836,7 +836,7 @@ def route_user_input(
         client=client,
         prompt_type=prompt_type,
         images=images,
-        model=muse_settings.get_section("model_config").get("OPENAI_MODEL")
+        model=muse_settings.get_section("llm_config").get("OPENAI_MODEL")
     )
 
     # Normalize muse-experience tags outside of fenced code blocks
@@ -878,7 +878,7 @@ def handle_muse_decision(
     dev_prompt,
     user_prompt,
     client,
-    model=muse_settings.get_section("model_config").get("OPENAI_WHISPER_MODEL"),
+    model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"),
     source=None,
     whispergate_data=None
 ) -> str:
@@ -1051,7 +1051,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
 
     dev_prompt, user_prompt = build_speak_prompt(subject=subject, payload=payload, destination="frontend")
 
-    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_settings.get_section("model_config").get("OPENAI_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"))
     # Normalize muse-experience tags outside of fenced code blocks
     response = normalize_muse_experience_tags(response)
 
@@ -1181,7 +1181,7 @@ async def handle_journal_command(payload, entry_type="public", source=None):
 
     dev_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
 
-    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, prompt_type="journal", model=muse_settings.get_section("model_config").get("OPENAI_FULL_MODEL"))
+    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, prompt_type="journal", model=muse_settings.get_section("llm_config").get("OPENAI_FULL_MODEL"))
 
     journal_core.create_journal_entry(
         title=subject,

@@ -6,10 +6,10 @@ from app.config import muse_settings, admin_config, AUDIO_OUTPUT_PATH
 
 
 # Load ElevenLabs API credentials
-ELEVEN_API_KEY = muse_settings.get_section("api_keys").get("TTS_API_KEY")
+ELEVEN_API_KEY = muse_settings.get_section("tts_config").get("ELEVENLABS_API_KEY")
 
 client = ElevenLabs(
-    api_key=muse_settings.get_section("api_keys").get("TTS_API_KEY")
+    api_key=muse_settings.get_section("tts_config").get("ELEVENLABS_API_KEY")
 )
 
 HEADERS = {
@@ -18,7 +18,7 @@ HEADERS = {
 }
 
 def synthesize_speech(text: str, stability=0.5, similarity_boost=0.75) -> str:
-    url = f"{admin_config.get_section('apis').get('TTS_API_URL')}{muse_settings.get_section('muse_config').get('TTS_VOICE_ID')}"
+    url = f"{admin_config.get_section('apis').get('TTS_API_URL')}{muse_settings.get_section('tts_config').get('ELEVENLABS_VOICE_ID')}"
 
     payload = {
         "text": text,
@@ -39,12 +39,32 @@ def synthesize_speech(text: str, stability=0.5, similarity_boost=0.75) -> str:
     else:
         raise Exception(f"ElevenLabs TTS failed: {response.status_code} {response.text}")
 
-async def stream_speech(text):
+async def stream_speech(text: str, overrides: dict | None = None):
+    overrides = overrides or {}
+
+    tts_config = muse_settings.get_section("tts_config")
+
+    voice_id = tts_config.get("ELEVENLABS_VOICE_ID")
+
+    voice_stability = float(
+        overrides.get("stability", tts_config.get("ELEVENLABS_VOICE_STABILITY"))
+    )
+    voice_similarity = float(
+        overrides.get("similarity", tts_config.get("ELEVENLABS_VOICE_SIMILARITY"))
+    )
+    voice_speed = float(
+        overrides.get("speed", tts_config.get("ELEVENLABS_VOICE_SPEED"))
+    )
+
     response = client.text_to_speech.stream(
         text=text,
-        voice_id=muse_settings.get_section('muse_config').get('TTS_VOICE_ID'),
+        voice_id=voice_id,
         model_id="eleven_flash_v2_5",
-        voice_settings=VoiceSettings(stability=0.6, similarity_boost=0.75, speed=1.0)
+        voice_settings=VoiceSettings(
+            stability=voice_stability,
+            similarity_boost=voice_similarity,
+            speed=voice_speed,
+        ),
     )
 
     for chunk in response:

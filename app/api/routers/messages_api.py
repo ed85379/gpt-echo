@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from typing import Any
 from bson import ObjectId
+from app.core.utils import strip_muse_thoughts
 from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.memory_indexer import update_qdrant_metadata_for_messages
 from app.config import muse_settings, MONGO_CONVERSATION_COLLECTION, MONGO_STATES_COLLECTION
@@ -130,11 +131,19 @@ def get_messages(
 
     print(f"Getting messages: {query} — found {len(logs)}")
 
+    thought_view_enabled = (
+            muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_THOUGHT_VIEW", True)
+
     result = []
     for msg in logs:
+        if not thought_view_enabled:
+            text = strip_muse_thoughts(msg.get("message") or "")
+        else:
+            text = msg.get("message") or ""
         mapped = {
             "from": msg.get("from") or msg.get("role") or "iris",
-            "text": msg.get("message") or "",
+            "text": text,
             "timestamp": msg["timestamp"].isoformat() + "Z"
             if isinstance(msg["timestamp"], datetime)
             else str(msg["timestamp"]),
@@ -154,6 +163,87 @@ def get_messages(
         result.append(mapped)
 
     return {"messages": result[::-1]}
+
+@router.get("/deleted")
+def get_deleted_messages(
+    limit: int = Query(10, le=50),
+    before_id: Optional[str] = None,
+    after_id: Optional[str] = None,
+):
+    base_query: dict = {"is_deleted": True}
+
+    # Cursor by _id (or timestamp if you prefer)
+    if before_id:
+        base_query["_id"] = {"$lt": ObjectId(before_id)}
+    elif after_id:
+        base_query["_id"] = {"$gt": ObjectId(after_id)}
+
+    logs = mongo.find_logs(
+        collection_name=MONGO_CONVERSATION_COLLECTION,
+        query=base_query,
+        limit=limit,
+        sort_field="_id",      # stable, monotonic
+        ascending=True,       # newest first in DB result
+    )
+
+    print(f"Getting deleted messages: {base_query} — found {len(logs)}")
+
+    thought_view_enabled = (
+        muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_THOUGHT_VIEW", True)
+
+    result = []
+    for msg in logs:
+        if not thought_view_enabled:
+            text = strip_muse_thoughts(msg.get("message") or "")
+        else:
+            text = msg.get("message") or ""
+
+        mapped = {
+            "from": msg.get("from") or msg.get("role") or "iris",
+            "text": text,
+            "timestamp": msg["timestamp"].isoformat() + "Z"
+            if isinstance(msg["timestamp"], datetime)
+            else str(msg["timestamp"]),
+            "_id": str(msg["_id"]),
+            "message_id": msg.get("message_id") or "",
+            "source": msg.get("source", ""),
+            "user_tags": msg.get("user_tags", []),
+            "is_private": msg.get("is_private", False),
+            "is_hidden": msg.get("is_hidden", False),
+            "remembered": msg.get("remembered", False),
+            "is_deleted": msg.get("is_deleted", False),
+            "project_id": str(msg["project_id"]) if msg.get("project_id") else None,
+            "thread_ids": msg.get("thread_ids", []),
+            "flags": msg.get("flags", []),
+            "metadata": msg.get("metadata", {}),
+        }
+        result.append(mapped)
+
+    # reverse so UI still sees oldest→newest in this page
+    messages = result[::-1]
+
+    next_before = messages[0]["_id"] if messages else None
+    next_after = messages[-1]["_id"] if messages else None
+
+    return {
+        "messages": messages,
+        "paging": {
+            "before_id": next_before,
+            "after_id": next_after,
+            "limit": limit,
+        },
+    }
+
+@router.get("/sources")
+async def get_message_sources():
+    pipeline = [
+        {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+        {"$project": {"_id": 0, "source": "$_id", "count": 1}},
+        {"$sort": {"source": 1}},
+    ]
+    results = mongo.run_aggregate(MONGO_CONVERSATION_COLLECTION, pipeline).to_list(length=None)
+    return results
 
 @router.post("/log")
 async def log_message_endpoint(payload: dict = Body(...)):

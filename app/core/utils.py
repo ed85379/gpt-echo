@@ -592,3 +592,29 @@ def build_message_match_filter(
         match_filter["$text"] = {"$search": search_text}
 
     return match_filter
+
+DISABLEABLE_COMMANDS = {
+    "set_motd": "ENABLE_MOTD",
+    "write_public_journal": "ENABLE_JOURNAL",
+    "write_private_journal": "ENABLE_PRIVATE_JOURNAL",
+    "set_reminder": "ENABLE_REMINDERS",
+    "search_reminders": "ENABLE_REMINDERS",
+    "speak": "ENABLE_UNPROMPTED_MESSAGING",
+}
+
+def command_is_allowed(command: str) -> bool:
+    """
+    Return True if this command is allowed for the current muse/user config.
+    Unknown commands default to allowed.
+    """
+    flag = DISABLEABLE_COMMANDS.get(command)
+    if not flag:
+        return True  # pass-through for everything not explicitly gated
+
+    muse_features = muse_settings.get_section("muse_features") or {}
+    return bool(muse_features.get(flag, True))  # default to enabled
+
+def strip_muse_thoughts(text: str) -> str:
+    text = re.sub(r"<muse-experience>.*?</muse-experience>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<muse-interlude>.*?</muse-interlude>", "", text, flags=re.DOTALL)
+    return text

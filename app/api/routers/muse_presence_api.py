@@ -5,10 +5,10 @@ from app.services.tts_core import synthesize_speech, stream_speech
 from collections import defaultdict
 from bson import ObjectId
 from datetime import datetime, timezone
-from app.config import JOURNAL_DIR
+from app.config import JOURNAL_DIR, muse_settings
 from app.core.muse_profile import muse_profile
 from app.core.files_core import get_all_message_ids_for_files
-from app.core.utils import get_adaptive_top_k, slugify
+from app.core.utils import get_adaptive_top_k, slugify, strip_muse_thoughts
 from app.core.states_core import set_active_project
 from app.core.muse_responder import route_user_input
 from app.core.prompt_profiles import build_api_prompt
@@ -54,8 +54,10 @@ async def stream_tts(request: Request):
     if not text:
         return JSONResponse({"error": "Missing 'text' in request body"}, status_code=400)
 
+    overrides = data.get("overrides") or {}
+
     async def audio_stream():
-        async for chunk in stream_speech(text):
+        async for chunk in stream_speech(text, overrides=overrides):
             yield chunk
 
     return StreamingResponse(audio_stream(), media_type="audio/mpeg")
@@ -134,7 +136,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         blend_ratio=blend_ratio,
         active_project_report=active_project_report,
     )
-    #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
+    print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
     print(f"USER_PROMPT:\n" + user_prompt)
     user_msg = {
         "message": user_input,
@@ -167,7 +169,21 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     if thread_id:
         muse_msg["thread_id"] = thread_id
     print(f"DEBUG user_msg: {muse_msg}")
-    await broadcast_queue.put(muse_msg)
+    thought_view_enabled = (
+            muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_THOUGHT_VIEW", True)
+    if not thought_view_enabled:
+        private_response = strip_muse_thoughts(response)
+        muse_broadcast_msg = {
+            "message": private_response,
+            "timestamp": response_timestamp,
+            "role": "muse",
+            "source": "frontend",
+            "to": "frontend",
+        }
+    else:
+        muse_broadcast_msg = muse_msg
+    await broadcast_queue.put(muse_broadcast_msg)
     await log_queue.put(user_msg)
     await log_queue.put(muse_msg)
 
