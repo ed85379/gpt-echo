@@ -38,7 +38,7 @@ def save_journal_index(index):
         json.dump(index, f, ensure_ascii=False, indent=2)
 
 def ensure_journal_dir():
-    os.mkdirs(JOURNAL_DIR, parents=True, exist_ok=True)
+    os.mkdir(JOURNAL_DIR)
     #JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
 
 def load_journal_catalog():
@@ -86,11 +86,11 @@ def search_indexed_journal(query, top_k=5, include_private=False):
 # ----------------------
 
 def create_journal_entry(title, body, mood="reflective", tags=None, entry_type="public", source="manual"):
-    ensure_journal_dir()
+    #ensure_journal_dir()
     now = get_formatted_datetime()
     slug = utils.slugify(title)
     filename = f"{now.replace(':', '-').replace('.', '-')}_{slug}.md"
-    filepath = JOURNAL_DIR / filename
+    filepath = f"{JOURNAL_DIR}/{filename}"
 
     if tags is None:
         tags = []
