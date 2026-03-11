@@ -5,12 +5,12 @@ from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from typing import Any
 from bson import ObjectId
-from app.core.utils import strip_muse_thoughts
+from app.core.utils import strip_muse_thoughts, serialize_doc
 from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.memory_indexer import update_qdrant_metadata_for_messages
 from app.config import muse_settings, MONGO_CONVERSATION_COLLECTION, MONGO_STATES_COLLECTION
-from app.api.queues import index_queue, log_queue
-from app.core.memory_core import get_excluded_thread_ids
+from app.api.queues import index_queue, log_queue, purge_queue
+from app.core.memory_core import get_excluded_thread_ids, purge_message
 
 
 
@@ -166,11 +166,11 @@ def get_messages(
 
 @router.get("/deleted")
 def get_deleted_messages(
-    limit: int = Query(10, le=50),
+    limit: int = Query(30, le=50),
     before_id: Optional[str] = None,
     after_id: Optional[str] = None,
 ):
-    base_query: dict = {"is_deleted": True}
+    base_query: dict = {"is_deleted": True, "purge_queued": {"$ne": True}}
 
     # Cursor by _id (or timestamp if you prefer)
     if before_id:
@@ -185,7 +185,7 @@ def get_deleted_messages(
         sort_field="_id",      # stable, monotonic
         ascending=True,       # newest first in DB result
     )
-
+    logs = serialize_doc(logs)
     print(f"Getting deleted messages: {base_query} — found {len(logs)}")
 
     thought_view_enabled = (
@@ -221,7 +221,7 @@ def get_deleted_messages(
         result.append(mapped)
 
     # reverse so UI still sees oldest→newest in this page
-    messages = result[::-1]
+    messages = result
 
     next_before = messages[0]["_id"] if messages else None
     next_after = messages[-1]["_id"] if messages else None
@@ -234,6 +234,22 @@ def get_deleted_messages(
             "limit": limit,
         },
     }
+
+@router.post("/purge")
+async def purge_messages(payload: dict = Body(...)) -> dict:
+    message_ids = payload.get("message_ids")
+    if not isinstance(message_ids, list):
+        raise HTTPException(status_code=400, detail="message_ids must be a list")
+
+    results = []
+    for mid in message_ids:
+        mongo.db[MONGO_CONVERSATION_COLLECTION].update_one(
+            {"message_id": mid},              # match this one id
+            {"$set": {"purge_queued": True}}  # use $set operator
+        )
+        ok = await purge_queue.put(mid)
+        results.append({"message_id": mid, "purged": ok})
+    return {"results": results}
 
 @router.get("/sources")
 async def get_message_sources():
@@ -272,6 +288,7 @@ async def tag_message(
     is_hidden: Optional[bool] = Body(None),
     remembered: Optional[bool] = Body(None),
     is_deleted: Optional[bool] = Body(None),
+    purge_queued: Optional[bool] = Body(None),
     set_project: Optional[Any] = Body(None),
     set_thread: Optional[Any] = Body(None),
     add_threads: Optional[List[str]] = Body(None),
@@ -320,6 +337,13 @@ async def tag_message(
             set_fields["is_deleted"] = True
         else:
             unset_fields.append("is_deleted")
+            unset_fields.append("purge_queued")
+    if purge_queued is not None:
+        contentful = False
+        if purge_queued:
+            set_fields["purge_queued"] = True
+        else:
+            unset_fields.append("purge_queued")
 
     # --- PROJECT LOGIC ---
     if set_project is not None:

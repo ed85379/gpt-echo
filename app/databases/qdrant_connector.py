@@ -173,6 +173,30 @@ def delete_point(point_id_str: str, collection_name: str):
         )
     )
 
+def delete_qdrant_message(message_id: str) -> bool:
+    try:
+        delete_id = message_id_to_uuid(message_id)
+        selector = qmodels.PointIdsList(points=[delete_id])
+
+        qdrant.delete(
+            collection_name=QDRANT_CONVERSATION_COLLECTION,
+            points_selector=selector,
+            wait=True,
+        )
+
+        result = qdrant.retrieve(
+            collection_name=QDRANT_CONVERSATION_COLLECTION,
+            ids=[delete_id],
+        )
+        if not result:
+            return True
+
+        print(f"Qdrant: {message_id} still present after deletion attempt.")
+        return False
+    except Exception as e:
+        print(f"Qdrant: Exception deleting {message_id}: {e}")
+        return False
+
 def update_payload_for_messages(
     updates: List[Dict[str, Any]],
     collection: str = QDRANT_CONVERSATION_COLLECTION,

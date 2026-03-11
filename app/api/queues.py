@@ -6,6 +6,7 @@ broadcast_queue = asyncio.Queue()
 log_queue = asyncio.Queue()
 index_queue = asyncio.Queue()
 index_memory_queue = asyncio.Queue()
+purge_queue = asyncio.Queue()
 
 # Typing: adjust as needed for your actual message structure
 Message = Dict[str, Any]
@@ -124,5 +125,30 @@ async def run_memory_index_queue(
                 entry_id=str(entry_id)
             )
             # Optionally: re-queue or alert
+        finally:
+            queue.task_done()
+
+async def run_purge_queue(
+    queue: asyncio.Queue,
+    purge_message_job: Callable[..., Awaitable[None]],
+    *,
+    logger=None
+):
+    while True:
+        message_id = await queue.get()
+        try:
+            await purge_message_job(
+                message_id=message_id,
+            )
+        except Exception as e:
+            utils.write_system_log(
+                level="error",
+                module="api",
+                component="queues",
+                function="run_purge_queue",
+                action="purge_failed",
+                error=str(e),
+                message_id=str(message_id)
+            )
         finally:
             queue.task_done()

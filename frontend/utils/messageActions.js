@@ -3,8 +3,8 @@ export function CandleHolderLit(props) {
   return (
     <svg
       xmlns="https://www.w3.org/2000/svg"
-      width="16"
-      height="16"
+      width="32"
+      height="32"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -31,6 +31,11 @@ function updateDeletedFlag(setter, message_id, markDeleted) {
   );
 }
 
+function removeMessageById(setter, message_id) {
+  if (!setter) return;
+  setter(prev => prev.filter(m => m.message_id !== message_id));
+}
+
 export function handleDelete(
   setMessages,
   setThreadMessages,
@@ -46,6 +51,23 @@ export function handleDelete(
     updateDeletedFlag(setMessages,       message_id, markDeleted);
     updateDeletedFlag(setThreadMessages, message_id, markDeleted);
     updateDeletedFlag(setAltMessages,    message_id, markDeleted);
+  });
+}
+
+export function handlePurge(
+  setMessages,
+  setThreadMessages,
+  setAltMessages,
+  message_id
+) {
+  fetch("/api/messages/purge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message_ids: [message_id] }),
+  }).then(() => {
+    removeMessageById(setMessages,       message_id);
+    removeMessageById(setThreadMessages, message_id);
+    removeMessageById(setAltMessages,    message_id);
   });
 }
 

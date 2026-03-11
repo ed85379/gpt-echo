@@ -17,7 +17,8 @@ from app.databases.mongo_connector import mongo, mongo_system
 from app.services.openai_client import get_openai_autotags
 from app.databases import memory_indexer
 from app.api.queues import index_memory_queue
-from app.databases.qdrant_connector import delete_point, search_collection
+from app.databases.qdrant_connector import delete_point, search_collection, delete_qdrant_message
+from app.databases.graphdb_connector import get_graphdb_connector as graphdb
 from app.core.states_core import get_active_time_skip_window
 
 # </editor-fold>
@@ -140,6 +141,54 @@ async def do_import(collection):
         {"$set": {"processing": False, "status": "imported"}}
     )
     print(f"Imported {imported} of {total} messages for {collection}")
+
+def get_message_by_id(message_id: str):
+    """
+    Fetch a single message document by message_id.
+    Returns the document dict or None.
+    """
+    return mongo.find_one_document(
+        MONGO_CONVERSATION_COLLECTION,
+        {"message_id": message_id},
+    )
+
+def purge_message(message_id: str) -> bool:
+    """
+    Hard-delete a single message from Qdrant, Memgraph, and Mongo.
+    Only operates on messages already marked is_deleted=True.
+    Returns True if fully purged, False otherwise.
+    """
+
+    # Safety check: only purge soft-deleted messages
+    msg = get_message_by_id(message_id)
+    if not msg:
+        print(f"Purge skipped: {message_id} not found in Mongo.")
+        return False
+
+    # Missing is_deleted counts as False / not deletable
+    if not msg.get("is_deleted", False):
+        print(f"Purge skipped: {message_id} is not soft-deleted (is_deleted != True).")
+        return False
+
+    graph = graphdb()
+    # Now it’s safe to actually purge
+    qdrant_ok = delete_qdrant_message(message_id)
+    memgraph_ok = graph.delete_memgraph_message(message_id)
+
+    if qdrant_ok and memgraph_ok:
+        mongo_ok = mongo.delete_mongo_message(MONGO_CONVERSATION_COLLECTION, message_id)
+        if mongo_ok:
+            return True
+
+        print(f"Purge failed at Mongo for {message_id}.")
+        return False
+
+    print(f"Purge failed upstream for {message_id}; Mongo delete skipped.")
+    return False
+
+async def purge_message_job(message_id: str) -> None:
+    # Run the blocking purge in a worker thread
+    await asyncio.to_thread(purge_message, message_id)
 
 # </editor-fold>
 

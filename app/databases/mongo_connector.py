@@ -118,6 +118,15 @@ class MongoConnector:
     def count_logs(self, collection_name, filter_query=None):
         return self.db[collection_name].count_documents(filter_query or {})
 
+    def delete_mongo_message(self, collection_name, message_id: str) -> bool:
+        mongo_result = self.db[collection_name].delete_one({"message_id": message_id})
+        if mongo_result.deleted_count == 1:
+            print(f"MongoDB: Deleted {message_id}.")
+            return True
+
+        print(f"MongoDB: Could NOT delete {message_id} (not found?).")
+        return False
+
     # Add more as needed
 
 

@@ -9,18 +9,21 @@ import {
   EyeClosed,
   DoorClosed,
   DoorClosedLocked,
-  Shredder,
-  SquareX,
   BookMarked,
   History,
   Slash,
   Check,
-  Split
+  Split,
+  MessageCircleHeart,
+  MessageCircleOff,
+  MessageCircleX,
+  MessageCircleReply,
+  MessageCircleDashed,
   } from "lucide-react";
 import ThreadPanel from "@/components/app/ThreadPanel";
 import {
-      CandleHolderLit,
       handleDelete,
+      handlePurge,
       handleTogglePrivate,
       handleToggleHidden,
       handleToggleRemembered,
@@ -127,66 +130,70 @@ export default function MessageActions({
     <>
       {/* Action Button Bar (appears on hover) */}
       <div className="absolute bottom-2 right-3 hidden group-hover:flex gap-2 z-10">
-        {/* Project assign button */}
-        <button
-          onClick={openProjectDialog}
-          title={inProject ? "Change project" : "Add to project"}
-          className="text-neutral-400 hover:text-purple-300 transition-colors"
-          style={{ background: "none", border: "none", cursor: "pointer" }}
-        >
-          <BookMarked size={18} />
-        </button>
-        {/* Thread assign button */}
-        <button
-          onClick={openThreadPanel}
-          title="Open in thread"
-          className="text-neutral-400 hover:text-purple-300 transition-colors"
-          style={{ background: "none", border: "none", cursor: "pointer" }}
-        >
-          <Split size={18} />
-        </button>
-        {/* Tag dialog button */}
-        <button
-          onClick={openTagDialog}
-          title="Tag message"
-          className="text-neutral-400 hover:text-purple-300 transition-colors"
-          style={{ background: "none", border: "none", cursor: "pointer" }}
-        >
-          <Tags size={18} />
-        </button>
-        {/* Remembered toggle */}
-        <button
-          onClick={() => handleToggleRemembered(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isRemembered)}
-          title={isRemembered ? "Unhighlight message in memory" : "Highlight message in memory"}
-          className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
-          style={{ background: "none", border: "none", cursor: "pointer" }}
-        >
-          <CandleHolderLit
+        {mode !== "forgotten" && (
+          <>
+          {/* Project assign button */}
+          <button
+            onClick={openProjectDialog}
+            title={inProject ? "Change project" : "Add to project"}
+            className="text-neutral-400 hover:text-purple-300 transition-colors"
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+          >
+            <BookMarked size={18} />
+          </button>
+          {/* Thread assign button */}
+          <button
+            onClick={openThreadPanel}
+            title="Open in thread"
+            className="text-neutral-400 hover:text-purple-300 transition-colors"
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+          >
+            <Split size={18} />
+          </button>
+          {/* Tag dialog button */}
+          <button
+            onClick={openTagDialog}
+            title="Tag message"
+            className="text-neutral-400 hover:text-purple-300 transition-colors"
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+          >
+            <Tags size={18} />
+          </button>
+          {/* Remembered toggle */}
+          <button
+            onClick={() => handleToggleRemembered(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isRemembered)}
+            title={isRemembered ? "Unhighlight message in memory" : "Highlight message in memory"}
             className={`transition-colors ${isRemembered ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
-          />
-        </button>
-        {/* Divider between clusters */}
-        <span className="mx-1 h-3 border-l self-center border-neutral-400" aria-hidden="true" />
-        {/* Private toggle */}
-        {enablePublic && (
-        <button
-          onClick={() => handleTogglePrivate(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isPrivate)}
-          title={isPrivate ? "Set as public" : "Mark as private"}
-          className={`transition-colors ${isPrivate ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
-          style={{ background: "none", border: "none", cursor: "pointer" }}
-        >
-          {isPrivate ? <DoorClosedLocked size={18} /> : <DoorClosed size={18} />}
-        </button>
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+          >
+            <MessageCircleHeart
+               size={18}
+            />
+          </button>
+          {/* Divider between clusters */}
+          <span className="mx-1 h-3 border-l self-center border-neutral-400" aria-hidden="true" />
+          {/* Private toggle */}
+          {enablePublic && (
+          <button
+            onClick={() => handleTogglePrivate(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isPrivate)}
+            title={isPrivate ? "Set as public" : "Mark as private"}
+            className={`transition-colors ${isPrivate ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+          >
+            {isPrivate ? <DoorClosedLocked size={18} /> : <DoorClosed size={18} />}
+          </button>
+          )}
+          {/* Hidden toggle */}
+          <button
+            onClick={() => handleToggleHidden(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isHidden)}
+            title={isHidden ? "Set as visible" : "Mark as hidden"}
+            className={`transition-colors ${isHidden ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+          >
+            {isHidden ? <EyeClosed size={18} /> : <Eye size={18} />}
+          </button>
+          </>
         )}
-        {/* Hidden toggle */}
-        <button
-          onClick={() => handleToggleHidden(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isHidden)}
-          title={isHidden ? "Set as visible" : "Mark as hidden"}
-          className={`transition-colors ${isHidden ? "text-purple-400" : "text-neutral-400"} hover:text-purple-300`}
-          style={{ background: "none", border: "none", cursor: "pointer" }}
-        >
-          {isHidden ? <EyeClosed size={18} /> : <Eye size={18} />}
-        </button>
         {/* Delete */}
         <button
           onClick={() => handleDelete(setMessages, setThreadMessages, setAltMessages, msg.message_id, !isDeleted)}
@@ -194,8 +201,18 @@ export default function MessageActions({
           className="text-neutral-400 hover:text-red-400 transition-colors"
           style={{ background: "none", border: "none", cursor: "pointer" }}
         >
-          {isDeleted ? <SquareX size={18} /> : <Shredder size={18} />}
+          {isDeleted ? <MessageCircleReply size={18} /> : <MessageCircleOff size={18} />}
         </button>
+        {mode === "forgotten" && isDeleted && (
+        <button
+          onClick={() => handlePurge(setMessages, setThreadMessages, setAltMessages, msg.message_id)}
+          title="Permanently Forget Message"
+          className="text-neutral-400 hover:text-red-400 transition-colors"
+          style={{ background: "none", border: "none", cursor: "pointer" }}
+        >
+          <MessageCircleX size={18} />
+        </button>
+          )}
         {mode === "history" && !isDeleted && !isHidden && (
           <>
             <span

@@ -205,6 +205,30 @@ class GraphDBConnector:
             "MATCH ()-[r]->() RETURN type(r) AS type, count(r) AS total ORDER BY total DESC;"
         )
 
+    def delete_memgraph_message(self, message_id: str) -> bool:
+        try:
+            query = (
+                "OPTIONAL MATCH (m:Message {message_id: $message_id}) "
+                "DETACH DELETE m"
+            )
+            self.run_cypher(query, {"message_id": message_id})
+
+            check_query = (
+                "MATCH (m:Message {message_id: $message_id}) "
+                "RETURN m LIMIT 1"
+            )
+            check_result = list(
+                self.run_cypher(check_query, {"message_id": message_id})
+            )
+            if not check_result:
+                return True
+
+            print(f"Memgraph: {message_id} still present after deletion attempt.")
+            return False
+        except Exception as e:
+            print(f"Memgraph: Exception deleting {message_id}: {e}")
+            return False
+
     # --- Utility for ad hoc Cypher ---
     def query(self, cypher, params=None):
         return self.run_cypher(cypher, params)
@@ -315,6 +339,8 @@ def delete_fact_by_id(mg, fact_id):
         "MATCH (f:Fact {fact_id: $fact_id}) DETACH DELETE f",
         {"fact_id": str(fact_id)}
     )
+
+
 
 # --- Initialization Helper ---
 

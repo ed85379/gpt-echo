@@ -6,8 +6,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import MessageActions from "./MessageActions";
 import TTSController from "./TTSController";
-import { CandleHolderLit } from "@/utils/messageActions";
-import { BookMarked, EyeOff, Shredder } from "lucide-react";
+import { BookMarked, EyeOff, MessageCircleHeart, MessageCircleOff } from "lucide-react";
 
 const formatTimestamp = (utcString) => {
   if (!utcString) return "";
@@ -455,7 +454,7 @@ const MessageItem = React.memo(
           ))}
           {isRemembered && (
             <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <CandleHolderLit size={14} className="inline" /> Highlighted
+              <MessageCircleHeart size={14} className="inline" /> Highlighted
             </span>
           )}
           {isPrivate && (
@@ -470,7 +469,7 @@ const MessageItem = React.memo(
           )}
           {isDeleted && (
             <span className="bg-neutral-700 text-xs text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <Shredder size={14} className="inline" /> Forgotten
+              <MessageCircleOff size={14} className="inline" /> Forgotten
             </span>
           )}
         </div>

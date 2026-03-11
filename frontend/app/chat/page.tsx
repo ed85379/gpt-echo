@@ -748,7 +748,10 @@ export default function ChatPage() {
                     <span>Forgotten Messages</span>
                   </button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-full w-[500px] sm:w-[600px] xl:w-[1000px] xl:max-w-none bg-neutral-900 border-l border-neutral-700">
+                  <SheetContent
+                    side="right" size="wide"
+                    className="bg-neutral-900 border-l border-neutral-700"
+                  >
                   <SheetHeader>
                     <SheetDescription className="sr-only">
                       Forgotten Messages
@@ -761,52 +764,52 @@ export default function ChatPage() {
                   </div>
 
                   <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-6rem)] pr-1">
-                <RecycleBin
-                  // Feature flags
-                  enableTTS={enableTTS}
-                  enablePublic={enablePublic}
-                  enableSync={enableSync}
-                  // General and nav
-                  audioControls={audioControls}
+                    <RecycleBin
+                      // Feature flags
+                      enableTTS={enableTTS}
+                      enablePublic={enablePublic}
+                      enableSync={enableSync}
+                      // General and nav
+                      audioControls={audioControls}
 
-                  // Project & Threads
-                  threads={threads}
-                  threadMap={threadMap}
-                  projects={projects}
-                  project={project}
-                  fetchProjects={fetchProjects}
-                  projectMap={projectMap}
-                  projectsLoading={projectsLoading}
+                      // Project & Threads
+                      threads={threads}
+                      threadMap={threadMap}
+                      projects={projects}
+                      project={project}
+                      fetchProjects={fetchProjects}
+                      projectMap={projectMap}
+                      projectsLoading={projectsLoading}
 
-                  // Message Actions
-                  threadMessages={threadMessages}
-                  setThreadMessages={setThreadMessages}
-                  setChatMessages={setMessages}
-                  clearSelectionAndExit={clearSelectionAndExit}
-                  onReturnToThisMoment={handleReturnToThisMoment}
-                  createThreadWithMessages={createThreadWithMessages}
-                  multiSelectEnabled={multiSelectEnabled}
-                  selectedMessageIds={selectedMessageIds}
-                  showProjectPanel={showProjectPanel}
-                  setShowProjectPanel={setShowProjectPanel}
-                  showTagPanel={showTagPanel}
-                  setShowTagPanel={setShowTagPanel}
-                  showThreadPanel={showThreadPanel}
-                  setShowThreadPanel={setShowThreadPanel}
-                  showSingleThreadPanel={showSingleThreadPanel}
-                  setShowSingleThreadPanel={setShowSingleThreadPanel}
-                  handleToggleMultiSelect={handleToggleMultiSelect}
-                  handleToggleSelect={handleToggleSelect}
-                  handleCreateThread={handleCreateThread}
-                  handleJoinThread={handleJoinThread}
-                  handleLeaveThread={handleLeaveThread}
-                  tagDialogOpen={tagDialogOpen}
-                  setTagDialogOpen={setTagDialogOpen}
-                  handleConfirmProject={handleConfirmProject}
-                  existingTagsForSelection={existingTagsForSelection}
-                  existingThreadsForSelection={existingThreadsForSelection}
-                  clearSelectionAndExit={clearSelectionAndExit}
-                />
+                      // Message Actions
+                      threadMessages={threadMessages}
+                      setThreadMessages={setThreadMessages}
+                      setChatMessages={setMessages}
+                      clearSelectionAndExit={clearSelectionAndExit}
+                      onReturnToThisMoment={handleReturnToThisMoment}
+                      createThreadWithMessages={createThreadWithMessages}
+                      multiSelectEnabled={multiSelectEnabled}
+                      selectedMessageIds={selectedMessageIds}
+                      showProjectPanel={showProjectPanel}
+                      setShowProjectPanel={setShowProjectPanel}
+                      showTagPanel={showTagPanel}
+                      setShowTagPanel={setShowTagPanel}
+                      showThreadPanel={showThreadPanel}
+                      setShowThreadPanel={setShowThreadPanel}
+                      showSingleThreadPanel={showSingleThreadPanel}
+                      setShowSingleThreadPanel={setShowSingleThreadPanel}
+                      handleToggleMultiSelect={handleToggleMultiSelect}
+                      handleToggleSelect={handleToggleSelect}
+                      handleCreateThread={handleCreateThread}
+                      handleJoinThread={handleJoinThread}
+                      handleLeaveThread={handleLeaveThread}
+                      tagDialogOpen={tagDialogOpen}
+                      setTagDialogOpen={setTagDialogOpen}
+                      handleConfirmProject={handleConfirmProject}
+                      existingTagsForSelection={existingTagsForSelection}
+                      existingThreadsForSelection={existingThreadsForSelection}
+                      clearSelectionAndExit={clearSelectionAndExit}
+                    />
                   </div>
 
                   <div className="mt-4 flex justify-end gap-2">
