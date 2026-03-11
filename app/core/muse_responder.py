@@ -1052,17 +1052,37 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     dev_prompt, user_prompt = build_speak_prompt(subject=subject, payload=payload, destination="frontend")
 
     response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"))
+    cleaned_response, cmd_results = process_commands_in_response(
+        response,
+        apply_filters=True,      # use COMMANDS[cmd]["filter"]
+        strip_on_error=True,     # keep UI clean
+    )
+
+    # Optional: log a compact summary of what ran
+    if cmd_results:
+        summary = "; ".join(
+            f"{r.name}:{r.status}" for r in cmd_results
+        )
+        write_system_log(
+            level="info",
+            module="core",
+            component="responder",
+            function="handle_speak_command",
+            action="commands_processed",
+            summary=summary,
+        )
+
     # Normalize muse-experience tags outside of fenced code blocks
-    response = normalize_muse_experience_tags(response)
+    cleaned_response = normalize_muse_experience_tags(cleaned_response)
 
     timestamp = datetime.now(timezone.utc).isoformat()
-    send_to_websocket(response, to, timestamp)
+    send_to_websocket(cleaned_response, to, timestamp)
 
     write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
-                           action="speak_executed", subject=subject, response=response)
+                           action="speak_executed", subject=subject, response=cleaned_response)
     await log_queue.put({
         "role": "muse",
-        "message": response,
+        "message": cleaned_response,
         "source": "frontend", # hard-coded to ignore source, so these will always be in SOURCES_CHAT
         "timestamp": timestamp
     })
