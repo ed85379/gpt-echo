@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import discord
 import traceback
 import asyncio
+import base64
 import re
 import websockets
 import json
@@ -60,6 +61,25 @@ async def handle_incoming_discord_message(message):
             #print(f"📥 Incoming message from {message.author}: {message.content}")
 
             user_input = message.content.strip()
+            attachments = message.attachments  # list[discord.Attachment]
+
+            image_attachments = [
+                att for att in attachments
+                if att.content_type and att.content_type.startswith("image/")
+            ]
+
+            files_payload = []
+            for att in message.attachments:
+                print(f"DEBUG Content_type: {att.content_type}")
+                if att.content_type and att.content_type.startswith("image/"):
+                    data = await att.read()
+                    b64 = base64.b64encode(data).decode("ascii")
+                    files_payload.append({
+                        "name": att.filename,
+                        "type": att.content_type,
+                        "encoding": "base64",
+                        "data": b64,
+                    })
 
             # Log the incoming user message
             await log_message(
@@ -77,15 +97,17 @@ async def handle_incoming_discord_message(message):
             )
             timestamp_for_context = datetime.now(timezone.utc).isoformat()
             # Call prompt_profiles to build the prompt for the frontend UI
-            dev_prompt, user_prompt = build_discord_prompt(
+            dev_prompt, user_prompt, ephemeral_images = build_discord_prompt(
                 user_input,
                 author_name=message.author.name,
                 source="discord",
-                timestamp=timestamp_for_context
+                timestamp=timestamp_for_context,
+                ephemeral_files=files_payload,
             )
-            print(user_prompt)
+            #print(f"USER PROMPT: {user_prompt}")
+            print(f"ATTACHMENTS: {ephemeral_images}")
             # Get Muse's response
-            muse_response = get_openai_response(dev_prompt, user_prompt, client=discord_openai_client, prompt_type="discord")
+            muse_response = get_openai_response(dev_prompt, user_prompt, client=discord_openai_client, prompt_type="discord", images=ephemeral_images)
             #print("🧠 Muse response generated:")
             #print(muse_response)
 

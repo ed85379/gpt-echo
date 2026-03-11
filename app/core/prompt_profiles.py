@@ -179,6 +179,7 @@ def build_discord_prompt(user_input, **kwargs):
     builder.add_memory_layers(user_query=user_input)
 
     # User role segments
+    ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
                                 public=True)
     builder.render_locations(current_location=source)
@@ -194,7 +195,7 @@ def build_discord_prompt(user_input, **kwargs):
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt += f"\n\n[Discord] {kwargs.get("author_name")} said:\n{user_input}\n{footer}\n\n[Discord] {muse_name}:"
-    return dev_prompt, user_prompt
+    return dev_prompt, user_prompt, ephemeral_images
 
 def build_check_reminders_prompt(reminders):
     builder = PromptBuilder()
