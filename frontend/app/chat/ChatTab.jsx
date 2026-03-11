@@ -16,11 +16,26 @@ import MultiActionBar from "@/components/app/MultiActionBar"
 import ProjectPickerPanel from "@/components/app/ProjectPickerPanel"
 import TagPanel from "@/components/app/TagPanel"
 import ThreadPanel from "@/components/app/ThreadPanel";
+import { Toggle } from "@/components/ui/toggle"
+import { IconToggleButton } from "@/components/ui/icon-toggle-button"
 // Utils
 import { assignMessageId, toPythonIsoString, fileToBase64, trimMessages } from '@/utils/utils';
 
 // Icons
-import { ArrowBigDownDash, Paperclip, Pin, Sparkles, History, Slash, Split } from 'lucide-react';
+import {
+  ArrowBigDownDash,
+  Paperclip,
+  Pin,
+  Sparkles,
+  History,
+  Slash,
+  Split,
+  Headphones,
+  Bell,
+  BellOff,
+  MessageCircleMore,
+  MessageCircleX
+  } from 'lucide-react';
 function HistoryOffIcon(props) {
   return (
     <span className="relative inline-flex h-4 w-4" {...props}>
@@ -106,6 +121,8 @@ const ChatTab = (
   const {
     autoTTS,
     setAutoTTS,
+    silent,
+    setSilent,
     } = audioControls;
 
   const mode = "chat";
@@ -258,7 +275,7 @@ const ChatTab = (
   const chatEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const messageRefs = useRef({});
-  const { museProfile, museProfileLoading, uiStates } = useConfig();
+  const { museProfile, museProfileLoading, uiStates, userConfig, updateUserConfig } = useConfig();
   const museName = museProfile?.name?.[0]?.content ?? "Muse";
   const INITIAL_RENDERED_MESSAGES = 10;  // On reload, after chat, etc.
   const SCROLLBACK_LIMIT = 30;            // After scroll up
@@ -604,28 +621,69 @@ const ChatTab = (
   // ------------------------------------
   // End - Message Actions States and Functions
   // ------------------------------------
+  const onToggleAutoTTS = () => {
+    setAutoTTS((prev) => !prev);
+  };
+  const onToggleSilent = () => {
+    setSilent((prev) => !prev);
+  };
 
+  const unpromptedMessages = userConfig?.muse_features?.ENABLE_UNPROMPTED_MESSAGING ?? true;
+  const handleSaveUnpromptedMessages = async () => {
+    if (!userConfig) return;
+
+    const currentMuseFeatures = userConfig.muse_features || {};
+
+    const nextMuseFeatures = {
+      ...currentMuseFeatures,
+      ENABLE_UNPROMPTED_MESSAGING: !unpromptedMessages,
+    };
+
+    try {
+      await updateUserConfig({
+        section: "muse_features",
+        data: nextMuseFeatures,
+      });
+    } catch (err) {
+      console.error("Failed to update unprompted messaging setting:", err);
+    }
+  };
 
   return (
     <div className="relative flex flex-col h-full ">
       <div className="flex items-center justify-between mt-4">
         {/* Left side: Auto-TTS controls */}
-        {enableTTS ? (
-          <div className="flex gap-2 items-center">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={autoTTS}
-                onChange={(e) => setAutoTTS(e.target.checked)}
-                disabled={thinking || connecting}
-              />
-              <span className="text-sm text-neutral-300">Auto-TTS</span>
-            </label>
-          </div>
-        ) : (
-          // Spacer to preserve layout
-          <div className="h-6" />
+        <div className="flex gap-2 items-center">
+        {enableTTS && (
+          <>
+            <IconToggleButton
+              pressed={autoTTS}
+              onClick={() => setAutoTTS(v => !v)}
+              title="Auto‑read new messages"
+              disabled={thinking || connecting}
+            >
+              <Headphones className="h-4 w-4" />
+            </IconToggleButton>
+          </>
         )}
+          <IconToggleButton
+            pressed={silent}
+            onClick={() => setSilent(v => !v)}
+            title="Disable message pings"
+            disabled={thinking || connecting}
+          >
+            {silent ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+          </IconToggleButton>
+          <IconToggleButton
+            pressed={!unpromptedMessages}
+            onClick={handleSaveUnpromptedMessages}
+            title="Disable unprompted messages"
+            disabled={thinking || connecting}
+          >
+            {unpromptedMessages ? <MessageCircleMore className="h-4 w-4" /> : <MessageCircleX className="h-4 w-4" />}
+          </IconToggleButton>
+        </div>
+
         {/* // Uncomment this to experiment with different renderers
         <div className="flex items-center justify-end px-2 py-1 text-xs text-neutral-400 gap-2">
           <span>Renderer:</span>

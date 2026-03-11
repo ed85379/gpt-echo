@@ -8,12 +8,18 @@ export function useAudioControls() {
   const [isTTSPlaying, setIsTTSPlaying] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState(null);
   const [autoTTS, setAutoTTS] = useState(false);
+  const [silent, setSilent] = useState(false);
   const autoTTSRef = useRef(autoTTS);
+  const silentRef = useRef(silent);
   const audioResponseRef = useRef(null);
 
   useEffect(() => {
     autoTTSRef.current = autoTTS;
   }, [autoTTS]);
+
+  useEffect(() => {
+    silentRef.current = silent;
+  }, [silent]);
 
   const playPing = useCallback(() => {
     const audio = new window.Audio("/ping.mp3");
@@ -117,7 +123,9 @@ export function useAudioControls() {
       if (autoTTSRef.current) {
         speak(incoming, () => setIsTTSPlaying(false));
       } else {
-        playPing();
+        if (silentRef.current === false) {
+          playPing();
+        }
       }
     };
   }, [speak, playPing]);
@@ -146,6 +154,8 @@ export function useAudioControls() {
     setSpeakingMessageId,
     autoTTS,
     setAutoTTS,
+    silent,
+    setSilent,
     audioResponseRef,
   };
 }
