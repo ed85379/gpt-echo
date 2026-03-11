@@ -136,12 +136,15 @@ def build_payload_for_model(model: str,
 
     CHAT_MODELS_WITH_CACHE_RETENTION_AND_REASONING = {
         "gpt-5.1-chat-latest",
-        "gpt-5.2-chat-latest"
+        "gpt-5.2-chat-latest",
+        "gpt-5.3-chat-latest",
+
     }
 
     CHAT_MODELS_WITH_CACHE_RETENTION = {
+        "gpt-5.1",
         "gpt-5.2",
-        "gpt-5.1"
+        "gpt-5.4"
     }
     # Note: reasoning effort for <=5 supports minimal, low, medium, high. >=5.1 replaces minimal with none
 
@@ -167,7 +170,7 @@ def build_payload_for_model(model: str,
             {"role": "developer", "content": dev_content},
             {"role": "user", "content": user_content},
         ]
-        kwargs = {"reasoning": {"effort": "medium"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
+        kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
 
     elif m in CHAT_MODELS:
         input_msgs = [

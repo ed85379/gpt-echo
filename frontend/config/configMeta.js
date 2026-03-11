@@ -45,6 +45,8 @@ export const SETTINGS_META = {
         { value: "gpt-5.1", label: "gpt-5.1" },
         { value: "gpt-5.2-chat-latest", label: "gpt-5.2-chat-latest" },
         { value: "gpt-5.2", label: "gpt-5.2" },
+        { value: "gpt-5.3-chat-latest", label: "gpt-5.3-chat-latest" },
+        { value: "gpt-5.4", label: "gpt-5.4" },
       ],
     },
     OPENAI_FULL_MODEL: {
@@ -61,6 +63,8 @@ export const SETTINGS_META = {
         { value: "gpt-5.1", label: "gpt-5.1" },
         { value: "gpt-5.2-chat-latest", label: "gpt-5.2-chat-latest" },
         { value: "gpt-5.2", label: "gpt-5.2" },
+        { value: "gpt-5.3-chat-latest", label: "gpt-5.3-chat-latest" },
+        { value: "gpt-5.4", label: "gpt-5.4" },
       ],
     },
     OPENAI_WHISPER_MODEL: {
