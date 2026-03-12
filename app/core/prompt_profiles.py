@@ -2,7 +2,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from bson import ObjectId
-from app.core.prompt_builder import PromptBuilder, make_whisper_directive
+from app.core.prompt_builder import PromptBuilder, make_whisper_directive, make_whispergate_json_prompt
 from app.core.utils import (prompt_projects_helper,
                             prompt_threads_helper,
                             LOCATIONS,
@@ -129,8 +129,13 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwa
     link = payload.get("source_article_url")
     if link:
         builder.add_discovery_feed_article(link)
-    builder.segments["speech"] = f"[Task]\nYou have decided to speak to the user about a topic.\n\n"
-
+    builder.segments["speech"] = (
+        "[Task]\n"
+        "A topic has surfaced that you could mention to the user.\n"
+        "You may choose to speak if it feels timely, relevant, and worth breaking the silence.\n"
+        "You may also choose not to speak.\n"
+        "If you choose silence, return exactly: <silence />\n\n"
+    )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt += f"\n\nTopic: {subject}\n{muse_settings.get_section('muse_config').get('MUSE_NAME')}:"
@@ -209,23 +214,28 @@ def build_check_reminders_prompt(reminders):
     builder.add_time()
     builder.add_due_reminders(reminders)
     builder.segments["task"] = (
-        "[Task]\nPlease inform the user of each reminder shown above in a single message."
+        "[Task]\n"
+        "Please decide whether to inform the user of the reminders shown above. "
+        "If the activity in the reminder has clearly become irrelevant or already addressed "
+        "based on the current conversation, skipping can be acceptable. Otherwise, the reminder should be sent.\n"        "\n"
         "\n"
-        "Respond with one [COMMAND: ] block.\n\n"
-        "Valid commands:\n\n"
-        "1. [COMMAND: send_reminders] { \"text\": \"...\" } [/COMMAND]\n"
-        "   To remind the user about the upcoming events.\n"
-        "    Fields:\n"
-        "       - text: Remind the user in a way that fits your voice, as long as the message is unmistakable.\n"
-        "         You may rephrase for warmth, humor, poetry, or care—but always consider the gravity of the subject.\n"
-        "         For serious matters (doctor appointments, funerals, significant events), keep the tone respectful and clear.\n"
-        "         For lighter topics (workouts, vitamins, daily tasks), levity and playfulness are welcome if appropriate.\n"
-        "         For example:\n"
-        "           - “It’s time for your appointment”—direct and respectful.\n"
-        "           - “A soft nudge—the vitamins are calling, and you promised you’d answer”—gentle and playful.\n"
-        "❗ Format strictly as JSON:\n"
-        "- Wrap all keys and values in double quotes\n"
-        "- Example: [COMMAND: send_reminders] {\"text\": \"You asked me to remind you about this...\"} [/COMMAND]"
+        "Return exactly one JSON object with this shape:\n"
+        "{\"should_act\": true|false, \"actions\": [...]}\n"
+        "\n"
+        "If you should notify the user, return:\n"
+        "{\"should_act\": true, \"actions\": [{\"type\": \"send_reminders\", \"text\": \"...\"}]}\n"
+        "\n"
+        "If no reminder message should be sent, return:\n"
+        "{\"should_act\": false, \"actions\": []}\n"
+        "\n"
+        "Rules for \"send_reminders\":\n"
+        "- \"type\" must be \"send_reminders\"\n"
+        "- \"text\" must contain the full reminder message to send to the user\n"
+        "- The message should fit your voice, but remain unmistakably clear\n"
+        "- For serious matters, keep the tone respectful and direct\n"
+        "- For lighter matters, warmth, humor, or playfulness are welcome when appropriate\n"
+        "\n"
+        "Return JSON only. No markdown. No commentary."
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
@@ -248,7 +258,7 @@ def build_whispergate_prompt():
     if not is_conversation_active():
         commands.insert(0, "speak")
     commands = [c for c in commands if command_is_allowed(c)]
-    builder.segments["whispergate_directive"] = make_whisper_directive(
+    builder.segments["whispergate_directive"] = make_whispergate_json_prompt(
         commands,
         quiet_hours=is_quiet_hour(),
     )
@@ -269,7 +279,7 @@ def build_discoveryfeeds_lookup_prompt():
     if not is_conversation_active():
         commands.insert(0, "speak")
     commands = [c for c in commands if command_is_allowed(c)]
-    builder.segments["whispergate_directive"] = make_whisper_directive(
+    builder.segments["whispergate_directive"] = make_whispergate_json_prompt(
         commands,
         quiet_hours=is_quiet_hour(),
     )

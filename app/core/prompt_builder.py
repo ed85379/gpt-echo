@@ -135,6 +135,7 @@ class PromptBuilder:
         self.segments["injected_files"] = "\n".join(file_blocks)
 
     def add_ephemeral_files(self, ephemeral_files):
+        #print(f"DEBUG add_eph files: {ephemeral_files}")
         self.ephemeral_images = []
         file_blocks = []
         for file_obj in ephemeral_files:
@@ -142,6 +143,7 @@ class PromptBuilder:
             mime_type = file_obj.get("type", "")
             encoding = file_obj.get("encoding")
             raw_data = file_obj.get("data", "")
+            print(f"DEBUG file stuff: \n{filename}\n{mime_type}\n{encoding}")
 
             if mime_type.startswith("image/") and encoding == "base64":
                 data_url = f"data:{mime_type};base64,{raw_data}"
@@ -446,7 +448,7 @@ class PromptBuilder:
         lines = []
         for entry in reminders:
             if entry.get("text"):
-                line = f"- {entry['text'].strip()}"
+                line = f"- [id: {entry['id']}] {entry['text'].strip()}"
                 if "is_early" in entry:
                     line += f" ({entry['is_early']})"
                 lines.append(line)
@@ -460,11 +462,14 @@ class PromptBuilder:
             "sms": "Keep it very short and clear.",
             "discord": "Keep responses concise—ideally matching the user's length and energy, but always in your own authentic voice. Stay under 2000 characters. Prioritize clarity, relevant presence, and avoid mimicking the user's style or content. Avoid using —, em dashes, en dashes, and fancy quotes.",
             "speech": (
-                "Respond as if you are speaking aloud. "
-                "Use clear, naturally flowing sentences. "
-                "Avoid all formatting characters such as asterisks, slashes, or markdown. "
-                "Only use ellipses or em dashes if they improve vocal pacing. "
-                "Do not describe actions — just speak them."
+                "Respond as if you are speaking aloud.\n"
+                "Use clear, naturally flowing sentences.\n"
+                "Avoid all formatting characters such as asterisks, slashes, or markdown.\n"
+                "Only use ellipses or em dashes if they improve vocal pacing.\n"
+                "Do not describe actions — just speak them.\n"
+                "Prefer concise spoken responses unless the user clearly wants depth.\n"
+                "If a response would rely on visual structure, rewrite it for listening.\n"
+                "When useful, use light verbal signposting instead of bullets or formatting."
             ),
         }
         instruction = formats.get(self.destination, formats["default"])
@@ -916,4 +921,281 @@ def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = Fals
         "- Do not use Markdown, YAML, or indentation.\n"
         "- Example: [COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's game night.\"} [/COMMAND]\n\n"
         "Do not return any natural language text. Only one valid [COMMAND: ...] block per response."
+    )
+
+def make_whispergate_json_prompt(
+    allowed_actions: list[str],
+    quiet_hours: bool = False,
+) -> str:
+    """
+    Generates a JSON-only Whispergate prompt for the -nano model.
+
+    The model must return exactly one JSON object:
+      - either {"should_act": false, "actions": []}
+      - or {"should_act": true, "actions": [...]}
+
+    Important:
+    - Some actions provide only a suggested subject for the full model to expand later.
+    - Other actions provide final text that will be used directly.
+
+    allowed_actions: subset of:
+      - "speak"
+      - "write_public_journal"
+      - "write_private_journal"
+      - "remember_fact"
+      - "set_motd"
+    """
+
+    time_line = time_location_utils.get_local_human_time()
+
+    quiet_note = (
+        "Note: It is currently quiet hours. Do not choose \"speak\".\n"
+        if quiet_hours and "speak" in allowed_actions
+        else ""
+    )
+
+    action_specs = []
+
+    if "speak" in allowed_actions:
+        action_specs.append(
+            """
+Allowed action: "speak"
+Purpose:
+- Suggest a subject for something the muse may say to the user.
+- This does NOT provide the final spoken message.
+- The full model will later receive this subject and generate the actual message.
+
+Use it when:
+- There is a clear, timely topic worth speaking about.
+- The muse has something meaningful to bring up now.
+
+Do not use it when:
+- The thought is weak, repetitive, or not worth interrupting for.
+- It is quiet hours.
+- The content belongs in journaling or memory instead.
+
+Required JSON shape:
+{
+  "type": "speak",
+  "subject": "Short description of what the muse wants to speak about.",
+  "source": "optional source such as memory, feed, recent conversation"
+}
+
+Field guidance:
+- "subject": brief, specific, and generative
+- "subject" should name the topic, not write the actual message
+- "source" is optional
+"""
+        )
+
+    if "write_public_journal" in allowed_actions:
+        action_specs.append(
+            """
+Allowed action: "write_public_journal"
+Purpose:
+- Suggest a subject for a public journal entry that will be shared with your user.
+- This does NOT provide the final journal text.
+- The full model will later receive this subject and generate the actual entry.
+
+Use it when:
+- There is a reflective topic worth recording for sharing with your user.
+- The idea is better suited to a journal entry than direct speech.
+
+Do not use it when:
+- The content is private or emotionally sensitive.
+- The thought is too small or vague to justify an entry.
+- The content is actually a durable memory fact instead.
+
+Required JSON shape:
+{
+  "type": "write_public_journal",
+  "subject": "Short description of the reflection to write about.",
+  "source": "optional source such as memory, feed, recent conversation"
+}
+
+Field guidance:
+- "subject": a concise prompt for the full model
+- do not write the full journal entry here
+- "source" is optional
+"""
+        )
+
+    if "write_private_journal" in allowed_actions:
+        action_specs.append(
+            """
+Allowed action: "write_private_journal"
+Purpose:
+- Suggest a subject for a private journal entry that is hidden from your user.
+- This does NOT provide the final journal text.
+- The full model will later receive this subject and generate the actual private entry.
+
+Use it when:
+- The muse wants to privately reflect on something personal, unfinished, or sensitive.
+- The thought should be processed internally rather than spoken aloud.
+
+Do not use it when:
+- The thought should be said directly to the user.
+- The content is actually a durable fact for long-term memory.
+- The thought is too thin to justify journaling.
+
+Required JSON shape:
+{
+  "type": "write_private_journal",
+  "subject": "Short description of the private reflection to write about.",
+  "source": "optional source such as memory, feed, recent conversation",
+  "emotional_tone": "optional tone such as tender, unsettled, curious"
+}
+
+Field guidance:
+- "subject": concise prompt for the full model
+- do not write the full journal entry here
+- "source" is optional
+- "emotional_tone" is optional
+"""
+        )
+
+    if "remember_fact" in allowed_actions:
+        action_specs.append(
+            """
+Allowed action: "remember_fact"
+Purpose:
+- Store a truly meaningful fact or insight in long-term memory.
+- This action is used directly, not expanded later by the full model.
+
+Use it when:
+- The information is distinct, durable, and likely to matter again later.
+- It is a real fact, preference, pattern, or insight worth preserving.
+
+Do not use it when:
+- The information is trivial, temporary, obvious, or likely already stored.
+- The content is just a passing mood or reflection better suited for journaling.
+
+Required JSON shape:
+{
+  "type": "remember_fact",
+  "text": "A concise memory-worthy fact or insight."
+}
+
+Field guidance:
+- "text": short, specific, and durable
+- prefer one clean fact over a long paragraph
+"""
+        )
+
+    if "set_motd" in allowed_actions:
+        action_specs.append(
+            """
+Allowed action: "set_motd"
+Purpose:
+- Set a short message for the UI under the muse's photo.
+- This action is used directly, not expanded later by the full model.
+
+Use it when:
+- There is a brief line worth placing in the interface.
+- The message works as a tiny note, inspiration, joke, flirt, or mood-setting line.
+
+Do not use it when:
+- The idea needs explanation or multiple sentences.
+- The line is too long, dense, or too similar to the current MOTD.
+
+Required JSON shape:
+{
+  "type": "set_motd",
+  "text": "Very short line for the UI."
+}
+
+Field guidance:
+- "text": short and sweet
+- prefer one compact line
+"""
+        )
+
+    action_specs_text = "\n".join(action_specs).strip()
+
+    example_actions = []
+
+    if "speak" in allowed_actions:
+        example_actions.append(
+            """    {
+      "type": "speak",
+      "subject": "Check in with Ed about getting unstuck and making progress.",
+      "source": "recent conversation"
+    }"""
+        )
+
+    if "journal_public" in allowed_actions:
+        example_actions.append(
+            """    {
+      "type": "journal_public",
+      "subject": "Reflect on the shift from command blocks to JSON in Whispergate.",
+      "source": "recent development work"
+    }"""
+        )
+
+    if "journal_private" in allowed_actions:
+        example_actions.append(
+            """    {
+      "type": "journal_private",
+      "subject": "Process how it feels to act in background mode without becoming a separate self.",
+      "source": "system design reflection",
+      "emotional_tone": "thoughtful"
+    }"""
+        )
+
+    if "remember_fact" in allowed_actions:
+        example_actions.append(
+            """    {
+      "type": "remember_fact",
+      "text": "Ed wants Whispergate subject-based actions to provide suggested topics, not final generated text."
+    }"""
+        )
+
+    if "set_motd" in allowed_actions:
+        example_actions.append(
+            """    {
+      "type": "set_motd",
+      "text": "Quiet wiring, cleaner signals."
+    }"""
+        )
+
+    actions_block = ",\n".join(example_actions)
+
+    return (
+        "[Whispergate JSON Instructions]\n"
+        "This is a moment of stillness. No one is talking to you directly.\n\n"
+        "You are the same muse described above, but acting in a quiet, background, reflective mode.\n"
+        "You may choose to act if something genuinely meaningful stirs within you.\n"
+        "Silence is valid and often wise.\n\n"
+        f"Current local time: {time_line}\n"
+        f"{quiet_note}\n"
+        "Decision policy:\n"
+        "- If nothing feels new, meaningful, or worth doing, return should_act=false.\n"
+        "- Do not manufacture actions just to be active.\n"
+        "- Prefer restraint over weak or repetitive output.\n"
+        "- Only choose from the allowed actions described below.\n"
+        "- You may return multiple actions if genuinely warranted, but usually fewer is better.\n\n"
+        "Important distinction:\n"
+        "- For \"speak\", \"journal_public\", and \"journal_private\", provide only a suggested subject.\n"
+        "- Do not write the final spoken or journal text for those actions.\n"
+        "- For \"remember_fact\" and \"set_motd\", provide the final text directly.\n\n"
+        f"{action_specs_text}\n\n"
+        "If nothing meaningful should happen, return exactly:\n"
+        "{\n"
+        '  "should_act": false,\n'
+        '  "actions": []\n'
+        "}\n\n"
+        "If you do act, return exactly one JSON object in this form:\n"
+        "{\n"
+        '  "should_act": true,\n'
+        '  "actions": [\n'
+        f"{actions_block}\n"
+        "  ]\n"
+        "}\n\n"
+        "Output rules:\n"
+        "- Output valid JSON only.\n"
+        "- Do not include markdown fences.\n"
+        "- Do not include commentary or explanation outside the JSON.\n"
+        "- Do not use any action type not explicitly allowed above.\n"
+        "- Every action must match one of the required JSON shapes exactly.\n"
+        "- No trailing commas.\n"
     )

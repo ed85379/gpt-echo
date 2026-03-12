@@ -284,6 +284,169 @@ def process_commands_in_response(
     cleaned_response = "".join(cleaned_parts)
     return cleaned_response, results
 
+
+
+def process_whispergate_json_actions(
+    raw_response: str,
+    *,
+    source: Optional[str] = None,
+    whispergate_data: Optional[Dict[str, Any]] = None,
+    apply_filters: bool = True,
+) -> List[CommandResult]:
+    """
+    Process a JSON-only Whispergate response.
+
+    Expected shape:
+    {
+      "should_act": true|false,
+      "actions": [
+        {"type": "speak", "subject": "..."},
+        {"type": "set_motd", "text": "..."}
+      ]
+    }
+
+    Returns:
+        list[CommandResult]
+    """
+    try:
+        data = json.loads(raw_response)
+    except Exception as e:
+        write_system_log(
+            level="error",
+            module="core",
+            component="command_core",
+            function="process_whispergate_json_actions",
+            action="parse_json_error",
+            payload=raw_response,
+            error=str(e),
+        )
+        return [
+            CommandResult(
+                name="whispergate_json",
+                payload={},
+                status="parse_error",
+                error=str(e),
+            )
+        ]
+
+    if not isinstance(data, dict):
+        return [
+            CommandResult(
+                name="whispergate_json",
+                payload={},
+                status="parse_error",
+                error="Top-level JSON must be an object",
+            )
+        ]
+
+    if not data.get("should_act"):
+        return [
+            CommandResult(
+                name="whispergate_json",
+                payload={},
+                status="silence",
+            )
+        ]
+
+    actions = data.get("actions", [])
+    if not isinstance(actions, list):
+        return [
+            CommandResult(
+                name="whispergate_json",
+                payload=data,
+                status="parse_error",
+                error="'actions' must be a list",
+            )
+        ]
+
+    results: List[CommandResult] = []
+
+    for action in actions:
+        if not isinstance(action, dict):
+            results.append(CommandResult(
+                name="whispergate_action",
+                payload={},
+                status="parse_error",
+                error="Each action must be an object",
+            ))
+            continue
+
+        command_name = action.get("type")
+        if not isinstance(command_name, str) or not command_name.strip():
+            results.append(CommandResult(
+                name="unknown",
+                payload=action,
+                status="parse_error",
+                error="Action missing valid 'type'",
+            ))
+            continue
+
+        command_name = command_name.strip()
+        payload = {k: v for k, v in action.items() if k != "type"}
+
+        handler = COMMAND_HANDLERS.get(command_name)
+        if not handler:
+            write_system_log(
+                level="warn",
+                module="core",
+                component="command_core",
+                function="process_whispergate_json_actions",
+                action="unknown_command",
+                command=command_name,
+                payload=action,
+            )
+            results.append(CommandResult(
+                name=command_name,
+                payload=payload,
+                status="no_handler",
+            ))
+            continue
+
+        try:
+            extra_kwargs = whispergate_data or {}
+            if source is not None:
+                extra_kwargs = {**extra_kwargs, "source": source}
+
+            handler_result = handler(payload, **extra_kwargs) if extra_kwargs else handler(payload)
+
+            visible = ""
+            hidden = {}
+
+            if apply_filters and handler_result is not None:
+                filter_fn = COMMANDS[command_name].get("filter")
+                if filter_fn:
+                    filtered = filter_fn(handler_result) or {}
+                    visible = filtered.get("visible", "") or ""
+                    hidden = filtered.get("hidden", {}) or {}
+
+            results.append(CommandResult(
+                name=command_name,
+                payload=payload,
+                status="ok",
+                visible=visible,
+                hidden=hidden,
+            ))
+
+        except Exception as e:
+            write_system_log(
+                level="error",
+                module="core",
+                component="command_core",
+                function="process_whispergate_json_actions",
+                action="command_error",
+                command=command_name,
+                payload=payload,
+                error=str(e),
+            )
+            results.append(CommandResult(
+                name=command_name,
+                payload=payload,
+                status="error",
+                error=str(e),
+            ))
+
+    return results
+
 class CommandMatch(NamedTuple):
     name: str
     json_text: str
@@ -918,12 +1081,11 @@ def handle_muse_decision(
         )
         return "WhisperGate chose silence."
 
-    cleaned_response, cmd_results = process_commands_in_response(
+    cmd_results = process_whispergate_json_actions(
         response,
         source=source,
         whispergate_data=whispergate_data,
         apply_filters=False,     # no <command-response> wrapping needed
-        strip_on_error=True,
     )
 
     if not cmd_results:
@@ -939,7 +1101,7 @@ def handle_muse_decision(
 
     # Log each command result
     for r in cmd_results:
-        level = "info" if r.status == "ok" else "warn" if r.status in ("no_handler", "parse_error") else "error"
+        level = "info" if r.status == "ok" else "warn" if r.status in ("no_handler", "parse_error", "silence") else "error"
         write_system_log(
             level=level,
             module="core",
@@ -957,6 +1119,8 @@ def handle_muse_decision(
     for r in cmd_results:
         if r.status == "ok":
             summary_parts.append(f"Processed: {r.name}")
+        elif r.status == "silence":
+            summary_parts.append(f"Whispergate chose silence")
         elif r.status == "no_handler":
             summary_parts.append(f"Unknown command: {r.name}")
         elif r.status == "parse_error":
@@ -1041,28 +1205,57 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     This is intended for when the AI prompts itself to speak
     """
     if is_quiet_hour():
-        write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
-                               action="speak_skipped", reason="Quiet hours (direct)", text=payload.get("text", ""))
+        write_system_log(
+            level="debug",
+            module="core",
+            component="responder",
+            function="handle_speak_command",
+            action="speak_skipped",
+            reason="Quiet hours (direct)",
+            text=payload.get("text", "")
+        )
         return "Skipped direct speak due to quiet hours"
 
     subject = payload.get("subject", "")
     if not subject:
         return "Missing subject for speak command"
 
-    dev_prompt, user_prompt = build_speak_prompt(subject=subject, payload=payload, destination="frontend")
-
-    response = get_openai_response(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="api", model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"))
-    cleaned_response, cmd_results = process_commands_in_response(
-        response,
-        apply_filters=True,      # use COMMANDS[cmd]["filter"]
-        strip_on_error=True,     # keep UI clean
+    dev_prompt, user_prompt = build_speak_prompt(
+        subject=subject,
+        payload=payload,
+        destination="frontend"
     )
 
-    # Optional: log a compact summary of what ran
-    if cmd_results:
-        summary = "; ".join(
-            f"{r.name}:{r.status}" for r in cmd_results
+    response = get_openai_response(
+        dev_prompt,
+        user_prompt,
+        client=speak_openai_client,
+        prompt_type="api",
+        model=muse_settings.get_section("llm_config").get("OPENAI_MODEL")
+    )
+
+    raw_response = normalize_muse_experience_tags((response or "").strip())
+    silence_markers = {"", "<silence />", "<silence/>", "<silence></silence>"}
+
+    if raw_response in silence_markers:
+        write_system_log(
+            level="debug",
+            module="core",
+            component="responder",
+            function="handle_speak_command",
+            action="speak_vetoed",
+            subject=subject,
         )
+        return "Speak vetoed"
+
+    cleaned_response, cmd_results = process_commands_in_response(
+        raw_response,
+        apply_filters=True,
+        strip_on_error=True,
+    )
+
+    if cmd_results:
+        summary = "; ".join(f"{r.name}:{r.status}" for r in cmd_results)
         write_system_log(
             level="info",
             module="core",
@@ -1072,20 +1265,38 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
             summary=summary,
         )
 
-    # Normalize muse-experience tags outside of fenced code blocks
-    cleaned_response = normalize_muse_experience_tags(cleaned_response)
+    cleaned_response = normalize_muse_experience_tags(cleaned_response).strip()
+    if not cleaned_response:
+        write_system_log(
+            level="debug",
+            module="core",
+            component="responder",
+            function="handle_speak_command",
+            action="speak_empty_after_processing",
+            subject=subject,
+        )
+        return "Speak produced no outward text"
 
     timestamp = datetime.now(timezone.utc).isoformat()
     send_to_websocket(cleaned_response, to, timestamp)
 
-    write_system_log(level="debug", module="core", component="responder", function="handle_speak_command",
-                           action="speak_executed", subject=subject, response=cleaned_response)
+    write_system_log(
+        level="debug",
+        module="core",
+        component="responder",
+        function="handle_speak_command",
+        action="speak_executed",
+        subject=subject,
+        response=cleaned_response
+    )
+
     await log_queue.put({
         "role": "muse",
         "message": cleaned_response,
-        "source": "frontend", # hard-coded to ignore source, so these will always be in SOURCES_CHAT
+        "source": "frontend",
         "timestamp": timestamp
     })
+
     return ""
 
 
