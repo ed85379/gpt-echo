@@ -31,7 +31,7 @@ async def task_runner(task):
         while True:
             try:
                 print(f"[ContinuityEngine] Running task: {name}")
-                fn()
+                await fn()
             except Exception as e:
                 print(f"[ContinuityEngine] Error in task '{name}': {e}")
             await asyncio.sleep(86400)  # Every 24 hours after
@@ -44,7 +44,7 @@ async def task_runner(task):
         while True:
             try:
                 print(f"[ContinuityEngine] Running task: {name}")
-                fn()
+                await fn()
             except Exception as e:
                 print(f"[ContinuityEngine] Error in task '{name}': {e}")
             await asyncio.sleep(interval)

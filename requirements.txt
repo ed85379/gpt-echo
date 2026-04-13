@@ -36,3 +36,5 @@ cron_descriptor
 humanize
 pgeocode
 astral
+moonshine-voice
+fal_client

@@ -226,7 +226,13 @@ def process_commands_in_response(
             if apply_filters and handler_result is not None:
                 filter_fn = COMMANDS[command_name].get("filter")
                 if filter_fn:
-                    filtered = filter_fn(handler_result) or {}
+                    filtered = filter_fn(handler_result)
+                    if filtered is None:
+                        filtered = {}
+                    elif not isinstance(filtered, dict):
+                        raise TypeError(
+                            f"Command filter for {command_name} returned {type(filtered).__name__}, expected dict"
+                        )
                     visible = filtered.get("visible", "") or ""
                     hidden = filtered.get("hidden", {}) or {}
 
@@ -614,7 +620,7 @@ COMMANDS = {
     },
     "remember_project_fact": {
         "triggers": ["remember project fact", "save this for the project", "record in project"],
-        "format": "[COMMAND: remember_project_fact] {text: \"<TEXT>\", \"project_id\": \"{{project_id}}\"} [/COMMAND]",
+        "format": "[COMMAND: remember_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"{{project_id}}\"} [/COMMAND]",
         "handler": lambda payload: manager.add_entry(
             f"project_facts_{payload.get('project_id')}",
             {"text": payload.get("text")}
@@ -985,21 +991,28 @@ def normalize_muse_experience_tags(text: str) -> str:
     return "".join(normalized_parts)
 # Main entry point for any response parsing after prompt
 
-def route_user_input(
+async def route_user_input(
         dev_prompt: str,
         user_prompt: str,
         images=None,
         client=None,
-        prompt_type="api"
+        prompt_type="api",
+        apply_cmd_filters=True
 ) -> str:
+    from app.core.muse_actions import build_tool_bundle
+    tool_bundle = build_tool_bundle(["search_memory", "search_web", "search_news", "search_images", "view_image", "read_webpage", "generate_muse_image", "generate_image"])
 
-    response = get_openai_response(
+    response = await get_openai_response(
         dev_prompt,
         user_prompt,
         client=client,
         prompt_type=prompt_type,
         images=images,
-        model=muse_settings.get_section("llm_config").get("OPENAI_MODEL")
+        model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
+        tools=tool_bundle["tools"],
+        tool_choice=tool_bundle["tool_choice"],
+        handlers=tool_bundle["handlers"],
+        ui_meta=tool_bundle["ui_meta"],
     )
 
     # Normalize muse-experience tags outside of fenced code blocks
@@ -1016,7 +1029,7 @@ def route_user_input(
 
     cleaned_response, cmd_results = process_commands_in_response(
         response,
-        apply_filters=True,      # use COMMANDS[cmd]["filter"]
+        apply_filters=apply_cmd_filters,      # use COMMANDS[cmd]["filter"]
         strip_on_error=True,     # keep UI clean
     )
 
@@ -1037,7 +1050,7 @@ def route_user_input(
     return cleaned_response
 
 # Handles muse_initiator-specific responses
-def handle_muse_decision(
+async def handle_muse_decision(
     dev_prompt,
     user_prompt,
     client,
@@ -1050,7 +1063,7 @@ def handle_muse_decision(
     Returns a terse summary string of processing results
     (e.g., 'Processed: speak; Error in remember_fact: ...').
     """
-    response = get_openai_response(
+    response = await get_openai_response(
         dev_prompt,
         user_prompt,
         client,
@@ -1204,6 +1217,9 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     """
     This is intended for when the AI prompts itself to speak
     """
+    from app.core.muse_actions import build_tool_bundle
+    tool_bundle = build_tool_bundle(["search_web", "search_news", "search_images", "view_image", "read_webpage", "generate_muse_image", "generate_image"])
+
     if is_quiet_hour():
         write_system_log(
             level="debug",
@@ -1226,12 +1242,15 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
         destination="frontend"
     )
 
-    response = get_openai_response(
+    response = await get_openai_response(
         dev_prompt,
         user_prompt,
         client=speak_openai_client,
         prompt_type="api",
-        model=muse_settings.get_section("llm_config").get("OPENAI_MODEL")
+        model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
+        tools = tool_bundle["tools"],
+        tool_choice = tool_bundle["tool_choice"],
+        handlers = tool_bundle["handlers"],
     )
 
     raw_response = normalize_muse_experience_tags((response or "").strip())
@@ -1410,9 +1429,22 @@ async def handle_journal_command(payload, entry_type="public", source=None):
     tags = payload.get("tags", [])
     source = "whispergate"
 
+    from app.core.muse_actions import build_tool_bundle
+    tool_bundle = build_tool_bundle(["search_web", "search_news", "read_webpage"])
+
+
     dev_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
 
-    response = get_openai_response(dev_prompt, user_prompt, client=journal_openai_client, prompt_type="journal", model=muse_settings.get_section("llm_config").get("OPENAI_FULL_MODEL"))
+    response = await get_openai_response(
+        dev_prompt,
+        user_prompt,
+        client=journal_openai_client,
+        prompt_type="journal",
+        model=muse_settings.get_section("llm_config").get("OPENAI_FULL_MODEL"),
+        tools=tool_bundle["tools"],
+        tool_choice=tool_bundle["tool_choice"],
+        handlers=tool_bundle["handlers"],
+    )
 
     journal_core.create_journal_entry(
         title=subject,
@@ -1455,6 +1487,9 @@ def manage_memories_handler(payload):
             entry = manager.recycle_entry(doc_id, change["id"])
         else:
             manager._warn("unknown_change_type", f"Unknown change type {ctype}")
+            continue
+
+        if not entry:
             continue
 
         # unify shape for filter layer

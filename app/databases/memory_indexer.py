@@ -56,6 +56,10 @@ async def build_index(dryrun=False, message_id=None):
     updated_graphdb = 0
 
     print(f"Starting indexing... (message_id={message_id or 'ALL/NEW'})")
+    model = SentenceTransformer(
+        SENTENCE_TRANSFORMER_MODEL,
+        local_files_only=True
+    )
     for doc in coll.find(mongo_query):
         msg_id = doc.get("message_id")
         if not msg_id:
@@ -66,10 +70,7 @@ async def build_index(dryrun=False, message_id=None):
         qdrant_entry = dict(doc)
         if not dryrun:
             text = qdrant_entry["message"]  # Get the message text
-            vector = SentenceTransformer(
-                SENTENCE_TRANSFORMER_MODEL,
-                local_files_only=True
-            ).encode([text])[0]  # Generate the embedding vector
+            vector = model.encode([text])[0]  # Generate the embedding vector
             qdrant_connector.upsert_single(qdrant_entry, vector)  # Upsert to Qdrant
         updated_qdrant += 1
 

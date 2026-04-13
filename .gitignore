@@ -84,6 +84,7 @@ app/_archive/
 app/_archive/frontend/static/avatar.png
 local-dev/
 uploadedfiles/
+ephemeral_images/
 projectfiles/
 recall_tests/
 dupe_pairs.txt

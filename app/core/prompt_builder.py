@@ -1,5 +1,8 @@
 # core/prompt_builder.py
 import json
+from pathlib import Path
+import base64
+import uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import humanize
@@ -50,11 +53,7 @@ class PromptBuilder:
         self.segments["laws"] = f"[Three Laws of Muse Agency]\n{laws}"
 
     def add_profile(self, subset: list[str] = None, as_dict: bool = False):
-#        profile = memory_core.load_profile(subset=subset, as_dict=as_dict)
         profile_sections = muse_profile.get_sections_in_category(category="profile", sections=subset)
-#        if profile:
-#            if as_dict:
-#                profile = json.dumps(profile, ensure_ascii=False, indent=2)
         formatted = format_profile_sections(profile_sections)
         self.segments["profile"] = f"[Profile]\n{formatted}"
 
@@ -135,32 +134,51 @@ class PromptBuilder:
         self.segments["injected_files"] = "\n".join(file_blocks)
 
     def add_ephemeral_files(self, ephemeral_files):
-        #print(f"DEBUG add_eph files: {ephemeral_files}")
+        project_root = Path(__file__).resolve().parent.parent.parent
+        ephemeral_files_dir = project_root / "ephemeral_images"
+        ephemeral_files_dir.mkdir(parents=True, exist_ok=True)
+
         self.ephemeral_images = []
         file_blocks = []
+
         for file_obj in ephemeral_files:
-            filename = file_obj.get("name", "untitled")
+            original_name = file_obj.get("name", "untitled")
             mime_type = file_obj.get("type", "")
             encoding = file_obj.get("encoding")
             raw_data = file_obj.get("data", "")
-            print(f"DEBUG file stuff: \n{filename}\n{mime_type}\n{encoding}")
 
             if mime_type.startswith("image/") and encoding == "base64":
+                ext = mime_type.split("/")[-1].lower()
+                if ext == "jpeg":
+                    ext = "jpg"
+
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                unique = uuid.uuid4().hex[:8]
+                stored_name = f"file_{stamp}_{unique}.{ext}"
+                stored_path = ephemeral_files_dir / stored_name
+
+                image_bytes = base64.b64decode(raw_data)
+                stored_path.write_bytes(image_bytes)
+
+                ephemeral_url = f"ephemeral://{stored_name}"
                 data_url = f"data:{mime_type};base64,{raw_data}"
+
                 self.ephemeral_images.append({
-                    "filename": filename,
+                    "filename": stored_name,
+                    "original_name": original_name,
+                    "path": str(stored_path),
+                    "ephemeral_url": ephemeral_url,
                     "data_url": data_url,
                     "mime_type": mime_type,
                 })
-                file_blocks.append(
-                    f"[IMAGE FILE: {filename}]"
-                )
-            else:
-                # handle other file types as needed
-                pass
 
-        self.segments["ephemeral_files"] = "\n".join(file_blocks)
-        return self.ephemeral_images
+                file_blocks.append(f"[IMAGE FILE: {ephemeral_url}]")
+
+        ephemeral_block = ""
+        if file_blocks:
+            ephemeral_block = "[Ephemeral Files]\n" + "\n".join(file_blocks)
+
+        return self.ephemeral_images, ephemeral_block
 
     def build_conversation_context(self, source_name, author_name, timestamp, project_name=None, thread_title=None):
         project_display = ""
@@ -225,11 +243,12 @@ class PromptBuilder:
                            thread_id=None,
                            message_ids_to_exclude=[],
                            final_top_k=15,
+                           recent_count=10,
                            public: bool = False,
                            proj_code_intensity="mixed"
                            ):
-        # Pull recents as before
-        recent_entries = memory_core.get_immediate_context(n=10,
+        # Pull recents
+        recent_entries = memory_core.get_immediate_context(n=recent_count,
                                                            hours=24,
                                                            sources=utils.SOURCES_CONTEXT,
                                                            public=public,
@@ -284,16 +303,21 @@ class PromptBuilder:
         relevant_block = ""
 
         if deduped_semantic:
+            semantic_ids = [e.get("message_id") for e in deduped_semantic if e.get("message_id")]
+            objectid_lookup = utils.get_objectids_for_message_ids(semantic_ids)  # {message_id: "67f..."}
+
             formatted_semantic = "\n\n".join(
-                utils.format_context_entry(e,
-                                           project_lookup=project_lookup,
-                                           proj_code_intensity=proj_code_intensity,
-                                           purpose="RELEVANT"
-                                           )
+                utils.format_context_entry(
+                    e,
+                    project_lookup=project_lookup,
+                    proj_code_intensity=proj_code_intensity,
+                    purpose="RELEVANT",
+                    search_memory_id = objectid_lookup.get(e.get("message_id")),
+                )
                 for e in deduped_semantic
             )
 
-            relevant_block = f"[Relevant Memories]\n\n{formatted_semantic}"
+            relevant_block = f"[Semantic Recall]\n\n{formatted_semantic}"
 
         convo_block = ""
         if recent_entries:
@@ -1182,6 +1206,7 @@ Field guidance:
         "If nothing meaningful should happen, return exactly:\n"
         "{\n"
         '  "should_act": false,\n'
+        '  "reason": "<your reason for choosing to not act>", '
         '  "actions": []\n'
         "}\n\n"
         "If you do act, return exactly one JSON object in this form:\n"

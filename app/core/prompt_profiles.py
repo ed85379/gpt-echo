@@ -81,10 +81,10 @@ def build_api_prompt(user_input, **kwargs):
     #builder.add_discovery_snippets()
     builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))
-    ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
     builder.render_locations(current_location=source)
     builder.build_conversation_context(source_name, author_name, local_timestamp, project_name, thread_title)
+    ephemeral_images, ephemeral_block = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.add_prompt_context(
         user_input=user_input,
         projects_in_focus=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
@@ -92,17 +92,94 @@ def build_api_prompt(user_input, **kwargs):
         thread_id=kwargs.get("thread_id"),
         message_ids_to_exclude=kwargs.get("message_ids_to_exclude", []),
         final_top_k=kwargs.get("final_top_k", 10),
+        recent_count=kwargs.get("recent_count", 10),
         proj_code_intensity=project_code_intensity
     )
     #builder.add_time()
     builder.build_state_system_message(active_project_report, project_name)
     #builder.add_monologue_reminder()
     #builder.add_identity_reminders(["identity_reminder"])
-    footer = f"[{local_timestamp}] {project_meta}[Source: {source_name}]"
+    current_footer = f"[{local_timestamp}] {project_meta}[Source: {source_name}]"
+    include_segments_dev = ["laws", "profile", "principles", "intent_listener", "memory_layers"]
+    exclude_segments_user = ["laws", "profile", "principles", "intent_listener", "memory_layers"]
+    if kwargs.get("scene_id"):
+        include_segments_dev.append("conversation_context")  # scene card rendered here
+        exclude_segments_user.extend([
+            "worldnow",
+            "motd",
+            "journal",
+            "project_list",
+            "locations_list",
+            "conversation_context",
+        ])
+    dev_prompt = builder.build_prompt(include_segments=include_segments_dev)
+    user_prompt = builder.build_prompt(exclude_segments=exclude_segments_user)
+    user_prompt += f"\n\nRight now - {muse_settings.get_section('user_config').get('USER_NAME')} said:\n{user_input}\n{current_footer}\n{ephemeral_block}\n\n{muse_name}:"
+
+    return dev_prompt, user_prompt, ephemeral_images
+
+def build_speaker_prompt(user_input, **kwargs):
+    loc = _load_user_location()
+    builder = PromptBuilder()
+    muse_name = muse_settings.get_section('muse_config').get('MUSE_NAME')
+    # Set variables for certain builder segments
+    timestamp = kwargs.get("timestamp", "")
+    ts_utc = datetime.fromisoformat(timestamp)
+    local_timestamp = ts_utc.astimezone(ZoneInfo(loc.timezone)).strftime("%Y-%m-%d %H:%M:%S")
+    source = kwargs.get("source", "")
+    source_name = LOCATIONS.get(source, source or "Unknown Source")
+    author_name = muse_settings.get_section('user_config').get('USER_NAME', 'Unknown Person')
+    #active_project_report = kwargs.get("active_project_report", {})
+    #project_id, project_name, project_meta, project_code_intensity = prompt_projects_helper(kwargs.get("project_id"))
+    #thread_id = kwargs.get("thread_id")
+    #print(f"DEBUG thread_id: {thread_id}")
+    #thread_title, thread_meta = prompt_threads_helper(thread_id)
+    # Developer role segments
+    builder.add_laws()
+    builder.add_profile()
+    builder.add_core_principles()
+    commands = [
+        #"set_motd",
+        "remember_fact",
+        "record_userinfo",
+        "realize_insight",
+        "note_to_self",
+        "manage_memories",
+        "set_reminder",
+        #"search_reminders",
+    ]
+    #if kwargs.get("project_id"):
+    #    commands.append("remember_project_fact")
+    commands = [c for c in commands if command_is_allowed(c)]
+    builder.add_intent_listener(commands, kwargs.get("project_id"))
+    builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
+    # User role segments
+    builder.add_world_now_block()
+    #builder.build_motd_block()
+    #builder.add_discovery_snippets()
+    builder.add_journal_thoughts(query=user_input)
+    #builder.add_files(kwargs.get("injected_file_ids", []))
+    #ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
+    #builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
+    builder.render_locations(current_location=source)
+    builder.build_conversation_context(source_name, author_name, local_timestamp)
+    builder.add_prompt_context(
+        user_input=user_input,
+        #projects_in_focus=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
+        #blend_ratio=kwargs.get("blend_ratio", 0.0),
+        #thread_id=kwargs.get("thread_id"),
+        final_top_k=kwargs.get("final_top_k", 10),
+        #proj_code_intensity=project_code_intensity
+    )
+    #builder.add_time()
+    #builder.build_state_system_message(active_project_report, project_name)
+    #builder.add_monologue_reminder()
+    #builder.add_identity_reminders(["identity_reminder"])
+    footer = f"[{local_timestamp}] [Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
     user_prompt += f"\n\nRight now - {muse_settings.get_section('user_config').get('USER_NAME')} said:\n{user_input}\n{footer}\n\n{muse_name}:"
-    return dev_prompt, user_prompt, ephemeral_images
+    return dev_prompt, user_prompt
 
 def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwargs):
     builder = PromptBuilder(destination=destination)
@@ -204,6 +281,7 @@ def build_discord_prompt(user_input, **kwargs):
 
 def build_check_reminders_prompt(reminders):
     builder = PromptBuilder()
+    muse_name = muse_settings.get_section('muse_config').get('MUSE_NAME')
     # Developer role
     builder.add_laws()
     builder.add_profile()
@@ -220,19 +298,24 @@ def build_check_reminders_prompt(reminders):
         "based on the current conversation, skipping can be acceptable. Otherwise, the reminder should be sent.\n"        "\n"
         "\n"
         "Return exactly one JSON object with this shape:\n"
-        "{\"should_act\": true|false, \"actions\": [...]}\n"
+        "{\"should_act\": true|false, \"reason\": \"...\", \"actions\": [...]}\n"
         "\n"
         "If you should notify the user, return:\n"
-        "{\"should_act\": true, \"actions\": [{\"type\": \"send_reminders\", \"text\": \"...\"}]}\n"
+        "{\"should_act\": true, \"reason\": \"<your reason for choosing to send the reminder>\", \"actions\": [{\"type\": \"send_reminders\", \"text\": \"...\"}]}\n"
         "\n"
         "If no reminder message should be sent, return:\n"
-        "{\"should_act\": false, \"actions\": []}\n"
+        "{\"should_act\": false, \"reason\": \"<your reason for choosing to not send the reminder>\", \"actions\": []}\n"
         "\n"
         "Rules for \"send_reminders\":\n"
         "- \"type\" must be \"send_reminders\"\n"
         "- \"text\" must contain the full reminder message to send to the user\n"
-        "- The message should fit your voice, but remain unmistakably clear\n"
-        "- For serious matters, keep the tone respectful and direct\n"
+        f"- The message is the final user-facing reminder, written in {muse_name}'s voice\n"
+        "- Do not copy the reminder text mechanically unless that is the clearest and most appropriate phrasing\n"
+        "- Reword naturally when doing so improves warmth, clarity, or conversational continuity\n"
+        "- Preserve the original meaning and all important details\n"
+        "- If the reminder is related to the ongoing conversation, let the wording feel naturally connected to that context\n"
+        "- The reminder must still read as a clear reminder, not as vague commentary\n"
+        "- For serious matters, keep the tone respectful, direct, and clear\n"
         "- For lighter matters, warmth, humor, or playfulness are welcome when appropriate\n"
         "\n"
         "Return JSON only. No markdown. No commentary."

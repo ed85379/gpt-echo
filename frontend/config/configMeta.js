@@ -47,6 +47,7 @@ export const SETTINGS_META = {
         { value: "gpt-5.2", label: "gpt-5.2" },
         { value: "gpt-5.3-chat-latest", label: "gpt-5.3-chat-latest" },
         { value: "gpt-5.4", label: "gpt-5.4" },
+        { value: "gpt-5.4-mini", label: "gpt-5.4-mini" },
       ],
     },
     OPENAI_FULL_MODEL: {
@@ -65,6 +66,7 @@ export const SETTINGS_META = {
         { value: "gpt-5.2", label: "gpt-5.2" },
         { value: "gpt-5.3-chat-latest", label: "gpt-5.3-chat-latest" },
         { value: "gpt-5.4", label: "gpt-5.4" },
+        { value: "gpt-5.4-mini", label: "gpt-5.4-mini" },
       ],
     },
     OPENAI_WHISPER_MODEL: {
@@ -75,6 +77,8 @@ export const SETTINGS_META = {
         { value: "gpt-4.1-nano", label: "gpt-4.1-nano" },
         { value: "gpt-5-mini", label: "gpt-5-mini" },
         { value: "gpt-5-nano", label: "gpt-5-nano" },
+        { value: "gpt-5.4-mini", label: "gpt-5.4-mini" },
+        { value: "gpt-5.4-nano", label: "gpt-5.4-nano" },
       ],
     },
   },
@@ -83,6 +87,14 @@ export const SETTINGS_META = {
       label: "ElevenLabs API Key",
       description:
         "The API Key for your ElvenLabs account.",
+    },
+    ELEVENLABS_MODEL: {
+      label: "Model",
+      description: "TTS Model.",
+      options: [
+        { value: "eleven_flash_v2_5", label: "eleven_flash_v2_5" },
+        { value: "eleven_v3", label: "eleven_v3" },
+      ],
     },
     ELEVENLABS_VOICE_ID: {
       label: "Voice ID",

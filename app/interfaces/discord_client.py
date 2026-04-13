@@ -107,7 +107,7 @@ async def handle_incoming_discord_message(message):
             #print(f"USER PROMPT: {user_prompt}")
             print(f"ATTACHMENTS: {ephemeral_images}")
             # Get Muse's response
-            muse_response = get_openai_response(dev_prompt, user_prompt, client=discord_openai_client, prompt_type="discord", images=ephemeral_images)
+            muse_response = await get_openai_response(dev_prompt, user_prompt, client=discord_openai_client, prompt_type="discord", images=ephemeral_images)
             #print("🧠 Muse response generated:")
             #print(muse_response)
 

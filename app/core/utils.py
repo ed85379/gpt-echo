@@ -247,7 +247,29 @@ def prompt_threads_helper(thread_id=None):
 
     return thread_title, thread_meta
 
-def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", purpose=None):
+def get_objectids_for_message_ids(message_ids):
+    if not message_ids:
+        return {}
+
+    docs = mongo.find_documents(
+        collection_name=MONGO_CONVERSATION_COLLECTION,
+        query={"message_id": {"$in": message_ids}},
+        projection={"_id": 1, "message_id": 1},
+    )
+
+    return {
+        doc["message_id"]: str(doc["_id"])
+        for doc in docs
+        if doc.get("message_id") and doc.get("_id")
+    }
+
+def format_context_entry(
+        e,
+        project_lookup=None,
+        proj_code_intensity="mixed",
+        purpose=None,
+        search_memory_id=None,
+):
     loc = _load_user_location()
     role = e.get("role", "")
     if role == "user":
@@ -345,6 +367,8 @@ def format_context_entry(e, project_lookup=None, proj_code_intensity="mixed", pu
         meta_parts.append(tag_meta)
     if remembered:
         meta_parts.append(rem_note)
+    if search_memory_id:
+        meta_parts.append(f"[search_memory ID: {search_memory_id}]")
 
     if role != "system":
         if meta_parts:

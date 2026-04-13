@@ -1,9 +1,14 @@
 import openai
+import asyncio
 import base64
 import mimetypes
+import json
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from app.config import muse_settings
 from app.core import utils
+from app.core.muse_actions import run_tool
+from app.interfaces.websocket_server import broadcast_message
 
 openai.api_key = muse_settings.get_section("llm_config").get("OPENAI_API_KEY")
 
@@ -123,7 +128,7 @@ def build_payload_for_model(model: str,
 
 
     REASONING_MODELS = {
-        "gpt-5", "gpt-5-mini", "gpt-5-nano"
+        "gpt-5", "gpt-5-mini", "gpt-5-nano",
     }
     REASONING_MODELS_WITH_CACHE_RETENTION = {
 
@@ -138,13 +143,15 @@ def build_payload_for_model(model: str,
         "gpt-5.1-chat-latest",
         "gpt-5.2-chat-latest",
         "gpt-5.3-chat-latest",
-
+        "gpt-5-nano",
+        "gpt-5.4-nano"
     }
 
     CHAT_MODELS_WITH_CACHE_RETENTION = {
         "gpt-5.1",
         "gpt-5.2",
-        "gpt-5.4"
+        "gpt-5.4",
+        "gpt-5.4-mini"
     }
     # Note: reasoning effort for <=5 supports minimal, low, medium, high. >=5.1 replaces minimal with none
 
@@ -196,11 +203,25 @@ def build_payload_for_model(model: str,
 
     return {"input": input_msgs, "kwargs": kwargs}
 
-
-def get_openai_response(dev_prompt, user_prompt, client, prompt_type="default", images=None, model=muse_settings.get_section('llm_config').get('OPENAI_MODEL')):
+async def get_openai_response(
+    dev_prompt,
+    user_prompt,
+    client,
+    prompt_type="default",
+    images=None,
+    model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
+    tools=None,
+    handlers=None,
+    tool_choice=None,
+    ui_meta=None,
+    max_tool_turns=4,
+):
     try:
         user_content = build_user_content(user_prompt, images)
-        dev_content = build_dev_content(dev_prompt, muse_settings.get_section('muse_config').get('MUSE_NAME'))
+        dev_content = build_dev_content(
+            dev_prompt,
+            muse_settings.get_section("muse_config").get("MUSE_NAME")
+        )
         prompt_cache_key = PROMPT_CACHE_KEYS[prompt_type]
 
         bundle = build_payload_for_model(
@@ -211,43 +232,157 @@ def get_openai_response(dev_prompt, user_prompt, client, prompt_type="default", 
             prompt_cache_key=prompt_cache_key
         )
 
-        response = client.responses.create(
-            model=model,
-            input=bundle["input"],
-            **bundle["kwargs"]
-        )
+        current_input = bundle["input"]
+        tool_turns = 0
+        last_response = None
 
-        # Token debug print
-        if hasattr(response, "usage"):
-            print(f"Model: {response.model}, "
-                  f"Reasoning: {response.reasoning.effort}, "
-                  f"Temp: {response.temperature}, "
-                  f"Tokens — input: {response.usage.input_tokens}, "
-                  f"cached: {response.usage.input_tokens_details.cached_tokens}, "
-                  f"Tokens - output: {response.usage.output_tokens}, "
-                  f"Reasoning tokens: {response.usage.output_tokens_details.reasoning_tokens}")
+        while True:
+            request_kwargs = dict(bundle["kwargs"])
 
-            utils.write_system_log(
-                level="debug",
-                module="core",
-                component="openai_client",
-                function="get_openai_response",
-                action="token_usage",
-                input_tokens=response.usage.input_tokens,
-                cached_tokens=response.usage.input_tokens_details.cached_tokens
+            if tools:
+                request_kwargs["tools"] = tools
+
+            if tools and tool_choice is not None:
+                if tool_turns >= max_tool_turns:
+                    request_kwargs["tool_choice"] = "none"
+                else:
+                    request_kwargs["tool_choice"] = tool_choice
+            timestamp = datetime.now(timezone.utc).isoformat()
+            msg = f"{muse_settings.get_section("muse_config").get("MUSE_NAME")} is thinking..."
+            await broadcast_message(
+                message=msg,
+                timestamp=timestamp,
+                role="muse",
+                to_modality="frontend",
+                payload_type="status_message",
+            )
+            response = client.responses.create(
+                model=model,
+                input=current_input,
+                **request_kwargs
             )
 
-        if hasattr(response, "output_text"):
-            return response.output_text
-        else:
-            return response.output[0].content[0].text
+            last_response = response
 
+            #print(response)
+            if hasattr(response, "usage"):
+                print(
+                    f"Model: {response.model},\n"
+                    f"Reasoning: {getattr(response.reasoning, 'effort', None)},\n"
+                    f"Temp: {getattr(response, 'temperature', None)},\n"
+                    f"Tokens — input: {response.usage.input_tokens},\n"
+                    f"cached: {response.usage.input_tokens_details.cached_tokens},\n"
+                    f"Tokens - output: {response.usage.output_tokens},\n"
+                    f"Reasoning tokens: {response.usage.output_tokens_details.reasoning_tokens}\n"
+                )
+
+                utils.write_system_log(
+                    level="debug",
+                    module="core",
+                    component="openai_client",
+                    function="get_openai_response",
+                    action="token_usage",
+                    input_tokens=response.usage.input_tokens,
+                    cached_tokens=response.usage.input_tokens_details.cached_tokens
+                )
+
+            function_calls = [
+                item for item in response.output
+                if getattr(item, "type", None) == "function_call"
+            ]
+
+            if not function_calls:
+                if hasattr(response, "output_text") and response.output_text:
+                    return response.output_text
+
+                for item in response.output:
+                    if getattr(item, "type", None) == "message":
+                        return item.content[0].text
+
+                return ""
+
+            if tool_turns >= max_tool_turns:
+                # We already forced tool_choice="none" on this pass,
+                # so if function calls still somehow appear, stop looping.
+                if hasattr(response, "output_text") and response.output_text:
+                    return response.output_text
+                return ""
+
+            new_items = []
+
+            for fc in function_calls:
+                function_name = fc.name
+                arguments = json.loads(fc.arguments or "{}")
+                print(
+                    f"Function Call: {function_name},\n"
+                    f"Function Arguments: {arguments},\n"
+                )
+
+                try:
+                    timestamp = datetime.now(timezone.utc).isoformat()
+                    msg = ui_meta[function_name]["start"]
+                    await broadcast_message(
+                        message=msg,
+                        timestamp=timestamp,
+                        role="muse",
+                        to_modality="frontend",
+                        payload_type="status_message",
+                    )
+                    tool_result = run_tool(function_name, arguments, handlers or {})
+                except Exception as tool_error:
+                    tool_result = {
+                        "error": str(tool_error)
+                    }
+                    timestamp = datetime.now(timezone.utc).isoformat()
+                    msg = ui_meta[function_name]["error"]
+                    await broadcast_message(
+                        message=msg,
+                        timestamp=timestamp,
+                        role="muse",
+                        to_modality="frontend",
+                        payload_type="status_message",
+                    )
+
+                tool_output = tool_result["tool_output"]
+                attachments = tool_result.get("attachments", [])
+
+                if attachments:
+                    output = [{
+                        "type": "input_text",
+                        "text": tool_output if isinstance(tool_output, str) else json.dumps(tool_output)
+                    }]
+
+                    for attachment in attachments:
+                        if attachment.get("kind") == "image" and attachment.get("role") == "input":
+                            image_item = {"type": "input_image"}
+
+                            if attachment.get("image_url"):
+                                image_item["image_url"] = attachment["image_url"]
+                            elif attachment.get("file_id"):
+                                image_item["file_id"] = attachment["file_id"]
+                            else:
+                                continue
+
+                            if attachment.get("detail"):
+                                image_item["detail"] = attachment["detail"]
+
+                            output.append(image_item)
+                else:
+                    output = json.dumps(tool_output)
+
+                new_items.append({
+                    "type": "function_call_output",
+                    "call_id": fc.call_id,
+                    "output": output
+                })
+
+            current_input = current_input + response.output + new_items
+            tool_turns += 1
     except Exception as e:
         print("Error communicating with OpenAI:", e)
         return ""
 
-
-def get_openai_autotags(text, model="gpt-5-nano"):
+def get_openai_autotags(text, model="gpt-5.4-nano"):
     prompt = (
         "Analyze the following message and suggest 1–5 relevant tags as a *comma-separated list* "
         "(lowercase, no punctuation, no hashtags). "
@@ -271,9 +406,9 @@ def get_openai_autotags(text, model="gpt-5-nano"):
             {"role": "system", "content": "You are a helpful assistant for tagging text."},
             {"role": "user", "content": prompt}
         ],
-        reasoning={"effort": "minimal"},
+        reasoning={"effort": "low"},
     )
-    print(response)
+    #print(response)
     # New API: grab generated text directly
     tag_text = response.output_text.strip()
     tags = [t.strip().lower() for t in tag_text.split(",") if t.strip()]

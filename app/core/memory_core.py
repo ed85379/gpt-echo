@@ -243,29 +243,31 @@ def get_immediate_context(
     public: bool = False,
     anchor_message_id: str | None = None,
     thread_id=None,
+    before: int | None = None,
+    after: int = 0,
 ):
     """
     Return a list of messages, starting from a moment and working backward.
+
+    Modes:
+    - Default recent mode:
+        Uses rolling time window from "now" (or anchored "now" if anchor_message_id is provided).
+    - Around mode:
+        If before is provided with anchor_message_id, returns context around that anchor.
+        If after > 0, the effective anchor is shifted forward by `after` matching messages,
+        then a backward fetch returns before + after + 1 messages total.
+
+    Notes:
+    - `sources` controls which messages are eligible to appear in results.
+    - Only chat/conversational messages count toward the returned message total.
+    - This allows system/context messages to be interleaved without reducing
+      the number of actual conversation turns shown.
+    - In around mode, use `sources=utils.SOURCES_CHAT` if you want true conversational windows.
     - Accepts anchor_message_id to start the search, otherwise starts with "now".
+
     TODO:
     - Add scene_id functionality for Roleplays or other types of bounded sessions.
     """
-
-    # 1) Establish "now" (or anchored "now")
-    if anchor_message_id is not None:
-        anchor_message_query = {"message_id": anchor_message_id}
-        anchor = mongo.find_one_document(
-            collection_name=MONGO_CONVERSATION_COLLECTION,
-            query=anchor_message_query,
-        )
-        if not anchor:
-            raise ValueError(f"No message found for id={anchor_message_id}")
-        now = anchor["timestamp"]
-    else:
-        now = datetime.utcnow()
-
-    convo_count = n
-    overfetch_limit = convo_count * 2
 
     if sources is None:
         sources = utils.SOURCES_CHAT
@@ -277,83 +279,140 @@ def get_immediate_context(
     # Ask states_core what time looks like right now (sync version)
     active_skip, skip_start, skip_end = get_active_time_skip_window(
         excluded_project_ids=excluded_project_ids,
-        excluded_thread_ids=excluded_thread_ids
+        excluded_thread_ids=excluded_thread_ids,
     )
 
-    # 2) Base query: visibility + sources (+ public)
-    base_query: dict = {
-        "is_hidden": {"$ne": True},
-        "is_deleted": {"$ne": True},
-        "source": {"$in": sources_list},
-    }
-    if public:
-        base_query["is_private"] = {"$ne": True}
-
-    # 3) Time clause: rolling window OR seam carve-out OR thread mode
-    if active_skip and skip_start and skip_end:
-        # Time-skip active: carve out the gap, no "since" filter
-        time_clause: dict = {
-            "$or": [
-                {"timestamp": {"$lte": skip_start}},
-                {"timestamp": {"$gte": skip_end}},
-            ]
+    def build_base_query():
+        q = {
+            "is_hidden": {"$ne": True},
+            "is_deleted": {"$ne": True},
+            "source": {"$in": sources_list},
         }
-    elif thread_id:
-        # In a thread: ignore rolling window, no time filter at all
-        time_clause = {}  # neutral, won't constrain
-    else:
-        # Normal flow: use the rolling window
-        since = now - timedelta(hours=hours)
-        time_clause: dict = {"timestamp": {"$gte": since}}
+        if public:
+            q["is_private"] = {"$ne": True}
+        return q
 
-    # 4) Project and Thread exclusions as their own clause
-    project_clause = None
-    if excluded_project_ids:
+    def build_project_clause():
+        if not excluded_project_ids:
+            return None
+
         excluded = list(excluded_project_ids)
-        project_clause = {
+        return {
             "$or": [
-                {"project_id": {"$nin": excluded}},   # Single-linked
-                {"project_id": {"$exists": False}},   # Unattached
+                {"project_id": {"$nin": excluded}},
+                {"project_id": {"$exists": False}},
                 {"project_ids": {"$elemMatch": {"$nin": excluded}}},
             ]
         }
 
-    thread_exclude_clause = None
-    thread_include_clause = None
+    def build_thread_clause():
+        if thread_id:
+            return {"thread_ids": thread_id}
 
-    if thread_id:
-        # In a thread: only messages that belong to this thread
-        thread_include_clause = {
-            "thread_ids": thread_id
-        }
-    else:
-        # Global mode: respect excluded_thread_ids
         if excluded_thread_ids:
             excluded = list(excluded_thread_ids)
-            thread_exclude_clause = {
+            return {
                 "$or": [
                     {"thread_ids": {"$exists": False}},
                     {"thread_ids": {"$size": 0}},
-                    # At least one thread_id is NOT excluded
                     {"thread_ids": {"$elemMatch": {"$nin": excluded}}},
                 ]
             }
 
-    # 5) Combine everything with $and so clauses compose instead of overwrite
-    clauses = [base_query]
+        return None
 
-    if time_clause:
-        clauses.append(time_clause)
-    if project_clause is not None:
-        clauses.append(project_clause)
-    if thread_include_clause is not None:
-        clauses.append(thread_include_clause)
-    elif thread_exclude_clause is not None:
-        clauses.append(thread_exclude_clause)
+    def combine_clauses(*parts):
+        clauses = [part for part in parts if part]
+        return {"$and": clauses} if clauses else {}
 
-    final_query = {"$and": clauses}
+    def find_anchor_message(message_id: str):
+        anchor = mongo.find_one_document(
+            collection_name=MONGO_CONVERSATION_COLLECTION,
+            query={"message_id": message_id},
+        )
+        if not anchor:
+            raise ValueError(f"No message found for id={message_id}")
+        return anchor
 
-    # 6) Fetch + post-filter to n conversational messages
+    def resolve_shifted_anchor(anchor: dict, after_count: int):
+        if after_count <= 0:
+            return anchor
+
+        forward_query = combine_clauses(
+            build_base_query(),
+            build_project_clause(),
+            build_thread_clause(),
+            {"timestamp": {"$gte": anchor["timestamp"]}},
+        )
+
+        forward_results = mongo.find_documents(
+            collection_name=MONGO_CONVERSATION_COLLECTION,
+            query=forward_query,
+            sort_field="timestamp",
+            sort=1,
+            limit=after_count + 1,
+        )
+
+        if not forward_results:
+            return anchor
+
+        return forward_results[-1]
+
+    def build_time_clause(now_value):
+        if active_skip and skip_start and skip_end:
+            return {
+                "$or": [
+                    {"timestamp": {"$lte": skip_start}},
+                    {"timestamp": {"$gte": skip_end}},
+                ]
+            }
+
+        if thread_id:
+            return {}
+
+        since = now_value - timedelta(hours=hours)
+
+        if anchor is not None:
+            return {"timestamp": {"$gte": since, "$lte": now_value}}
+
+        return {"timestamp": {"$gte": since}}
+
+    # 1) Establish "now" (or anchored "now")
+    anchor = None
+
+    if anchor_message_id is not None:
+        anchor = find_anchor_message(anchor_message_id)
+
+    around_mode = anchor is not None and before is not None
+
+    if around_mode:
+        anchor = resolve_shifted_anchor(anchor, after)
+        now = anchor["timestamp"]
+        convo_count = before + after + 1
+    elif anchor is not None:
+        now = anchor["timestamp"]
+        convo_count = n
+    else:
+        now = datetime.utcnow()
+        convo_count = n
+
+
+    overfetch_limit = max(convo_count * 2, convo_count + 10)
+
+    # 2) Build final query
+    base_query = build_base_query()
+    project_clause = build_project_clause()
+    thread_clause = build_thread_clause()
+    time_clause = build_time_clause(now)
+
+    final_query = combine_clauses(
+        base_query,
+        project_clause,
+        thread_clause,
+        time_clause,
+    )
+
+    # 3) Fetch + post-filter to desired count
     raw_messages = mongo.find_logs(
         collection_name=MONGO_CONVERSATION_COLLECTION,
         query=final_query,
@@ -362,6 +421,9 @@ def get_immediate_context(
         ascending=False,
     )
 
+    # Count only conversational/chat messages toward the requested total.
+    # Non-chat messages may still appear in the returned slice if included
+    # by `sources`, but they do not consume the message budget.
     selected = []
     convo_seen = 0
     for msg in raw_messages:
@@ -378,20 +440,20 @@ def get_immediate_context(
 def recency_weight(ts, now=None, half_life_hours=36):
     if not ts:
         return 1.0
+    if half_life_hours is None or half_life_hours <= 0:
+        return 1.0
     if now is None:
         now = datetime.now(timezone.utc).timestamp()
-    # Convert ts to timestamp float if needed
+
     if isinstance(ts, datetime):
         ts = ts.timestamp()
     elif isinstance(ts, str):
-        # Try to parse as ISO format
         try:
             ts = datetime.fromisoformat(ts)
             ts = ts.timestamp()
         except Exception:
-            # Fallback: try parsing other common formats or just ignore
             return 1.0
-    # Now both are float (seconds since epoch)
+
     age_hours = (now - ts) / 3600
     return 2 ** (-age_hours / half_life_hours)
 
@@ -424,7 +486,9 @@ def search_indexed_memory(
     tag_boost=1.2, muse_boost=1.15, remembered_boost=2.0,
     project_boost=1.25, non_project_penalty=0.2,
     thread_boost=1.25,
-    public: bool = False
+    public: bool = False,
+    start_time=None,
+    end_time=None,
 ):
     """
     Search indexed memory via Qdrant, with Project Focus support.
@@ -464,6 +528,18 @@ def search_indexed_memory(
             {"key": "project_id", "match": {"any": projects_in_focus}}
         ]
         # Note: If you want to also include messages with project_ids array, you'll need to expand filter logic or post-process
+
+    if "must" not in query_filter:
+        query_filter["must"] = []
+
+    if start_time is not None or end_time is not None:
+        range_filter = {"key": "timestamp", "range": {}}
+        if start_time is not None:
+            range_filter["range"]["gte"] = start_time
+        if end_time is not None:
+            range_filter["range"]["lte"] = end_time
+
+        query_filter["must"].append(range_filter)
 
     #client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
     #search_result = client.search(
@@ -604,6 +680,64 @@ def search_indexed_memory(
         )
 
     return sorted_results[:top_k]
+
+def search_memory_semantic(query, project_ids=None, start_time=None, end_time=None, limit=5, public=False):
+    from zoneinfo import ZoneInfo
+    from app.core.time_location_utils import _load_user_location
+
+    loc = _load_user_location()
+    user_tz = ZoneInfo(loc.timezone)
+
+    start_time_norm = start_time.rstrip("Z") if start_time else None
+    end_time_norm = end_time.rstrip("Z") if end_time else None
+
+    local_st = datetime.strptime(start_time_norm, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=user_tz)
+    local_et = datetime.strptime(end_time_norm, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=user_tz)
+
+    utc_st = local_st.astimezone(ZoneInfo("UTC"))
+    utc_et = local_et.astimezone(ZoneInfo("UTC"))
+
+    start_time_qdrant = utc_st.strftime("%Y-%m-%dT%H:%M:%S.%f")
+    end_time_qdrant = utc_et.strftime("%Y-%m-%dT%H:%M:%S.%f")
+
+
+    internal_k = max(20, limit * 5)
+
+    kwargs = {
+        "query": query,
+        "top_k": internal_k,
+        "public": public,
+        "start_time": start_time_qdrant,
+        "end_time": end_time_qdrant,
+        "recency_half_life": 0,
+    }
+    if project_ids:
+        kwargs["projects_in_focus"] = project_ids
+        kwargs["blend_ratio"] = 1.0
+
+    results = search_indexed_memory(**kwargs)
+
+    hydrated = []
+
+    for r in results:
+        mid = r.get("message_id")
+        if not mid:
+            continue
+
+        doc = get_message_by_id(mid)
+        if not doc:
+            continue
+
+
+        doc["_semantic_score"] = r.get("score")
+        doc["_semantic_meta"] = r
+
+        hydrated.append(doc)
+
+        if len(hydrated) >= limit:
+            break
+
+    return hydrated
 
 def get_semantic_episode_context(
     collection_name: str,
@@ -973,13 +1107,17 @@ class MemoryLayerManager:
         new_entries = [e for e in doc['entries'] if e['id'] != entry_id]
         if len(new_entries) == len(doc['entries']):
             self._warn("delete_entry_failed", f"Missing ID {entry_id}")
-            return False
+            return None
         doc['entries'] = new_entries
         self.cortex.update_doc(doc_id, doc)
         self._log("delete_entry", f"Deleted entry {entry_id} from {doc_id}")
         if doc_id not in ("inner_monologue", "reminders"):
             delete_point(entry_id, QDRANT_MEMORY_COLLECTION)
-        return True
+        return {
+            "id": entry_id,
+            "text": "",
+            "doc_id": doc_id,
+        }
 
     def search_entries(self, doc_id, mongo_query=None, limit=5):
         """

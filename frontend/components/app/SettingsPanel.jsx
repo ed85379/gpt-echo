@@ -407,10 +407,17 @@ function TTSSection({
   speakingMessageId,
 }) {
   const ttsMeta = SETTINGS_META.tts_config || {};
+  const ttsModelOptions = ttsMeta.ELEVENLABS_MODEL.options || {};
   if (!tts || Object.keys(tts).length === 0) return null;
   const [localTTS, setLocalTTS] = useState(tts || {});
   const [show, setShow] = useState(false);
+  if (!tts || Object.keys(tts).length === 0) return null;
+  const [localTtsModels, setLocalTtsModels] = useState(tts || {});
 
+
+  useEffect(() => {
+    setLocalTtsModels(tts || {});
+  }, [tts]);
 
 
   const handleTestVoice = useCallback(() => {
@@ -462,6 +469,24 @@ function TTSSection({
           >
             {show ? "Hide" : "Show"}
           </button>
+        </div>
+        <div>
+          <FieldLabelWithInfo
+            meta={ttsMeta.ELEVENLABS_MODEL}
+            fallbackLabel="TTS Model"
+          />
+          <select
+            className="bg-neutral-800 text-white rounded p-2 text-sm border border-neutral-700"
+            value={localTtsModels.ELEVENLABS_MODEL || "eleven_flash_v2_5"}
+            onChange={e => onFieldChange("ELEVENLABS_MODEL", e.currentTarget.value)}
+            disabled={!editMode}
+          >
+            {ttsModelOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <FieldLabelWithInfo

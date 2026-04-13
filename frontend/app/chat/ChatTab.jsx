@@ -113,11 +113,14 @@ const ChatTab = (
     existingTagsForSelection,
     existingThreadsForSelection,
     clearSelectionAndExit,
+    status,
+    setStatus,
   }
 ) => {
   // ------------------------------------
   // Controls
   // ------------------------------------
+  console.log("ChatTab render status:", status);
   const {
     autoTTS,
     setAutoTTS,
@@ -233,9 +236,10 @@ const ChatTab = (
         );
       }
 
+    setStatus(["Sending message..."]);
     setInput("");
     setThinking(true);
-    setScrollToBottom(true);
+    //setScrollToBottom(true);
 
     // 3. Send the message to the backend, including timestamp
     await fetch("/api/muse/talk", {
@@ -458,11 +462,13 @@ const ChatTab = (
     ? visibleMessages[visibleMessages.length - 1].message_id
     : null;
 
+  const statusCount = Array.isArray(status) ? status.length : 0;
+
   useEffect(() => {
     if (scrollToBottom) {
       chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [lastVisibleId, scrollToBottom]);
+  }, [lastVisibleId, statusCount, scrollToBottom]);
 
 
   useEffect(() => {
@@ -856,8 +862,8 @@ const ChatTab = (
             return <MessageItem key={key} {...CommonProps} />;
           })}
         {thinking && (
-          <div className="text-sm text-neutral-500 italic">
-            {museName} is thinking...
+          <div className="text-sm text-neutral-500 italic whitespace-pre-wrap">
+            {status.join("\n")}
           </div>
         )}
         <div ref={chatEndRef} />

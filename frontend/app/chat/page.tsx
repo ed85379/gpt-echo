@@ -70,6 +70,7 @@ export default function ChatPage() {
   const enableReminders = userConfig?.muse_features?.ENABLE_REMINDERS || false;
   const initialMotd = uiStates?.motd?.text ?? "";
   const [motd, setMotd] = useState(initialMotd);
+  const [status, setStatus] = useState([]);
   const initialProjectId = uiStates?.projects?.project_id ?? "";
   const [timeSkipOverride, setTimeSkipOverride] = useState(null);
   const timeSkipActive =
@@ -464,6 +465,16 @@ export default function ChatPage() {
 
           case "motd_update": {
             setMotd(data.message);
+            break;
+          }
+
+          case "status_message": {
+            console.log("APPENDING STATUS:", data.message);
+            setStatus(prev => {
+              const next = [...prev, data.message];
+              console.log("NEXT STATUS:", next);
+              return next;
+            });
             break;
           }
 
@@ -974,6 +985,8 @@ export default function ChatPage() {
               existingTagsForSelection={existingTagsForSelection}
               existingThreadsForSelection={existingThreadsForSelection}
               clearSelectionAndExit={clearSelectionAndExit}
+              status={status}
+              setStatus={setStatus}
             />
           </div>
           <div className="hidden md:flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">
@@ -1081,6 +1094,8 @@ export default function ChatPage() {
               existingTagsForSelection={existingTagsForSelection}
               existingThreadsForSelection={existingThreadsForSelection}
               clearSelectionAndExit={clearSelectionAndExit}
+              status={status}
+              setStatus={setStatus}
             />
           </div>
           <div className="flex flex-col w-full md:max-w-sm sticky top-6 self-start h-[80vh] min-h-[400px]">

@@ -11,13 +11,13 @@ from app.services.openai_client import continuity_openai_client
 
 
 # <editor-fold desc="run_whispergate">
-def run_whispergate():
+async def run_whispergate():
     print("\nWhisperGate: Evaluating...")
 
     dev_prompt, user_prompt = prompt_profiles.build_whispergate_prompt()
     print("Prompt built. Sending to model...")
 
-    response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="whispergate")
+    response = await handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="whispergate")
     #print("WhisperGate prompt:", prompt)
     write_system_log(level="info", module="core", component="initiator", function="run_whispergate",
                            action="whispergate_response", response=response)
@@ -27,13 +27,13 @@ def run_whispergate():
 # </editor-fold>
 
 # <editor-fold desc="run_dropped_threads_check">
-def run_dropped_threads_check():
+async def run_dropped_threads_check():
     print("\nWhisperGate: Evaluating...")
 
     dev_prompt, user_prompt = prompt_profiles.build_dropped_threads_check_prompt()
     print("Prompt built. Sending to model...")
 
-    response = handle_muse_decision(dev_prompt, user_prompt, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"))
+    response = await handle_muse_decision(dev_prompt, user_prompt, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"))
     #print("WhiserGate prompt:", prompt)
     write_system_log(level="info", module="core", component="initiator", function="run_dropped_threads_check",
                            action="whispergate_response", response=response)
@@ -43,7 +43,7 @@ def run_dropped_threads_check():
 # </editor-fold>
 
 # <editor-fold desc="run_inactivity_check">
-def run_inactivity_check():
+async def run_inactivity_check():
     # Get all times in UTC for consistent comparison
     now_utc = datetime.now(timezone.utc)
 
@@ -79,7 +79,7 @@ def run_inactivity_check():
         dev_prompt, user_prompt = prompt_profiles.build_inactivity_check_prompt()
         print("Prompt built. Sending to model...")
 
-        response = handle_muse_decision(dev_prompt, user_prompt, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="inactivity_checker")
+        response = await handle_muse_decision(dev_prompt, user_prompt, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="inactivity_checker")
         write_system_log(level="info", module="core", component="initiator", function="run_inactivity_check",
                          action="whispergate_response", response=response)
 
@@ -88,12 +88,12 @@ def run_inactivity_check():
 # </editor-fold>
 
 # <editor-fold desc="run_discovery_feeds_gate">
-def run_discoveryfeeds_lookup():
+async def run_discoveryfeeds_lookup():
     print("\nWhisperGate: Evaluating...")
     dev_prompt, user_prompt = prompt_profiles.build_discoveryfeeds_lookup_prompt()
     print("Prompt built. Sending to model...")
 
-    response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="discovery")
+    response = await handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="discovery")
     #print("WhiserGate prompt:", prompt)
 
     write_system_log(level="info", module="core", component="initiator", function="run_discoveryfeeds_lookup",
@@ -107,7 +107,7 @@ def run_discoveryfeeds_lookup():
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-def run_check_reminders():
+async def run_check_reminders():
     muse_features = muse_settings.get_section("muse_features") or {}
     if not muse_features.get("ENABLE_REMINDERS", True):
         return  # reminders globally disabled
@@ -118,7 +118,7 @@ def run_check_reminders():
         dev_prompt, user_prompt = prompt_profiles.build_check_reminders_prompt(reminders)
         print("Prompt built. Sending to model...")
 
-        response = handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": reminders})
+        response = await handle_muse_decision(dev_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": reminders})
         # print("WhisperGate prompt:", prompt)
 
         write_system_log(level="info", module="core", component="initiator", function="run_check_reminders",

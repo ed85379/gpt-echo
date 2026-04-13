@@ -1,5 +1,6 @@
 import os
 import requests
+import time
 from elevenlabs import stream, VoiceSettings
 from elevenlabs.client import ElevenLabs
 from app.config import muse_settings, admin_config, AUDIO_OUTPUT_PATH
@@ -39,12 +40,14 @@ def synthesize_speech(text: str, stability=0.5, similarity_boost=0.75) -> str:
     else:
         raise Exception(f"ElevenLabs TTS failed: {response.status_code} {response.text}")
 
+
 async def stream_speech(text: str, overrides: dict | None = None):
+    started = time.monotonic()
     overrides = overrides or {}
 
     tts_config = muse_settings.get_section("tts_config")
-
     voice_id = tts_config.get("ELEVENLABS_VOICE_ID")
+    model = tts_config.get("ELEVENLABS_MODEL")
 
     voice_stability = float(
         overrides.get("stability", tts_config.get("ELEVENLABS_VOICE_STABILITY"))
@@ -56,17 +59,24 @@ async def stream_speech(text: str, overrides: dict | None = None):
         overrides.get("speed", tts_config.get("ELEVENLABS_VOICE_SPEED"))
     )
 
+    print(f"Calling ElevenLabs at +{time.monotonic() - started:.3f}s")
     response = client.text_to_speech.stream(
         text=text,
         voice_id=voice_id,
-        model_id="eleven_flash_v2_5",
+        model_id=model,
+        output_format="mp3_44100_128",
         voice_settings=VoiceSettings(
             stability=voice_stability,
             similarity_boost=voice_similarity,
             speed=voice_speed,
         ),
     )
+    print(f"Got response object at +{time.monotonic() - started:.3f}s")
 
+    first = True
     for chunk in response:
         if isinstance(chunk, bytes):
+            if first:
+                print(f"First chunk at +{time.monotonic() - started:.3f}s")
+                first = False
             yield chunk

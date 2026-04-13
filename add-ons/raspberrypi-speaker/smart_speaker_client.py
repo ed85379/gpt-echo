@@ -115,9 +115,9 @@ async def local_loop():
         listen_for_wakeword()  # No light effects until wakeword is detected
 
         light_ring.off()
-        light_ring.fill_ring_one_by_one(color=(0, 0, 255))
-        light_ring.stop_spinner(fade=False)# Wake visual
-        light_ring.start_spinner(color=(0, 0, 255), direction=1)        # Listening spinner
+        light_ring.wake_flash(color=(0, 0, 255))
+        light_ring.stop(fade=False)
+        light_ring.start_listening(color=(0, 0, 255))
 
         path = record_audio(6)
 
