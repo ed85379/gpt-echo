@@ -27,7 +27,8 @@ async def run_broadcast_queue(
                 timestamp=msg.get("timestamp"),
                 to_modality=msg.get("to", "frontend"),
                 project_id=msg.get("project_id", ""),
-                thread_id=msg.get("thread_id", "")
+                thread_id=msg.get("thread_id", ""),
+                message_id=msg.get("message_id", "")
             )
         except Exception as e:
             utils.write_system_log(
@@ -59,6 +60,7 @@ async def run_log_queue(
                 project_id=msg.get("project_id"),
                 thread_ids=[msg.get("thread_id")],
                 source=msg.get("source"),
+                message_id=msg.get("message_id", ""),
                 skip_index=msg.get("skip_index", False)
                 # Add any other fields your log_message expects
             )

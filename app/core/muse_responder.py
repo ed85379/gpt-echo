@@ -991,6 +991,12 @@ def normalize_muse_experience_tags(text: str) -> str:
     return "".join(normalized_parts)
 # Main entry point for any response parsing after prompt
 
+@dataclass
+class RouteUserInputResult:
+    response_text: str
+    cmd_results: list
+    followup_turn: dict | None = None
+
 async def route_user_input(
         dev_prompt: str,
         user_prompt: str,
@@ -998,7 +1004,7 @@ async def route_user_input(
         client=None,
         prompt_type="api",
         apply_cmd_filters=True
-) -> str:
+) -> RouteUserInputResult:
     from app.core.muse_actions import build_tool_bundle
     tool_bundle = build_tool_bundle(["search_memory", "search_web", "search_news", "search_images", "view_image", "read_webpage", "generate_muse_image", "generate_image"])
 
@@ -1047,7 +1053,10 @@ async def route_user_input(
             summary=summary,
         )
 
-    return cleaned_response
+    return RouteUserInputResult(
+        response_text=cleaned_response,
+        cmd_results=cmd_results,
+    )
 
 # Handles muse_initiator-specific responses
 async def handle_muse_decision(

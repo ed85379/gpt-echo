@@ -16,6 +16,7 @@ from app.services.openai_client import api_openai_client, speak_openai_client
 from app.api.queues import broadcast_queue, log_queue
 from app.core.journal_core import load_journal_index, save_journal_index
 import numpy as np
+from app.databases.memory_indexer import assign_message_id
 
 from moonshine_voice import (
     Transcriber,
@@ -220,6 +221,8 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         "role": "user",
         "source": "frontend",
     }
+    user_message_id = assign_message_id(user_msg)
+    user_msg["message_id"] = user_message_id
     if project_id and auto_assign:
         user_msg["project_id"] = project_id
     if thread_id:
@@ -227,19 +230,22 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     #print(f"DEBUG user_msg: {user_msg}")
     await broadcast_queue.put(user_msg)
     # Get Muse's response
-    response = await route_user_input(dev_prompt, user_prompt, client=api_openai_client, prompt_type="api", images=ephemeral_images)
-    cleaned = response.strip()
+    result = await route_user_input(dev_prompt, user_prompt, client=api_openai_client, prompt_type="api", images=ephemeral_images)
+    cleaned = result.response_text.strip()
     if not cleaned:
         # Only commands were present; nothing to display in frontend
         return
     response_timestamp = datetime.now(timezone.utc).isoformat()
+
     muse_msg = {
-        "message": response,
+        "message": result.response_text,
         "timestamp": response_timestamp,
         "role": "muse",
         "source": "frontend",
         "to": "frontend",
     }
+    muse_message_id = assign_message_id(muse_msg)
+    muse_msg["message_id"] = muse_message_id
     if project_id and auto_assign:
         muse_msg["project_id"] = project_id
     if thread_id:
@@ -249,13 +255,14 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
             muse_settings.get_section("muse_features") or {}
     ).get("ENABLE_THOUGHT_VIEW", True)
     if not thought_view_enabled:
-        private_response = strip_muse_thoughts(response)
+        private_response = strip_muse_thoughts(result.response_text)
         muse_broadcast_msg = {
             "message": private_response,
             "timestamp": response_timestamp,
             "role": "muse",
             "source": "frontend",
             "to": "frontend",
+            "message_id": muse_message_id,
         }
     else:
         muse_broadcast_msg = muse_msg
@@ -263,7 +270,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     await log_queue.put(user_msg)
     await log_queue.put(muse_msg)
 
-    return {"response": response}
+    return {"response": result.response_text}
 
 @muse_router.post("/speaker")
 async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):
@@ -302,14 +309,14 @@ async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):
     print(f"DEBUG user_msg: {user_msg}")
     await broadcast_queue.put(user_msg)
     # Get Muse's response
-    response = await route_user_input(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="speak", apply_cmd_filters=False)
-    cleaned = response.strip()
+    result = await route_user_input(dev_prompt, user_prompt, client=speak_openai_client, prompt_type="speak", apply_cmd_filters=False)
+    cleaned = result.response_text.strip()
     if not cleaned:
         # Only commands were present; nothing to display in frontend
         return
     response_timestamp = datetime.now(timezone.utc).isoformat()
     muse_msg = {
-        "message": response,
+        "message": result.response_text,
         "timestamp": response_timestamp,
         "role": "muse",
         "source": "smartspeaker",
@@ -317,7 +324,7 @@ async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):
     }
     print(f"DEBUG user_msg: {muse_msg}")
 
-    private_response = strip_muse_thoughts(response)
+    private_response = strip_muse_thoughts(result.response_text)
     muse_broadcast_msg = {
         "message": private_response,
         "timestamp": response_timestamp,
@@ -330,7 +337,7 @@ async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):
     await log_queue.put(user_msg)
     await log_queue.put(muse_msg)
 
-    return {"response": response}
+    return {"response": result.response_text}
 
 @muse_router.post("/journal")
 async def create_journal_entry(request: Request):

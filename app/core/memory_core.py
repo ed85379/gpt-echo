@@ -48,6 +48,7 @@ async def log_message(
         project_id=None,
         project_ids=None,
         thread_ids=None,
+        message_id=None,
         skip_index: bool = False
 ):
     """
@@ -101,7 +102,11 @@ async def log_message(
 
 
     try:
-        log_entry["message_id"] = memory_indexer.assign_message_id(log_entry)
+        if not message_id:
+            message_id = memory_indexer.assign_message_id(log_entry)
+
+        log_entry["message_id"] = message_id
+
         mongo.insert_log(MONGO_CONVERSATION_COLLECTION, log_entry)
         if not skip_index:
             await memory_indexer.build_index(message_id=log_entry["message_id"])
