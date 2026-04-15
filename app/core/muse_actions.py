@@ -639,7 +639,7 @@ TOOL_REGISTRY = {
         "schema": {
             "type": "function",
             "name": "view_image",
-            "description": "Inspect a specific image by attaching it for visual analysis. Use this when you already have an image URL and want to examine what the image actually shows—such as screenshots, photos, artwork, generated images, or search results you want to verify visually. Use this when seeing matters more than guessing from surrounding text or metadata. Do not use this to find images; use `search_images` for discovery.",
+            "description": "Inspect a specific image by attaching it for visual analysis. Use this when you already have an image URL and want to examine what the image actually shows—such as screenshots, photos, artwork, generated images, or search results you want to verify visually. Use this when seeing matters more than guessing from surrounding text or metadata. If the image is already visible in the current conversation context, do not use this tool redundantly; respond from the visible image instead. Do not use this to find images; use `search_images` for discovery.",
             "parameters": {
                 "type": "object",
                 "properties": {
