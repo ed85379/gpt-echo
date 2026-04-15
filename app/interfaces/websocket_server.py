@@ -81,6 +81,7 @@ async def broadcast_message(
     channels: Set[str] | None = None,
     project_id: str = "",
     thread_id: str = "",
+    message_id: str = "",
     payload_type: str = "muse_message",
 ):
     if channels is None:
@@ -92,7 +93,10 @@ async def broadcast_message(
         "source": "frontend",
         "message": message,
     }
-    message_id = assign_message_id(msg_dict)
+
+    if not message_id:
+        message_id = assign_message_id(msg_dict)
+
 
     connections = active_connections.get(to_modality, [])
     print(f"Broadcasting {payload_type} to {to_modality} on {channels} ({len(connections)} clients)")
@@ -108,6 +112,7 @@ async def broadcast_message(
                     "project_id": project_id,
                     "thread_id": thread_id,
                     "channels": list(channels),
+                    "timestamp": timestamp,
                 }))
         except Exception:
             connections.remove(client)

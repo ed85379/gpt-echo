@@ -423,12 +423,13 @@ export default function ChatPage() {
             const message_id = data.message_id;
             const project_id = data.project_id;
             const thread_id = data.thread_id;
+            const timestamp = data.timestamp;
 
             const incoming = {
               role,
               text,
               message_id,
-              timestamp: new Date().toISOString(),
+              timestamp,
               project_id,
               thread_ids: thread_id ? [thread_id] : []
             };
