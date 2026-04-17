@@ -14,6 +14,7 @@ from app.core.muse_responder import route_user_input
 from app.core.prompt_profiles import build_api_prompt, build_speaker_prompt
 from app.services.openai_client import api_openai_client, speak_openai_client
 from app.api.queues import broadcast_queue, log_queue
+from app.interfaces.websocket_server import broadcast_message
 from app.core.journal_core import load_journal_index, save_journal_index
 import numpy as np
 from app.databases.memory_indexer import assign_message_id
@@ -236,9 +237,32 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         # Only commands were present; nothing to display in frontend
         return
     response_timestamp = datetime.now(timezone.utc).isoformat()
+    final_text = result.response_text
+    if result.followup_turn:
+        await broadcast_message(
+            message=f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} is adding to their response...",
+            timestamp=response_timestamp,
+            role="muse",
+            to_modality="frontend",
+            payload_type="status_message",
+        )
+        augmented_user_prompt = (
+            f"user_prompt"
+            "\n\nIris said:\n" + result.response_text + "\n\n"
+            "This is a follow-up turn you chose to take after your previous response.\n"
+            f"Your intent for this turn: {result.followup_turn}\n"
+            "Treat this response as a continuation, correction, or completion of the previous response.\n"
+            "Do not repeat the previous response unless necessary for a brief correction.\n"
+            "Do not use <followup-turn /> again in this response."
+        )
+        followup_result = await route_user_input(dev_prompt, augmented_user_prompt, client=api_openai_client, prompt_type="api",
+                                        images=ephemeral_images)
+
+        if followup_result.response_text.strip():
+            final_text += "\n\n***\n\n" + followup_result.response_text.strip()
 
     muse_msg = {
-        "message": result.response_text,
+        "message": final_text,
         "timestamp": response_timestamp,
         "role": "muse",
         "source": "frontend",
@@ -255,7 +279,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
             muse_settings.get_section("muse_features") or {}
     ).get("ENABLE_THOUGHT_VIEW", True)
     if not thought_view_enabled:
-        private_response = strip_muse_thoughts(result.response_text)
+        private_response = strip_muse_thoughts(final_text)
         muse_broadcast_msg = {
             "message": private_response,
             "timestamp": response_timestamp,
@@ -270,7 +294,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     await log_queue.put(user_msg)
     await log_queue.put(muse_msg)
 
-    return {"response": result.response_text}
+    return {"response": final_text}
 
 @muse_router.post("/speaker")
 async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):

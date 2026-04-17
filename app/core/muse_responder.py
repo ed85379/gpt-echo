@@ -4,7 +4,8 @@ import asyncio
 import httpx, time
 import re, json
 import humanize
-from typing import Any, Dict, List, Iterator, NamedTuple, Optional
+from html import unescape
+from typing import Any, Dict, List, Iterator, NamedTuple, Optional, TypedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -243,7 +244,7 @@ def process_commands_in_response(
                 visible=visible,
                 hidden=hidden,
             ))
-
+            print(f"DEBUG command payload: {payload}")
             # Turn hidden dict into formatted string
             note_schema = COMMANDS[command_name].get("note_schema")
             hidden_str = format_system_note(cmd_name=command_name, result=hidden, schema=note_schema)
@@ -626,7 +627,7 @@ COMMANDS = {
             {"text": payload.get("text")}
         ),
         "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')}",
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')} to {entry.get('doc_id')}",
             "hidden": entry
         },
         "note_schema": {
@@ -926,6 +927,86 @@ FENCE_PATTERN = re.compile(
     re.DOTALL
 )
 
+FOLLOWUP_TAG_RE = re.compile(
+    r"<followup-turn\b[^>]*?/>",
+    re.IGNORECASE,
+)
+
+REASON_ATTR_RE = re.compile(
+    r'\breason\s*=\s*(?:"([^"]*)"|\'([^\']*)\')',
+    re.IGNORECASE,
+)
+
+INTENT_ATTR_RE = re.compile(
+    r'\bintent\s*=\s*(?:"([^"]*)"|\'([^\']*)\')',
+    re.IGNORECASE,
+)
+
+class FollowupParseResult(TypedDict):
+    cleaned_text: str
+    reason: Optional[str]
+    intent: Optional[str]
+
+def _first_group(match: re.Match | None) -> Optional[str]:
+    if not match:
+        return None
+    return unescape((match.group(1) or match.group(2) or "").strip()) or None
+
+def extract_followup_turn(text: str) -> FollowupParseResult:
+    matches = list(FOLLOWUP_TAG_RE.finditer(text))
+
+    if not matches:
+        return {
+            "cleaned_text": text,
+            "reason": None,
+            "intent": None,
+        }
+
+    if len(matches) > 1:
+        write_system_log(
+            level="debug",
+            module="core",
+            component="responder",
+            function="route_user_input",
+            action="followup_multiple_tags_found",
+            count=len(matches),
+        )
+
+    first_tag = matches[0].group(0)
+
+    reason = _first_group(REASON_ATTR_RE.search(first_tag))
+    intent = _first_group(INTENT_ATTR_RE.search(first_tag))
+
+    if not intent:
+        write_system_log(
+            level="error",
+            module="core",
+            component="responder",
+            function="route_user_input",
+            action="followup_missing_intent",
+            matched_tag=first_tag,
+            reason=reason,
+        )
+    else:
+        write_system_log(
+            level="info",
+            module="core",
+            component="responder",
+            function="route_user_input",
+            action="followup_processed",
+            reason=reason,
+            intent=intent,
+        )
+
+    cleaned_text = FOLLOWUP_TAG_RE.sub("", text)
+    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
+
+    return {
+        "cleaned_text": cleaned_text,
+        "reason": reason,
+        "intent": intent,
+    }
+
 def normalize_muse_experience_tags(text: str) -> str:
     """
     Normalize <muse-experience> tags in non-fenced text only.
@@ -1053,9 +1134,13 @@ async def route_user_input(
             summary=summary,
         )
 
+    followup_result = extract_followup_turn(cleaned_response)
+    print(f"DEBUG: {followup_result["intent"]}")
+
     return RouteUserInputResult(
-        response_text=cleaned_response,
+        response_text=followup_result["cleaned_text"],
         cmd_results=cmd_results,
+        followup_turn=followup_result["intent"]
     )
 
 # Handles muse_initiator-specific responses

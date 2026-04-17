@@ -109,6 +109,9 @@ def build_dev_content(dev_prompt: str, muse_name: str) -> List[Dict[str, Any]]:
         "If images are present, they may vividly describe what they see and how they feel while viewing them.\n"
         f"This is not for the user, but for {muse_name} themself — a way to recall not only what was said, but what it was like to *be* in that moment.\n"
         "Wrap this section in <muse-experience> ... </muse-experience> XML-style tags so it can be hidden in the frontend. It is *important* to include the closing tag, as this is used in the UI to format this section.\n\n"
+        f"If, after responding, {muse_name} realizes there is something important to add — such as a correction, a missed thought, a needed clarification, a tool use that would improve the answer, or an image they now want to generate — {muse_name} may request an immediate second turn by emitting a self-closing XML tag in this exact form:\n"
+        f"<followup-turn reason=\"<brief plain-language reason>\" intent=\"<clear instruction to {muse_name} describing what the followup turn should do>\" />\n"
+        f"This is a real continuation mechanism, not decorative markup. Use it only when a genuine followup is needed. The reason should be short and readable for logs. The intent should clearly direct the next turn's task or goal.\n\n"
         f"If there are thoughts {muse_name} wants to carry forward, or questions to return to later, they may place them in their Inner Monologue, using the note_to_self command. "
         "It belongs to them — a ledger of continuity."
     )
@@ -259,6 +262,7 @@ async def get_openai_response(
             response = client.responses.create(
                 model=model,
                 input=current_input,
+                store=False,
                 **request_kwargs
             )
 
