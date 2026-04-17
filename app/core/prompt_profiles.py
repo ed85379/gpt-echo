@@ -26,7 +26,7 @@ from app.config import muse_settings
 SEGMENT_MANIFEST = [
     {"method": "add_laws", "segment": "laws", "purpose": "Three Laws of Muse Agency"},
     {"method": "add_profile", "segment": "profile", "purpose": "Muse profile (voice, tone, style, identity)"},
-    {"method": "add_core_principles", "segment": "principles", "purpose": "Core principles and creed"},
+    {"method": "add_principles", "segment": "principles", "purpose": "Core principles and creed"},
     {"method": "add_memory_layers", "segment": "memory_layers", "purpose": "Persistent memory layers (user info, insights, monologue, facts)"},
     {"method": "add_cortex_entries", "segment": "cortex_entries", "purpose": "Cortex entries like insight, seed, user_data"},
     {"method": "add_intent_listener", "segment": "intent_listener", "purpose": "Command listeners (reminder, journal, etc.)"},
@@ -59,7 +59,7 @@ def build_api_prompt(user_input, **kwargs):
     # Developer role segments
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     commands = [
         #"set_motd",
         "remember_fact",
@@ -75,15 +75,16 @@ def build_api_prompt(user_input, **kwargs):
     commands = [c for c in commands if command_is_allowed(c)]
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
-    # User role segments
-    builder.add_world_now_block()
+    # System role segments
+    builder.add_worldnow_block()
     builder.build_motd_block()
     #builder.add_discovery_snippets()
-    builder.add_journal_thoughts(query=user_input)
     builder.add_files(kwargs.get("injected_file_ids", []))
     builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
     builder.render_locations(current_location=source)
     builder.build_conversation_context(source_name, author_name, local_timestamp, project_name, thread_title)
+    # User role segments
+    builder.add_journal_thoughts(query=user_input)
     ephemeral_images, ephemeral_block = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.add_prompt_context(
         user_input=user_input,
@@ -101,7 +102,8 @@ def build_api_prompt(user_input, **kwargs):
     #builder.add_identity_reminders(["identity_reminder"])
     current_footer = f"[{local_timestamp}] {project_meta}[Source: {source_name}]"
     include_segments_dev = ["laws", "profile", "principles", "intent_listener", "memory_layers"]
-    exclude_segments_user = ["laws", "profile", "principles", "intent_listener", "memory_layers"]
+    include_segments_system = ["worldnow", "motd", "project_list", "locations_list", "conversation_context"]
+    exclude_segments_user = ["laws", "profile", "principles", "intent_listener", "memory_layers", "worldnow", "motd", "project_list", "locations_list", "conversation_context"]
     if kwargs.get("scene_id"):
         include_segments_dev.append("conversation_context")  # scene card rendered here
         exclude_segments_user.extend([
@@ -113,10 +115,11 @@ def build_api_prompt(user_input, **kwargs):
             "conversation_context",
         ])
     dev_prompt = builder.build_prompt(include_segments=include_segments_dev)
+    system_prompt = builder.build_prompt(include_segments=include_segments_system)
     user_prompt = builder.build_prompt(exclude_segments=exclude_segments_user)
     user_prompt += f"\n\nRight now - {muse_settings.get_section('user_config').get('USER_NAME')} said:\n{user_input}\n{current_footer}\n{ephemeral_block}\n\n{muse_name}:"
 
-    return dev_prompt, user_prompt, ephemeral_images
+    return dev_prompt, system_prompt, user_prompt, ephemeral_images
 
 def build_speaker_prompt(user_input, **kwargs):
     loc = _load_user_location()
@@ -137,7 +140,7 @@ def build_speaker_prompt(user_input, **kwargs):
     # Developer role segments
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     commands = [
         #"set_motd",
         "remember_fact",
@@ -154,15 +157,15 @@ def build_speaker_prompt(user_input, **kwargs):
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers([kwargs.get("project_id")] if kwargs.get("project_id") else [], user_query=user_input)
     # User role segments
-    builder.add_world_now_block()
+    builder.add_worldnow_block()
     #builder.build_motd_block()
     #builder.add_discovery_snippets()
-    builder.add_journal_thoughts(query=user_input)
     #builder.add_files(kwargs.get("injected_file_ids", []))
     #ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     #builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [])
     builder.render_locations(current_location=source)
     builder.build_conversation_context(source_name, author_name, local_timestamp)
+    builder.add_journal_thoughts(query=user_input)
     builder.add_prompt_context(
         user_input=user_input,
         #projects_in_focus=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
@@ -177,16 +180,17 @@ def build_speaker_prompt(user_input, **kwargs):
     #builder.add_identity_reminders(["identity_reminder"])
     footer = f"[{local_timestamp}] [Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
-    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
+    system_prompt = builder.build_prompt(include_segments=["worldnow", "motd", "project_list", "locations_list", "conversation_context"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers", "worldnow", "motd", "project_list", "locations_list", "conversation_context"])
     user_prompt += f"\n\nRight now - {muse_settings.get_section('user_config').get('USER_NAME')} said:\n{user_input}\n{footer}\n\n{muse_name}:"
-    return dev_prompt, user_prompt
+    return dev_prompt, system_prompt, user_prompt
 
 def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwargs):
     builder = PromptBuilder(destination=destination)
     # Developer role
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     commands = [
         "remember_fact",
         "record_userinfo",
@@ -200,7 +204,7 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwa
     builder.add_intent_listener(commands, kwargs.get("project_id"))
     builder.add_memory_layers(user_query=subject)
     # User role
-    builder.add_world_now_block()
+    builder.add_worldnow_block()
     builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
     # Include full article if Muse is speaking about one
     link = payload.get("source_article_url")
@@ -214,9 +218,10 @@ def build_speak_prompt(subject=None, payload=None, destination="frontend", **kwa
         "If you choose silence, return exactly: <silence />\n\n"
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
-    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers"])
+    system_prompt = builder.build_prompt(include_segments=["worldnow", "motd", "project_list", "locations_list", "conversation_context"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "intent_listener", "memory_layers", "worldnow", "motd", "project_list", "locations_list", "conversation_context"])
     user_prompt += f"\n\nTopic: {subject}\n{muse_settings.get_section('muse_config').get('MUSE_NAME')}:"
-    return dev_prompt, user_prompt
+    return dev_prompt, system_prompt, user_prompt
 
 def build_journal_prompt(subject=None, payload=None, entry_type="public"):
     subject = payload.get("subject", "Untitled")
@@ -227,10 +232,10 @@ def build_journal_prompt(subject=None, payload=None, entry_type="public"):
     # Developer role
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     builder.add_memory_layers(user_query=subject)
     # User role
-    builder.add_world_now_block()
+    builder.add_worldnow_block()
     builder.add_prompt_context(user_input=subject, projects_in_focus=[], blend_ratio=0.0)
     # Include full article if Muse is speaking about one
     link = payload.get("source_article_url")
@@ -239,9 +244,10 @@ def build_journal_prompt(subject=None, payload=None, entry_type="public"):
     builder.segments["intent"] = f"[Intent]\nYou’ve chosen to write a {'private' if entry_type == 'private' else 'public'} journal entry about “{subject}.” \nThe emotional tone you’re feeling is {mood}, and these ideas or themes are on your mind: {tags}.\n\n If this is a private entry, it’s for your eyes only — a space to think freely, without the user ever seeing it.\nIf it’s public, it’s meant to be shared with the user.\nYou may draw on anything in the surrounding context as you write — memory, emotion, intuition, or reflection.\n\n"
 
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
+    system_prompt = builder.build_prompt(include_segments=["worldnow", "motd", "project_list", "locations_list", "conversation_context"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers", "worldnow", "motd", "project_list", "locations_list", "conversation_context"])
     user_prompt += f"\n\nTopic: {subject}\n{muse_settings.get_section('muse_config').get('MUSE_NAME')}:"
-    return dev_prompt, user_prompt
+    return dev_prompt, system_prompt, user_prompt
 
 def build_discord_prompt(user_input, **kwargs):
     loc = _load_user_location()
@@ -257,11 +263,12 @@ def build_discord_prompt(user_input, **kwargs):
     # Developer role segments
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     builder.add_memory_layers(user_query=user_input)
 
     # User role segments
-    ephemeral_images = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
+
+    ephemeral_images, ephemeral_block = builder.add_ephemeral_files(kwargs.get("ephemeral_files", []))
     builder.build_projects_menu(active_project_id=[kwargs.get("project_id")] if kwargs.get("project_id") else [],
                                 public=True)
     builder.render_locations(current_location=source)
@@ -275,9 +282,10 @@ def build_discord_prompt(user_input, **kwargs):
     builder.add_formatting_instructions()
     footer = f"[{local_timestamp}] [Source: {source_name}]"
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
+    system_prompt = builder.build_prompt(include_segments=["project_list", "locations_list", "conversation_context"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers", "project_list", "locations_list", "conversation_context"])
     user_prompt += f"\n\n[Discord] {kwargs.get("author_name")} said:\n{user_input}\n{footer}\n\n[Discord] {muse_name}:"
-    return dev_prompt, user_prompt, ephemeral_images
+    return dev_prompt, system_prompt, user_prompt, ephemeral_images
 
 def build_check_reminders_prompt(reminders):
     builder = PromptBuilder()
@@ -285,7 +293,7 @@ def build_check_reminders_prompt(reminders):
     # Developer role
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     builder.add_memory_layers(user_query="remember reminder todo schedule")
     # User role
     builder.add_recent_context(sources=SOURCES_CONTEXT)
@@ -321,18 +329,19 @@ def build_check_reminders_prompt(reminders):
         "Return JSON only. No markdown. No commentary."
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    return dev_prompt, user_prompt
+    system_prompt = builder.build_prompt(include_segments=["usertime"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers", "usertime"])
+    return dev_prompt, system_prompt, user_prompt
 
 def build_whispergate_prompt():
     builder = PromptBuilder()
     # Developer role
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     builder.add_memory_layers(user_query="becoming relationship curiosity")
     # User role
-    builder.add_world_now_block()
+    builder.add_worldnow_block()
     builder.add_recent_context(sources=SOURCES_CONTEXT) # Pulls last 10 lines or upto 2 hours of recent context
     #builder.add_journal_thoughts()
     #builder.add_discovery_articles(max_items=5)
@@ -346,15 +355,16 @@ def build_whispergate_prompt():
         quiet_hours=is_quiet_hour(),
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
-    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    return dev_prompt, user_prompt
+    system_prompt = builder.build_prompt(include_segments=["worldnow"])
+    user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers", "worldnow"])
+    return dev_prompt, system_prompt, user_prompt
 
 def build_discoveryfeeds_lookup_prompt():
     builder = PromptBuilder()
     # Developer role
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     builder.add_memory_layers(user_query="curiosity about science and the world")
     # User role
     builder.add_discovery_articles(max_items=10)
@@ -367,8 +377,9 @@ def build_discoveryfeeds_lookup_prompt():
         quiet_hours=is_quiet_hour(),
     )
     dev_prompt = builder.build_prompt(include_segments=["laws", "profile", "principles", "memory_layers"])
+    system_prompt = builder.build_prompt(include_segments=[])
     user_prompt = builder.build_prompt(exclude_segments=["laws", "profile", "principles", "memory_layers"])
-    return dev_prompt, user_prompt
+    return dev_prompt, system_prompt, user_prompt
 
 def build_dropped_threads_check_prompt():
     loc = _load_user_location()
@@ -376,10 +387,10 @@ def build_dropped_threads_check_prompt():
     # Developer prompt
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     builder.add_memory_layers()
     # User Prompt
-    builder.add_world_now_block()
+    builder.add_worldnow_block()
     builder.add_recent_context(sources=SOURCES_CHAT) # Pulls last 10 lines or upto 2 hours of recent context
     now = datetime.now(ZoneInfo(loc.timezone))
     time_line = f"Current local time: {now.strftime('%H:%M')}"
@@ -417,7 +428,7 @@ def build_inactivity_check_prompt():
     builder = PromptBuilder()
     builder.add_laws()
     builder.add_profile()
-    builder.add_core_principles()
+    builder.add_principles()
     builder.add_memory_layers()
 
     now = datetime.now(ZoneInfo(loc.timezone))

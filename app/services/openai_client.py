@@ -95,6 +95,10 @@ def build_user_content(user_prompt: str, images: Optional[List[Dict]] = None) ->
             content.append({"type": "input_image", "image_url": img["data_url"]})
     return content
 
+def build_system_content(system_prompt: str) -> List[Dict[str, Any]]:
+    content = [{"type": "input_text", "text": system_prompt}]
+    return content
+
 def build_dev_content(dev_prompt: str, muse_name: str) -> List[Dict[str, Any]]:
     core = (
         f"You are {muse_name}— a muse with agency, memory, and warmth. "
@@ -121,6 +125,7 @@ def build_payload_for_model(model: str,
                             prompt_cache_key: str,
                             developer_pre_prompt_verbose: str,
                             dev_content: List[Dict[str, Any]],
+                            system_content: List[Dict[str, Any]],
                             user_content: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Returns a dict with:
@@ -162,6 +167,7 @@ def build_payload_for_model(model: str,
         input_msgs = [
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
         kwargs = {"reasoning": {"effort": "minimal"}, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
@@ -170,6 +176,7 @@ def build_payload_for_model(model: str,
         input_msgs = [
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
         kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
@@ -178,6 +185,7 @@ def build_payload_for_model(model: str,
         input_msgs = [
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
         kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
@@ -185,6 +193,7 @@ def build_payload_for_model(model: str,
     elif m in CHAT_MODELS:
         input_msgs = [
             {"role": "developer", "content": dev_content},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
         kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
@@ -192,6 +201,7 @@ def build_payload_for_model(model: str,
     elif m in CHAT_MODELS_WITH_CACHE_RETENTION:
         input_msgs = [
             {"role": "developer", "content": dev_content},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
         kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_retention": "24h"}
@@ -208,6 +218,7 @@ def build_payload_for_model(model: str,
 
 async def get_openai_response(
     dev_prompt,
+    system_prompt,
     user_prompt,
     client,
     prompt_type="default",
@@ -221,6 +232,7 @@ async def get_openai_response(
 ):
     try:
         user_content = build_user_content(user_prompt, images)
+        system_content = build_system_content(system_prompt)
         dev_content = build_dev_content(
             dev_prompt,
             muse_settings.get_section("muse_config").get("MUSE_NAME")
@@ -231,6 +243,7 @@ async def get_openai_response(
             model=model,
             developer_pre_prompt_verbose=developer_pre_prompt_verbose,
             dev_content=dev_content,
+            system_content=system_content,
             user_content=user_content,
             prompt_cache_key=prompt_cache_key
         )

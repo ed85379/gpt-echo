@@ -1080,6 +1080,7 @@ class RouteUserInputResult:
 
 async def route_user_input(
         dev_prompt: str,
+        system_prompt: str,
         user_prompt: str,
         images=None,
         client=None,
@@ -1091,6 +1092,7 @@ async def route_user_input(
 
     response = await get_openai_response(
         dev_prompt,
+        system_prompt,
         user_prompt,
         client=client,
         prompt_type=prompt_type,
@@ -1146,6 +1148,7 @@ async def route_user_input(
 # Handles muse_initiator-specific responses
 async def handle_muse_decision(
     dev_prompt,
+    system_prompt,
     user_prompt,
     client,
     model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"),
@@ -1159,6 +1162,7 @@ async def handle_muse_decision(
     """
     response = await get_openai_response(
         dev_prompt,
+        system_prompt,
         user_prompt,
         client,
         prompt_type="whispergate",
@@ -1330,7 +1334,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     if not subject:
         return "Missing subject for speak command"
 
-    dev_prompt, user_prompt = build_speak_prompt(
+    dev_prompt, system_prompt, user_prompt = build_speak_prompt(
         subject=subject,
         payload=payload,
         destination="frontend"
@@ -1338,6 +1342,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
 
     response = await get_openai_response(
         dev_prompt,
+        system_prompt,
         user_prompt,
         client=speak_openai_client,
         prompt_type="api",
@@ -1527,10 +1532,11 @@ async def handle_journal_command(payload, entry_type="public", source=None):
     tool_bundle = build_tool_bundle(["search_web", "search_news", "read_webpage"])
 
 
-    dev_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
+    dev_prompt, system_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
 
     response = await get_openai_response(
         dev_prompt,
+        system_prompt,
         user_prompt,
         client=journal_openai_client,
         prompt_type="journal",

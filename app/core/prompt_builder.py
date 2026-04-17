@@ -57,7 +57,7 @@ class PromptBuilder:
         formatted = format_profile_sections(profile_sections)
         self.segments["profile"] = f"[Profile]\n{formatted}"
 
-    def add_core_principles(self):
+    def add_principles(self):
         principles_sections = muse_profile.get_sections_by_category(category="principles")
         formatted = format_profile_sections(principles_sections)
         self.segments["principles"] = f"[Principles]\n{formatted}"
@@ -561,7 +561,7 @@ class PromptBuilder:
         human_time = user_time.strftime('%A, %B %d, %Y %I:%M %p %Z')
         self.segments["usertime"] = f"[Current Time] {human_time}"
 
-    def add_world_now_block(self):
+    def add_worldnow_block(self):
         # User time/location
         from app.core.time_location_utils import user_data
         user_time, user_city, user_state = user_data()

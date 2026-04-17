@@ -97,7 +97,7 @@ async def handle_incoming_discord_message(message):
             )
             timestamp_for_context = datetime.now(timezone.utc).isoformat()
             # Call prompt_profiles to build the prompt for the frontend UI
-            dev_prompt, user_prompt, ephemeral_images = build_discord_prompt(
+            dev_prompt, system_prompt, user_prompt, ephemeral_images = build_discord_prompt(
                 user_input,
                 author_name=message.author.name,
                 source="discord",
@@ -107,7 +107,7 @@ async def handle_incoming_discord_message(message):
             #print(f"USER PROMPT: {user_prompt}")
             print(f"ATTACHMENTS: {ephemeral_images}")
             # Get Muse's response
-            muse_response = await get_openai_response(dev_prompt, user_prompt, client=discord_openai_client, prompt_type="discord", images=ephemeral_images)
+            muse_response = await get_openai_response(dev_prompt, system_prompt, user_prompt, client=discord_openai_client, prompt_type="discord", images=ephemeral_images)
             #print("🧠 Muse response generated:")
             #print(muse_response)
 
