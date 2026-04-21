@@ -23,6 +23,18 @@ def get_states_doc():
     )
     return states_doc
 
+def get_active_project_state():
+    filter_query = {"type": STATES_DOC}
+    projection = {"_id": 0, "projects": 1}
+
+    state_doc = mongo_system.find_one_document(
+        MONGO_STATES_COLLECTION,
+        query=filter_query,
+        projection=projection
+    ) or {}
+
+    return state_doc.get("projects", {})
+
 def get_per_project_states():
     filter_query = {"type": STATES_DOC}
     projection = {"_id": 0, "projects.per_project": 1}
