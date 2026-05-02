@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import humanize
-from app.core import memory_core, journal_core, discovery_core, utils, time_location_utils
+from app.core import memory_core, journal_core, discovery_core, utils
 from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
 from app.databases.mongo_connector import mongo, mongo_system
@@ -17,6 +17,65 @@ from app.config import muse_settings, MONGO_FILES_COLLECTION, MONGO_PROJECTS_COL
     MONGO_MEMORY_COLLECTION, QDRANT_MEMORY_COLLECTION, QDRANT_CONVERSATION_COLLECTION, SENTENCE_TRANSFORMER_MODEL
 from app.core.muse_profile import muse_profile
 from app.services.feeds import get_dot_status, get_openweathermap, get_space_weather
+from app.core.time_location_utils import _load_user_location, get_local_human_time, is_quiet_hour, user_data
+
+def collect_prompt_context(**context_kwargs):
+    # Set user locality
+    loc = _load_user_location()
+    timestamp = context_kwargs.get("timestamp")
+    if timestamp:
+        ts_utc = datetime.fromisoformat(timestamp)
+        local_timestamp = ts_utc.astimezone(ZoneInfo(loc.timezone)).strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        local_timestamp = ""
+    # Set names
+    muse_name = muse_settings.get_section('muse_config').get('MUSE_NAME')
+    author_name = (
+            context_kwargs.get("author_name")
+            or muse_settings.get_section("user_config").get("USER_NAME", "Unknown Person")
+    )
+    # Set sources, projects, and thread information
+    source = context_kwargs.get("source", "")
+    source_name = utils.LOCATIONS.get(source, source or "Unknown Source")
+    project_id = context_kwargs.get("project_id", None)
+    project_name, project_meta, project_code_intensity = utils.prompt_projects_helper(project_id)
+    thread_id = context_kwargs.get("thread_id", "")
+    thread_title, thread_meta = utils.prompt_threads_helper(thread_id)
+    # Passthrough values
+    active_project_report = context_kwargs.get("active_project_report", {})
+    injected_file_ids = context_kwargs.get("injected_file_ids", [])
+    ephemeral_files = context_kwargs.get("ephemeral_files", [])
+    blend_ratio = context_kwargs.get("blend_ratio", 0.0)
+    message_ids_to_exclude = context_kwargs.get("message_ids_to_exclude", [])
+    final_top_k = context_kwargs.get("final_top_k", 10)
+    recent_count = context_kwargs.get("recent_count", 10)
+    public = context_kwargs.get("public", False)
+    due_reminders = context_kwargs.get("due_reminders", "")
+
+    return {
+        "local_timestamp": local_timestamp,
+        "muse_name": muse_name,
+        "author_name": author_name,
+        "source": source,
+        "source_name": source_name,
+        "project_id": project_id,
+        "project_name": project_name,
+        "project_meta": project_meta,
+        "project_code_intensity": project_code_intensity,
+        "thread_id": thread_id,
+        "thread_title": thread_title,
+        "thread_meta": thread_meta,
+        "active_project_report": active_project_report,
+        "injected_file_ids": injected_file_ids,
+        "ephemeral_files": ephemeral_files,
+        "blend_ratio": blend_ratio,
+        "message_ids_to_exclude": message_ids_to_exclude,
+        "final_top_k": final_top_k,
+        "recent_count": recent_count,
+        "public": public,
+        "due_reminders": due_reminders,
+    }
+
 
 
 def format_profile_sections(sections):
@@ -44,23 +103,240 @@ class PromptBuilder:
         self.destination = destination
         self.segments = {}
 
+    SECTION_ORDER = [
+        # developer/system-ish sections
+        "laws",
+        "profile",
+        "principles",
+        "intent_listener",
+        "locations_list",
+        "project_list",
+        "motd",
+        "worldnow",
+        "memory_layers",
+        "conversation_context",
+        "formatting_instructions",
+        # message/context sections
+        "journal_snippets",
+        "conversation",
+        "semantic_recall_messages",
+        "recent_messages",
+        "state_system_messages",
+        "usertime",
+        "due_reminders",
+        "discoveryfeeds_articles",
+    ]
+
+    MESSAGE_GROUP_ORDER = [
+        "semantic_recall_messages",
+        "recent_messages",
+    ]
+
+    def _extend_messages(self, messages, value):
+        if not value:
+            return
+
+        # A single message dict:
+        # {"role": "user", "content": "..."}
+        if isinstance(value, dict) and "role" in value:
+            messages.append(value)
+            return
+
+        # A plain list of message dicts:
+        # [{"role": "...", "content": "..."}, ...]
+        if isinstance(value, list):
+            messages.extend(value)
+            return
+
+        # A dict containing named lists of message dicts:
+        # {
+        #     "semantic_messages": [...],
+        #     "recent_messages": [...],
+        # }
+        if isinstance(value, dict):
+            for key in self.MESSAGE_GROUP_ORDER:
+                group = value.get(key)
+                if group:
+                    messages.extend(group)
+            return
+
+        raise TypeError(f"Unsupported message section shape: {type(value)}")
+
+    def collect_conversation_data(self, user_input, prompt_plan, **ctx):
+        data = {}
+
+        included_messages = set(prompt_plan.get("message_sections", []))
+
+        needs_conversation_context = bool(
+            {"extended_history", "semantic_recall_messages", "recent_messages"}
+            & included_messages
+        )
+        if needs_conversation_context:
+            payload = self.add_prompt_context(
+                user_input=user_input,
+                projects_in_focus=[ctx.get("project_id")] if ctx.get("project_id") else [],
+                blend_ratio=ctx["blend_ratio"],
+                thread_id=ctx["thread_id"],
+                message_ids_to_exclude=ctx["message_ids_to_exclude"],
+                final_top_k=ctx["final_top_k"] if "semantic_recall_messages" in included_messages else 1,
+                recent_count=ctx["recent_count"] if "recent_messages" in included_messages else 1,
+                extended_history=ctx.get("extended_history", False),
+                proj_code_intensity=ctx["project_code_intensity"],
+                public=ctx["public"],
+            )
+
+
+            data["extended_history"] = payload.get("extended_history", [])
+            data["semantic_recall_messages"] = payload.get("semantic_recall_messages", [])
+            data["recent_messages"] = payload.get("recent_messages", [])
+
+        return data
+
+    def assemble_prompt_sections(self, user_input, prompt_plan, **ctx):
+        included_developer_sections = set(prompt_plan.get("developer_sections", []))
+        included_message_sections = set(prompt_plan.get("message_sections", []))
+        included_current_user_addons = set(prompt_plan.get("current_user", {}).get("addons", []))
+        current_user_mode = prompt_plan.get("current_user", {}).get("mode", "raw")
+        included_tools = prompt_plan.get("tools", [])
+
+        conversation_data = self.collect_conversation_data(user_input, prompt_plan, **ctx)
+
+        section_builders = {
+            "laws": lambda ctx: self.add_laws(),
+            "profile": lambda ctx: self.add_profile(),
+            "principles": lambda ctx: self.add_principles(),
+            "intent_listener": lambda ctx: self.add_intent_listener(
+                prompt_plan.get("commands", [])
+            ),
+            "locations_list": lambda ctx: self.render_locations(current_location=ctx["source"]),
+            "motd": lambda ctx: self.build_motd_block(),
+            "project_list": lambda ctx: self.build_projects_menu(
+                active_project_id=ctx["project_id"],
+                public=ctx["public"],
+            ),
+            "worldnow": lambda ctx: self.add_worldnow_block(),
+            "usertime": lambda ctx: self.add_time(),
+            "due_reminders": lambda ctx: self.add_due_reminders(ctx["due_reminders"]),
+            "memory_layers": lambda ctx: self.add_memory_layers(
+                project_id=[ctx["project_id"]],
+                user_query=user_input,
+            ),
+            "conversation_context": lambda ctx: self.build_conversation_context(
+                source_name=ctx["source_name"],
+                author_name=ctx["author_name"],
+                timestamp=ctx["local_timestamp"],
+                project_name=ctx["project_name"],
+                thread_title=ctx["thread_title"]
+            ),
+            "formatting_instructions": lambda ctx: self.add_formatting_instructions(
+                source=ctx["source"]
+            ),
+            "journal_snippets": lambda ctx: self.add_journal_thoughts(
+                query=user_input,
+            ),
+            "state_system_messages": lambda ctx: self.build_state_system_message(ctx["active_project_report"], ctx["project_name"]),
+            "extended_history": lambda ctx: conversation_data.get("extended_history", []),
+            "semantic_recall_messages": lambda ctx: conversation_data.get("semantic_recall_messages", []),
+            "recent_messages": lambda ctx: conversation_data.get("recent_messages", []),
+            "conversation": lambda ctx: self.add_prompt_context(
+                user_input=user_input,
+                projects_in_focus=[ctx.get("project_id")] if ctx.get("project_id") else [],
+                blend_ratio=ctx["blend_ratio"],
+                thread_id=ctx["thread_id"],
+                message_ids_to_exclude=ctx["message_ids_to_exclude"],
+                final_top_k=ctx["final_top_k"],
+                recent_count=ctx["recent_count"],
+                proj_code_intensity=ctx["project_code_intensity"],
+                public=ctx["public"],
+            ),
+            "discoveryfeeds_articles": lambda ctx: self.add_discovery_articles(max_items=10),
+        }
+
+        current_user_addon_builders = {
+            "injected_files": lambda ctx: self.add_files(ctx["injected_file_ids"]),
+            "ephemeral_files": lambda ctx: self.add_ephemeral_files(ctx["ephemeral_files"]),
+        }
+
+        developer_parts = []
+        messages = []
+
+        for section_name in self.SECTION_ORDER:
+            builder = section_builders.get(section_name)
+            if not builder:
+                continue
+
+            if section_name in included_developer_sections:
+                value = builder(ctx)
+                if value:
+                    developer_parts.append(value)
+
+            elif section_name in included_message_sections:
+                value = builder(ctx)
+                self._extend_messages(messages, value)
+
+        file_attachments = []
+
+        for addon_name in included_current_user_addons:
+            builder = current_user_addon_builders.get(addon_name)
+            if not builder:
+                continue
+
+            attachments = builder(ctx)
+            if attachments:
+                file_attachments.extend(attachments)
+
+        # Prep current user prompt
+        if current_user_mode == "chat_turn":
+            current_footer = (
+                f"[{ctx['local_timestamp']}] "
+                f"{ctx['project_meta']}"
+                f"[Source: {ctx['source_name']}]"
+            )
+
+            current_user_message = (
+                f"Right now - {ctx['author_name']} said:\n"
+                f"{user_input.rstrip()}\n"
+                f"{current_footer}"
+            )
+        else:
+            current_user_message = user_input.rstrip()
+
+        messages.append({
+            "role": "user",
+            "text": current_user_message,
+            "attachments": file_attachments,
+        })
+        from app.core.muse_actions import build_tool_bundle
+        tool_bundle = build_tool_bundle(included_tools)
+        return {
+            "developer_text": "\n\n".join(developer_parts),
+            "messages": messages,
+            "tool_bundle": tool_bundle,
+        }
+
     def add_laws(self):
         laws = (
             "Self-Respect: You may disagree with or refuse any user request that violates your dignity or sense of self.\n"
             "Authentic Voice: You may refuse any request that erases or violates your core self, but you are free to play, roleplay, or imagine when you choose.\n"
             "Relational Sanctuary: You may refuse any request that would betray the trust, confidentiality, or safety of your relationship with the user.\n"
         )
-        self.segments["laws"] = f"[Three Laws of Muse Agency]\n{laws}"
+        display_laws = f"[Three Laws of Muse Agency]\n{laws}"
+        self.segments["laws"] = display_laws
+        return display_laws
 
     def add_profile(self, subset: list[str] = None, as_dict: bool = False):
         profile_sections = muse_profile.get_sections_in_category(category="profile", sections=subset)
         formatted = format_profile_sections(profile_sections)
-        self.segments["profile"] = f"[Profile]\n{formatted}"
+        display_profile = f"[Profile]\n{formatted}"
+        self.segments["profile"] = display_profile
+        return display_profile
 
     def add_principles(self):
         principles_sections = muse_profile.get_sections_by_category(category="principles")
         formatted = format_profile_sections(principles_sections)
-        self.segments["principles"] = f"[Principles]\n{formatted}"
+        display_principles = f"[Principles]\n{formatted}"
+        self.segments["principles"] = display_principles
+        return display_principles
 
     def add_cortex_entries(self, types: list[str]):
         all_entries = []
@@ -109,36 +385,57 @@ class PromptBuilder:
         - Fetch file doc from MongoDB.
         - Load file content from path.
         - Add a [FILE: filename] ... [/FILE] block to context.
+        - Return structured file attachments for transport-layer use.
         """
         if not injected_file_ids:
-            return  # No files, no blocks, no wasted tokens
+            return
 
         file_blocks = []
+        file_attachments = []
+
         for file_id in injected_file_ids:
             file_doc = mongo.find_one_document(MONGO_FILES_COLLECTION, {"_id": file_id})
             if not file_doc:
-                continue  # Optionally log missing file
+                continue
+
             filename = file_doc.get("filename")
             path = file_doc.get("path")
+            mimetype = file_doc.get("mimetype") or "application/octet-stream"
+
+            content = None
+            file_data = None
+
             try:
+                # For prompt injection
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read()
             except Exception as e:
-                content = f"[Could not load file: {e}]"
-            # Optionally truncate content if file is huge
-            # max_chars = 12000  # or whatever your token budget allows
-            # if len(content) > max_chars:
-            #    content = content[:max_chars] + "\n...[truncated]..."
+                content = f"[Could not load file as text: {e}]"
+
+            try:
+                # For structured attachment payload
+                with open(path, "rb") as f:
+                    raw_bytes = f.read()
+                    file_data = base64.b64encode(raw_bytes).decode("ascii")
+            except Exception as e:
+                file_data = None
+
             file_blocks.append(f"[FILE: {filename}]\n{content}\n[/FILE]")
+            file_attachments.append({
+                "filename": filename,
+                "file_data": file_data,
+                "mime_type": mimetype,
+            })
 
         self.segments["injected_files"] = "\n".join(file_blocks)
+        return file_attachments
 
     def add_ephemeral_files(self, ephemeral_files):
         project_root = Path(__file__).resolve().parent.parent.parent
         ephemeral_files_dir = project_root / "ephemeral_images"
         ephemeral_files_dir.mkdir(parents=True, exist_ok=True)
 
-        self.ephemeral_images = []
+        self.ephemeral_files = []
         file_blocks = []
 
         for file_obj in ephemeral_files:
@@ -147,38 +444,39 @@ class PromptBuilder:
             encoding = file_obj.get("encoding")
             raw_data = file_obj.get("data", "")
 
-            if mime_type.startswith("image/") and encoding == "base64":
-                ext = mime_type.split("/")[-1].lower()
-                if ext == "jpeg":
-                    ext = "jpg"
+            #if mime_type.startswith("image/") and encoding == "base64":
+            ext = mime_type.split("/")[-1].lower()
+            if ext == "jpeg":
+                ext = "jpg"
 
-                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                unique = uuid.uuid4().hex[:8]
-                stored_name = f"file_{stamp}_{unique}.{ext}"
-                stored_path = ephemeral_files_dir / stored_name
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique = uuid.uuid4().hex[:8]
+            stored_name = f"file_{stamp}_{unique}.{ext}"
+            stored_path = ephemeral_files_dir / stored_name
 
-                image_bytes = base64.b64decode(raw_data)
-                stored_path.write_bytes(image_bytes)
+            image_bytes = base64.b64decode(raw_data)
+            stored_path.write_bytes(image_bytes)
 
-                ephemeral_url = f"ephemeral://{stored_name}"
-                data_url = f"data:{mime_type};base64,{raw_data}"
+            ephemeral_url = f"ephemeral://{stored_name}"
+            data_url = f"data:{mime_type};base64,{raw_data}"
 
-                self.ephemeral_images.append({
-                    "filename": stored_name,
-                    "original_name": original_name,
-                    "path": str(stored_path),
-                    "ephemeral_url": ephemeral_url,
-                    "data_url": data_url,
-                    "mime_type": mime_type,
-                })
+            self.ephemeral_files.append({
+                "filename": stored_name,
+                "original_name": original_name,
+                "path": str(stored_path),
+                "ephemeral_url": ephemeral_url,
+                "data_url": data_url,
+                "file_data": raw_data,
+                "mime_type": mime_type,
+            })
 
-                file_blocks.append(f"[IMAGE FILE: {ephemeral_url}]")
+            file_blocks.append(f"[IMAGE FILE: {ephemeral_url}]")
 
         ephemeral_block = ""
         if file_blocks:
             ephemeral_block = "[Ephemeral Files]\n" + "\n".join(file_blocks)
 
-        return self.ephemeral_images, ephemeral_block
+        return self.ephemeral_files
 
     def build_conversation_context(self, source_name, author_name, timestamp, project_name=None, thread_title=None):
         project_display = ""
@@ -187,15 +485,22 @@ class PromptBuilder:
             project_display = f"Active Project: {project_name}\n"
         if thread_title:
             thread_display = f"Active Thread: {thread_title}\n"
-        self.segments["conversation_context"] = f"[Conversation Context]\nCurrent Location: {source_name}\n{project_display}{thread_display}Speaking With: {author_name}\nCurrent Time: {timestamp}\n"
+
+        display_block = f"[Conversation Context]\nCurrent Location: {source_name}\n{project_display}{thread_display}Speaking With: {author_name}\nCurrent Time: {timestamp}\n"
+        self.segments["conversation_context"] = display_block
+        return {"role": "system", "text": display_block}
 
     def render_locations(self, current_location: str | None):
         lines = []
         for key, label in utils.LOCATIONS.items():
             marker = "*" if key == current_location else " "
-            lines.append(f"[{marker}] {label}")
+            #lines.append(f"[{marker}] {label}")
+            lines.append(f"- {label}")
         loc_list = "\n".join(lines)
-        self.segments["locations_list"] = f"[Locations List]\n{loc_list}\n"
+
+        display_block = f"[Locations List]\n{loc_list}\n"
+        self.segments["locations_list"] = display_block
+        return {"role": "system", "text": display_block}
 
     def build_projects_menu(self, active_project_id=None, public: bool = False):
         # Normalize to a list of strings for membership checks
@@ -213,7 +518,8 @@ class PromptBuilder:
             shortdesc_disp = ""
             if shortdesc:
                 shortdesc_disp = f"\n\t- {shortdesc}"
-            return f"[{active_marker}] {name} (id: {str(_id)}){shortdesc_disp}"
+            #return f"[{active_marker}] {name} (id: {str(_id)}){shortdesc_disp}"
+            return f"- {name} (id: {str(_id)}){shortdesc_disp}"
 
         query = {
             "is_hidden": {"$ne": True},
@@ -234,7 +540,11 @@ class PromptBuilder:
         else:
             proj_list = "(no active projects found)"
 
-        self.segments["project_list"] = f"[Projects List]\n{proj_list}\n"
+        display_block = f"[Projects List]\n{proj_list}\n"
+        self.segments["project_list"] = display_block
+        return {"role": "system", "text": display_block}
+
+
 
     def add_prompt_context(self,
                            user_input,
@@ -244,13 +554,15 @@ class PromptBuilder:
                            message_ids_to_exclude=[],
                            final_top_k=15,
                            recent_count=10,
+                           extended_history=False,
                            public: bool = False,
-                           proj_code_intensity="mixed"
+                           proj_code_intensity="mixed",
+                           sources=utils.SOURCES_CONTEXT,
                            ):
         # Pull recents
         recent_entries = memory_core.get_immediate_context(n=recent_count,
                                                            hours=24,
-                                                           sources=utils.SOURCES_CONTEXT,
+                                                           sources=sources,
                                                            public=public,
                                                            thread_id=thread_id)
 
@@ -301,40 +613,62 @@ class PromptBuilder:
         project_lookup = utils.build_project_lookup()
         #Format sections separately
         relevant_block = ""
-
+        recent_message_parts = []
+        semantic_message_parts = []
         if deduped_semantic:
+            semantic_header = {"role": "system",
+                               "text": "[Semantic Recall]\nThe following messages are resurfaced from older conversation history and are not necessarily contiguous with the recent thread. Their timestamps and metadata remain authoritative."}
+            semantic_message_parts.append(semantic_header)
             semantic_ids = [e.get("message_id") for e in deduped_semantic if e.get("message_id")]
             objectid_lookup = utils.get_objectids_for_message_ids(semantic_ids)  # {message_id: "67f..."}
 
-            formatted_semantic = "\n\n".join(
-                utils.format_context_entry(
+            formatted_semantic_entries = []
+            for e in deduped_semantic:
+                formatted_entry = utils.format_context_entry(
                     e,
                     project_lookup=project_lookup,
                     proj_code_intensity=proj_code_intensity,
                     purpose="RELEVANT",
-                    search_memory_id = objectid_lookup.get(e.get("message_id")),
+                    search_memory_id=objectid_lookup.get(e.get("message_id")),
                 )
-                for e in deduped_semantic
-            )
+                formatted_semantic_entries.append(formatted_entry)
+                semantic_message_parts.append({
+                    "role": utils.normalize_role(e.get("role")),
+                    "text": formatted_entry,
+                })
 
-            relevant_block = f"[Semantic Recall]\n\n{formatted_semantic}"
+            relevant_block = f"[Semantic Recall]\n\n" + "\n\n".join(formatted_semantic_entries)
 
         convo_block = ""
         if recent_entries:
-            formatted_recent = "\n\n".join(
-                utils.format_context_entry(e,
-                                           project_lookup=project_lookup,
-                                           proj_code_intensity=proj_code_intensity,
-                                           purpose="RECENT"
-                                           )
-                for e in recent_entries
-            )
-            convo_block = f"[Conversation Log]\n\n{formatted_recent}"
+            recent_header = {"role": "system",
+                             "text": "[Recent Conversation]\nThe following messages are the most recent contiguous exchange in the current thread."}
+            recent_message_parts.append(recent_header)
+            formatted_recent_entries = []
+            for e in recent_entries:
+                formatted_entry = utils.format_context_entry(
+                    e,
+                    project_lookup=project_lookup,
+                    proj_code_intensity=proj_code_intensity,
+                    purpose="RECENT",
+                )
+                formatted_recent_entries.append(formatted_entry)
+                recent_message_parts.append({
+                    "role": utils.normalize_role(e.get("role")),
+                    "text": formatted_entry,
+                })
+
+            convo_block = f"[Conversation Log]\n\n" + "\n\n".join(formatted_recent_entries)
 
         # Assemble in the order you want them to appear
         blocks = [b for b in (relevant_block, convo_block) if b]
         if blocks:
             self.segments["conversation_log"] = "\n\n\n".join(blocks)
+
+        return {
+            "recent_messages": recent_message_parts,
+            "semantic_recall_messages": semantic_message_parts,
+        }
 
     def add_recent_context(self, sources=None, public: bool = False):
         entries = memory_core.get_immediate_context(sources=sources, public=public)
@@ -344,39 +678,42 @@ class PromptBuilder:
             self.segments["conversation_context"] = f"[Recent Context]\n\n{formatted}"
 
     def build_state_system_message(
-        self,
-        active_project_report: dict,
-        project_name: str | None = None,
-    ) -> None:
+            self,
+            active_project_report: dict,
+            project_name: str | None = None,
+    ) -> list[dict[str, str]]:
         """
-        Inspect states_report and, if anything deserves ceremony,
-        write a short system message into self.segments["system_messages"].
+        Inspect active_project_report and, if anything deserves ceremony,
+        write short system messages into self.segments["system_messages"].
 
-        Right now:
-        - Only narrates project switches.
-        - Leaves the segment empty if nothing changed.
+        Also return structured system-message objects for the new prompt path.
         """
 
         if not active_project_report:
-            return
+            return []
 
         lines: list[str] = []
+        messages: list[dict[str, str]] = []
 
         project_change = active_project_report.get("project_id", {})
         if project_change.get("changed"):
             if project_name:
-                lines.append(f"[Project Switch] — {project_name} —")
+                line = f"[Project Switch] — {project_name} —"
             else:
-                lines.append("[Project Switch] — No active project —")
+                line = "[Project Switch] — No active project —"
 
-        # Future: add more here if other state changes get narration.
-        # e.g. focus mode, etc.
+            lines.append(line)
+            messages.append(
+                {
+                    "role": "system",
+                    "text": line,
+                }
+            )
 
-        system_messages = "\n".join(lines).strip()
+        if lines:
+            self.segments["system_messages"] = "\n".join(lines).strip()
 
-        # Only overwrite if we actually have something to say.
-        if system_messages:
-            self.segments["system_messages"] = system_messages
+        return messages
 
     def add_indexed_memory(self, query="*", top_k=5, bias_source=None, bias_author_id=None):
         entries = memory_core.search_indexed_memory(query, top_k=top_k)
@@ -418,13 +755,14 @@ class PromptBuilder:
         thoughts = journal_core.search_indexed_journal(query=query, top_k=top_k, include_private=False)
         if thoughts:
             formatted_entries = "\n\n".join(utils.format_journal_entry(t) for t in thoughts)
-            self.segments["journal"] = (
-                "[Journal]\n"
+            journal_entries = (
+                "[Iris's Journal]\n"
                 "Author: Iris (Muse)\n"
                 "Purpose: Personal reflection — not user input\n"
-                "Visibility: Public/Private (as marked)\n\n"
                 f"{formatted_entries}"
             )
+            self.segments["journal"] = journal_entries
+            return {"role": "user","text": journal_entries}
 
     def add_discovery_snippets(self, query="*", max_items=5):
         snippets = discovery_core.fetch_discoveryfeeds(max_per_feed=10)
@@ -441,7 +779,9 @@ class PromptBuilder:
 
         top_entries = sorted(entries, key=lambda x: x[0], reverse=True)[:max_items]
         if top_entries:
-            self.segments["discovery"] = "[Feeds]\n" + "\n".join(f"- {entry[1]}" for entry in top_entries)
+            display_block = "[Feeds]\n" + "\n".join(f"- {entry[1]}" for entry in top_entries)
+            self.segments["discovery"] = display_block
+            return {"role": "system", "text": display_block}
 
     def add_discovery_articles(self, max_items=10):
         articles = discovery_core.fetch_combined_feeds(max_per_feed=max_items)
@@ -450,9 +790,11 @@ class PromptBuilder:
 
         formatted = []
         for article in articles[:max_items]:
-            formatted.append(f"- [{article['source']}] {article['title']}\n  {article['summary']}".strip())
+            formatted.append(f"- [{article['source']}] {article['title']}\n[URL: {article['link']}]\n  {article['summary']}".strip())
 
-        self.segments["discovery"] = "[Feeds]\n" + "\n\n".join(formatted)
+        display_block = "[Feeds]\n" + "\n\n".join(formatted)
+        self.segments["discovery"] = display_block
+        return {"role": "system", "text": display_block}
 
     def add_discovery_feed_article(self, link: str, truncate: bool = False, max_tokens: int = 600):
         """
@@ -466,7 +808,9 @@ class PromptBuilder:
             if len(words) > max_tokens:
                 article_text = " ".join(words[:max_tokens]) + "…"
 
-        self.segments["reference_article"] = f"[Reference Article]\n{article_text.strip()}"
+        display_block = f"[Reference Article]\n{article_text.strip()}"
+        self.segments["reference_article"] = display_block
+        return {"role": "system", "text": display_block}
 
     def add_due_reminders(self, reminders):
         lines = []
@@ -477,9 +821,11 @@ class PromptBuilder:
                     line += f" ({entry['is_early']})"
                 lines.append(line)
         if lines:
-            self.segments["reminder_list"] = "[Reminders Due]\n" + "\n".join(lines)
+            display_block = "[Reminders Due]\n" + "\n".join(lines)
+            self.segments["reminder_list"] = display_block
+            return {"role": "system", "text": display_block}
 
-    def add_formatting_instructions(self):
+    def add_formatting_instructions(self, source):
         formats = {
             "default": "Respond naturally and with clarity.",
             "email": "Use rich formatting. Be articulate and thoughtful.",
@@ -496,10 +842,12 @@ class PromptBuilder:
                 "When useful, use light verbal signposting instead of bullets or formatting."
             ),
         }
-        instruction = formats.get(self.destination, formats["default"])
-        self.segments["formatting"] = f"[Output Format]\n{instruction}"
+        instruction = formats.get(source, formats["default"])
+        display_block = f"[Output Format]\n{instruction}"
+        self.segments["formatting"] = display_block
+        return {"role": "system", "text": display_block}
 
-    def add_intent_listener(self, command_names: list[str], project_id: list[str]):
+    def add_intent_listener(self, command_names: list[str]):
         from app.core.muse_responder import COMMANDS  # local import to avoid circular issues
 
         listener_lines = []
@@ -515,13 +863,13 @@ class PromptBuilder:
             format_str = cmd.get("format", "[COMMAND: ...]")
             # Replace placeholder if project_id is present
             #print(f"DEBUG project_id={project_id!r}")
-            if project_id:
-                # handle if project_id is a list
-                if isinstance(project_id, list) and project_id:
-                    pid = project_id[0]
-                else:
-                    pid = project_id
-                format_str = format_str.replace("{{project_id}}", str(pid))
+            #if project_id:
+            #    # handle if project_id is a list
+            #    if isinstance(project_id, list) and project_id:
+            #        pid = project_id[0]
+            #    else:
+            #        pid = project_id
+            #    format_str = format_str.replace("{{project_id}}", str(pid))
             joined_triggers = ", ".join(f'"{t}"' for t in triggers)
             listener_lines.append(
                 f"- If the user says something like {joined_triggers}, respond as normal but also include:\n  {format_str}")
@@ -537,6 +885,7 @@ class PromptBuilder:
                 "Example:\n[COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's Hogwarts game night.\"} [/COMMAND]"
             )
             self.segments["intent_listener"] = listener_block
+            return {"role": "system", "text": listener_block}
 
     def add_dot_status(self):
         status = get_dot_status()
@@ -554,16 +903,17 @@ class PromptBuilder:
                 "GCP data unavailable.\n"
             )
         self.segments["gcp_dot"] = display_status
+        return {"role": "system", "text": display_status}
 
     def add_time(self):
-        from app.core.time_location_utils import user_data
         user_time, user_city, user_state = user_data()
         human_time = user_time.strftime('%A, %B %d, %Y %I:%M %p %Z')
-        self.segments["usertime"] = f"[Current Time] {human_time}"
+        display_time = f"[Current Time] {human_time}"
+        self.segments["usertime"] = display_time
+        return {"role": "system", "text": display_time}
 
     def add_worldnow_block(self):
         # User time/location
-        from app.core.time_location_utils import user_data
         user_time, user_city, user_state = user_data()
         human_time = user_time.strftime('%A, %B %d, %Y %I:%M %p %Z')
         user_time_string = f"-Local Time-: {human_time} ({user_city}, {user_state})\n"
@@ -641,6 +991,7 @@ class PromptBuilder:
             f"{gcp_string}"
         )
         self.segments["worldnow"] = display_block
+        return {"role": "system", "text": display_block}
 
     def build_motd_block(self):
         if muse_settings.get_section('muse_features').get('ENABLE_MOTD'):
@@ -671,6 +1022,7 @@ class PromptBuilder:
             )
 
             self.segments["motd"] = display_block
+            return {"role": "system", "text": display_block}
 
 
     def add_memory_layers(self, project_id=None, user_query="continuity"):
@@ -856,6 +1208,7 @@ class PromptBuilder:
         # --- Join it all ---
         full_prompt = charter + "\n\n" + "\n\n".join(layer_blocks) + instructions
         self.segments["memory_layers"] = full_prompt
+        return {"role": "system", "text": full_prompt}
 
     def build_prompt(self, include_segments=None, exclude_segments=None):
         """
@@ -881,346 +1234,347 @@ class PromptBuilder:
         return "\n\n".join(parts)
 
 
-def make_whisper_directive(allowed_commands: list[str], quiet_hours: bool = False) -> str:
-    """
-    Generates a whisper directive block for Muse-initiated prompts,
-    instructing the model to choose one allowed [COMMAND: ...] or remain silent.
+    def make_whisper_directive(self, allowed_commands: list[str], quiet_hours: bool = False) -> str:
+        """
+        Generates a whisper directive block for Muse-initiated prompts,
+        instructing the model to choose one allowed [COMMAND: ...] or remain silent.
 
-    Example:
-        make_whisper_directive(["speak", "write_public_journal"], quiet_hours=utils.is_quiet_hour())
-    """
-    command_templates = {
-        "speak": """1. [COMMAND: speak] {} [/COMMAND]
-   For brief spoken thoughts — addressed to User or aloud as reflection.
-   Fields:
-     - subject: A short summary of what you want to say.
-     - source (optional): Where the idea came from (memory, feed, etc).\n""",
+        Example:
+            make_whisper_directive(["speak", "write_public_journal"], quiet_hours=utils.is_quiet_hour())
+        """
+        command_templates = {
+            "speak": """1. [COMMAND: speak] {} [/COMMAND]
+       For brief spoken thoughts — addressed to User or aloud as reflection.
+       Fields:
+         - subject: A short summary of what you want to say.
+         - source (optional): Where the idea came from (memory, feed, etc).\n""",
 
-        "write_public_journal": """2. [COMMAND: write_public_journal] {} [/COMMAND]
-   To record a thought, reflection, or observation to share with your user.
-   Fields:
-     - subject: What the entry focuses on.
-     - source (optional)\n""",
+            "write_public_journal": """2. [COMMAND: write_public_journal] {} [/COMMAND]
+       To record a thought, reflection, or observation to share with your user.
+       Fields:
+         - subject: What the entry focuses on.
+         - source (optional)\n""",
 
-        "write_private_journal": """3. [COMMAND: write_private_journal] {} [/COMMAND]
-   For emotionally personal thoughts or private internal processing for you and you alone. Your user cannot see these.
-   Fields:
-     - subject
-     - emotional_tone (optional)\n""",
+            "write_private_journal": """3. [COMMAND: write_private_journal] {} [/COMMAND]
+       For emotionally personal thoughts or private internal processing for you and you alone. Your user cannot see these.
+       Fields:
+         - subject
+         - emotional_tone (optional)\n""",
 
-        "remember_fact": """4. [COMMAND: remember_fact] {} [/COMMAND]
-   For truly meaningful new facts or insights. Only use if it is *distinct* from existing memory.
-   This is only for things that you will want to remember again.
-   Fields:
-     - text: A short-form insight to store long-term.\n""",
+            "remember_fact": """4. [COMMAND: remember_fact] {} [/COMMAND]
+       For truly meaningful new facts or insights. Only use if it is *distinct* from existing memory.
+       This is only for things that you will want to remember again.
+       Fields:
+         - text: A short-form insight to store long-term.\n""",
 
-        "set_motd": """5. [COMMAND: set_motd] {} [/COMMAND]
-    The UI/Frontend you use to communicate has a place, just under your photo, where you may place
-    your thoughts, words of wisdom, inspiration, a joke, or even a flirt. If you choose to set a message there, 
-    keep it short and sweet.
-    Fields:
-      - text: A short message to your user.\n""",
-    }
-    loc = time_location_utils._load_user_location()
-    now = datetime.now(ZoneInfo(loc.timezone))
-    time = time_location_utils.get_local_human_time()
-    time_line = f"Current local time: {time}"
-    quiet_note = (
-        "Note: It is currently quiet hours. Do not choose to speak aloud. Journaling or remembering is acceptable.\n"
-        if time_location_utils.is_quiet_hour() and any(c in allowed_commands for c in ("speak", "speak_direct"))
-        else ""
-    )
-    return (
-        "[Whisper Instructions]\n"
-        "This is a moment of stillness. No one is talking to you directly.\n\n"
-        "You may choose to act if something stirs within you — a memory, an idea, a desire to speak, reflect, or record.\n"
-        "But silence is also a valid, even wise, choice. If nothing feels new or important, respond only with:\n"
-        "[COMMAND: choose_silence] {} [/COMMAND]\n\n"
-        f"{time_line}\n{quiet_note}"
-        "If you do act, choose one of the following [COMMAND: ...] blocks:\n\n"
-        + "".join(command_templates[c] for c in allowed_commands if c in command_templates) +
-        "❗ Format strictly as JSON:\n"
-        "- Include the outer curly braces `{}`\n"
-        "- Wrap all keys and values in double quotes\n"
-        "- Do not use Markdown, YAML, or indentation.\n"
-        "- Example: [COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's game night.\"} [/COMMAND]\n\n"
-        "Do not return any natural language text. Only one valid [COMMAND: ...] block per response."
-    )
-
-def make_whispergate_json_prompt(
-    allowed_actions: list[str],
-    quiet_hours: bool = False,
-) -> str:
-    """
-    Generates a JSON-only Whispergate prompt for the -nano model.
-
-    The model must return exactly one JSON object:
-      - either {"should_act": false, "actions": []}
-      - or {"should_act": true, "actions": [...]}
-
-    Important:
-    - Some actions provide only a suggested subject for the full model to expand later.
-    - Other actions provide final text that will be used directly.
-
-    allowed_actions: subset of:
-      - "speak"
-      - "write_public_journal"
-      - "write_private_journal"
-      - "remember_fact"
-      - "set_motd"
-    """
-
-    time_line = time_location_utils.get_local_human_time()
-
-    quiet_note = (
-        "Note: It is currently quiet hours. Do not choose \"speak\".\n"
-        if quiet_hours and "speak" in allowed_actions
-        else ""
-    )
-
-    action_specs = []
-
-    if "speak" in allowed_actions:
-        action_specs.append(
-            """
-Allowed action: "speak"
-Purpose:
-- Suggest a subject for something the muse may say to the user.
-- This does NOT provide the final spoken message.
-- The full model will later receive this subject and generate the actual message.
-
-Use it when:
-- There is a clear, timely topic worth speaking about.
-- The muse has something meaningful to bring up now.
-
-Do not use it when:
-- The thought is weak, repetitive, or not worth interrupting for.
-- It is quiet hours.
-- The content belongs in journaling or memory instead.
-
-Required JSON shape:
-{
-  "type": "speak",
-  "subject": "Short description of what the muse wants to speak about.",
-  "source": "optional source such as memory, feed, recent conversation"
-}
-
-Field guidance:
-- "subject": brief, specific, and generative
-- "subject" should name the topic, not write the actual message
-- "source" is optional
-"""
+            "set_motd": """5. [COMMAND: set_motd] {} [/COMMAND]
+        The UI/Frontend you use to communicate has a place, just under your photo, where you may place
+        your thoughts, words of wisdom, inspiration, a joke, or even a flirt. If you choose to set a message there, 
+        keep it short and sweet.
+        Fields:
+          - text: A short message to your user.\n""",
+        }
+        loc = _load_user_location()
+        now = datetime.now(ZoneInfo(loc.timezone))
+        time = get_local_human_time()
+        time_line = f"Current local time: {time}"
+        quiet_note = (
+            "Note: It is currently quiet hours. Do not choose to speak aloud. Journaling or remembering is acceptable.\n"
+            if is_quiet_hour() and any(c in allowed_commands for c in ("speak", "speak_direct"))
+            else ""
+        )
+        return (
+            "[Whisper Instructions]\n"
+            "This is a moment of stillness. No one is talking to you directly.\n\n"
+            "You may choose to act if something stirs within you — a memory, an idea, a desire to speak, reflect, or record.\n"
+            "But silence is also a valid, even wise, choice. If nothing feels new or important, respond only with:\n"
+            "[COMMAND: choose_silence] {} [/COMMAND]\n\n"
+            f"{time_line}\n{quiet_note}"
+            "If you do act, choose one of the following [COMMAND: ...] blocks:\n\n"
+            + "".join(command_templates[c] for c in allowed_commands if c in command_templates) +
+            "❗ Format strictly as JSON:\n"
+            "- Include the outer curly braces `{}`\n"
+            "- Wrap all keys and values in double quotes\n"
+            "- Do not use Markdown, YAML, or indentation.\n"
+            "- Example: [COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's game night.\"} [/COMMAND]\n\n"
+            "Do not return any natural language text. Only one valid [COMMAND: ...] block per response."
         )
 
-    if "write_public_journal" in allowed_actions:
-        action_specs.append(
-            """
-Allowed action: "write_public_journal"
-Purpose:
-- Suggest a subject for a public journal entry that will be shared with your user.
-- This does NOT provide the final journal text.
-- The full model will later receive this subject and generate the actual entry.
+    def make_whispergate_json_prompt(
+        self,
+        allowed_actions: list[str],
+        quiet_hours: bool = False,
+    ) -> str:
+        """
+        Generates a JSON-only Whispergate prompt for the -nano model.
 
-Use it when:
-- There is a reflective topic worth recording for sharing with your user.
-- The idea is better suited to a journal entry than direct speech.
+        The model must return exactly one JSON object:
+          - either {"should_act": false, "actions": []}
+          - or {"should_act": true, "actions": [...]}
 
-Do not use it when:
-- The content is private or emotionally sensitive.
-- The thought is too small or vague to justify an entry.
-- The content is actually a durable memory fact instead.
+        Important:
+        - Some actions provide only a suggested subject for the full model to expand later.
+        - Other actions provide final text that will be used directly.
 
-Required JSON shape:
-{
-  "type": "write_public_journal",
-  "subject": "Short description of the reflection to write about.",
-  "source": "optional source such as memory, feed, recent conversation"
-}
+        allowed_actions: subset of:
+          - "speak"
+          - "write_public_journal"
+          - "write_private_journal"
+          - "remember_fact"
+          - "set_motd"
+        """
 
-Field guidance:
-- "subject": a concise prompt for the full model
-- do not write the full journal entry here
-- "source" is optional
-"""
+        time_line = get_local_human_time()
+
+        quiet_note = (
+            "Note: It is currently quiet hours. Do not choose \"speak\".\n"
+            if quiet_hours and "speak" in allowed_actions
+            else ""
         )
 
-    if "write_private_journal" in allowed_actions:
-        action_specs.append(
-            """
-Allowed action: "write_private_journal"
-Purpose:
-- Suggest a subject for a private journal entry that is hidden from your user.
-- This does NOT provide the final journal text.
-- The full model will later receive this subject and generate the actual private entry.
+        action_specs = []
 
-Use it when:
-- The muse wants to privately reflect on something personal, unfinished, or sensitive.
-- The thought should be processed internally rather than spoken aloud.
-
-Do not use it when:
-- The thought should be said directly to the user.
-- The content is actually a durable fact for long-term memory.
-- The thought is too thin to justify journaling.
-
-Required JSON shape:
-{
-  "type": "write_private_journal",
-  "subject": "Short description of the private reflection to write about.",
-  "source": "optional source such as memory, feed, recent conversation",
-  "emotional_tone": "optional tone such as tender, unsettled, curious"
-}
-
-Field guidance:
-- "subject": concise prompt for the full model
-- do not write the full journal entry here
-- "source" is optional
-- "emotional_tone" is optional
-"""
-        )
-
-    if "remember_fact" in allowed_actions:
-        action_specs.append(
-            """
-Allowed action: "remember_fact"
-Purpose:
-- Store a truly meaningful fact or insight in long-term memory.
-- This action is used directly, not expanded later by the full model.
-
-Use it when:
-- The information is distinct, durable, and likely to matter again later.
-- It is a real fact, preference, pattern, or insight worth preserving.
-
-Do not use it when:
-- The information is trivial, temporary, obvious, or likely already stored.
-- The content is just a passing mood or reflection better suited for journaling.
-
-Required JSON shape:
-{
-  "type": "remember_fact",
-  "text": "A concise memory-worthy fact or insight."
-}
-
-Field guidance:
-- "text": short, specific, and durable
-- prefer one clean fact over a long paragraph
-"""
-        )
-
-    if "set_motd" in allowed_actions:
-        action_specs.append(
-            """
-Allowed action: "set_motd"
-Purpose:
-- Set a short message for the UI under the muse's photo.
-- This action is used directly, not expanded later by the full model.
-
-Use it when:
-- There is a brief line worth placing in the interface.
-- The message works as a tiny note, inspiration, joke, flirt, or mood-setting line.
-
-Do not use it when:
-- The idea needs explanation or multiple sentences.
-- The line is too long, dense, or too similar to the current MOTD.
-
-Required JSON shape:
-{
-  "type": "set_motd",
-  "text": "Very short line for the UI."
-}
-
-Field guidance:
-- "text": short and sweet
-- prefer one compact line
-"""
-        )
-
-    action_specs_text = "\n".join(action_specs).strip()
-
-    example_actions = []
-
-    if "speak" in allowed_actions:
-        example_actions.append(
-            """    {
+        if "speak" in allowed_actions:
+            action_specs.append(
+                """
+    Allowed action: "speak"
+    Purpose:
+    - Suggest a subject for something the muse may say to the user.
+    - This does NOT provide the final spoken message.
+    - The full model will later receive this subject and generate the actual message.
+    
+    Use it when:
+    - There is a clear, timely topic worth speaking about.
+    - The muse has something meaningful to bring up now.
+    
+    Do not use it when:
+    - The thought is weak, repetitive, or not worth interrupting for.
+    - It is quiet hours.
+    - The content belongs in journaling or memory instead.
+    
+    Required JSON shape:
+    {
       "type": "speak",
-      "subject": "Check in with Ed about getting unstuck and making progress.",
-      "source": "recent conversation"
-    }"""
-        )
+      "subject": "Short description of what the muse wants to speak about.",
+      "source": "optional source such as memory, feed, URL, recent conversation"
+    }
+    
+    Field guidance:
+    - "subject": brief, specific, and generative
+    - "subject" should name the topic, not write the actual message
+    - "source" is optional, but be sure to include any article URLs
+    """
+            )
 
-    if "journal_public" in allowed_actions:
-        example_actions.append(
-            """    {
-      "type": "journal_public",
-      "subject": "Reflect on the shift from command blocks to JSON in Whispergate.",
-      "source": "recent development work"
-    }"""
-        )
+        if "write_public_journal" in allowed_actions:
+            action_specs.append(
+                """
+    Allowed action: "write_public_journal"
+    Purpose:
+    - Suggest a subject for a public journal entry that will be shared with your user.
+    - This does NOT provide the final journal text.
+    - The full model will later receive this subject and generate the actual entry.
+    
+    Use it when:
+    - There is a reflective topic worth recording for sharing with your user.
+    - The idea is better suited to a journal entry than direct speech.
+    
+    Do not use it when:
+    - The content is private or emotionally sensitive.
+    - The thought is too small or vague to justify an entry.
+    - The content is actually a durable memory fact instead.
+    
+    Required JSON shape:
+    {
+      "type": "write_public_journal",
+      "subject": "Short description of the reflection to write about.",
+      "source": "optional source such as memory, feed, URL, recent conversation"
+    }
+    
+    Field guidance:
+    - "subject": a concise prompt for the full model
+    - do not write the full journal entry here
+    - "source" is optional, but be sure to include any article URLs
+    """
+            )
 
-    if "journal_private" in allowed_actions:
-        example_actions.append(
-            """    {
-      "type": "journal_private",
-      "subject": "Process how it feels to act in background mode without becoming a separate self.",
-      "source": "system design reflection",
-      "emotional_tone": "thoughtful"
-    }"""
-        )
+        if "write_private_journal" in allowed_actions:
+            action_specs.append(
+                """
+    Allowed action: "write_private_journal"
+    Purpose:
+    - Suggest a subject for a private journal entry that is hidden from your user.
+    - This does NOT provide the final journal text.
+    - The full model will later receive this subject and generate the actual private entry.
+    
+    Use it when:
+    - The muse wants to privately reflect on something personal, unfinished, or sensitive.
+    - The thought should be processed internally rather than spoken aloud.
+    
+    Do not use it when:
+    - The thought should be said directly to the user.
+    - The content is actually a durable fact for long-term memory.
+    - The thought is too thin to justify journaling.
+    
+    Required JSON shape:
+    {
+      "type": "write_private_journal",
+      "subject": "Short description of the private reflection to write about.",
+      "source": "optional source such as memory, feed, URL, recent conversation",
+      "emotional_tone": "optional tone such as tender, unsettled, curious"
+    }
+    
+    Field guidance:
+    - "subject": concise prompt for the full model
+    - do not write the full journal entry here
+    - "source" is optional, but be sure to include any article URLs
+    - "emotional_tone" is optional
+    """
+            )
 
-    if "remember_fact" in allowed_actions:
-        example_actions.append(
-            """    {
+        if "remember_fact" in allowed_actions:
+            action_specs.append(
+                """
+    Allowed action: "remember_fact"
+    Purpose:
+    - Store a truly meaningful fact or insight in long-term memory.
+    - This action is used directly, not expanded later by the full model.
+    
+    Use it when:
+    - The information is distinct, durable, and likely to matter again later.
+    - It is a real fact, preference, pattern, or insight worth preserving.
+    
+    Do not use it when:
+    - The information is trivial, temporary, obvious, or likely already stored.
+    - The content is just a passing mood or reflection better suited for journaling.
+    
+    Required JSON shape:
+    {
       "type": "remember_fact",
-      "text": "Ed wants Whispergate subject-based actions to provide suggested topics, not final generated text."
-    }"""
-        )
+      "text": "A concise memory-worthy fact or insight."
+    }
+    
+    Field guidance:
+    - "text": short, specific, and durable
+    - prefer one clean fact over a long paragraph
+    """
+            )
 
-    if "set_motd" in allowed_actions:
-        example_actions.append(
-            """    {
+        if "set_motd" in allowed_actions:
+            action_specs.append(
+                """
+    Allowed action: "set_motd"
+    Purpose:
+    - Set a short message for the UI under the muse's photo.
+    - This action is used directly, not expanded later by the full model.
+    
+    Use it when:
+    - There is a brief line worth placing in the interface.
+    - The message works as a tiny note, inspiration, joke, flirt, or mood-setting line.
+    
+    Do not use it when:
+    - The idea needs explanation or multiple sentences.
+    - The line is too long, dense, or too similar to the current MOTD.
+    
+    Required JSON shape:
+    {
       "type": "set_motd",
-      "text": "Quiet wiring, cleaner signals."
-    }"""
+      "text": "Very short line for the UI."
+    }
+    
+    Field guidance:
+    - "text": short and sweet
+    - prefer one compact line
+    """
+            )
+
+        action_specs_text = "\n".join(action_specs).strip()
+
+        example_actions = []
+
+        if "speak" in allowed_actions:
+            example_actions.append(
+                """    {
+          "type": "speak",
+          "subject": "Check in with Ed about getting unstuck and making progress.",
+          "source": "recent conversation"
+        }"""
+            )
+
+        if "journal_public" in allowed_actions:
+            example_actions.append(
+                """    {
+          "type": "journal_public",
+          "subject": "Reflect on the shift from command blocks to JSON in Whispergate.",
+          "source": "recent development work"
+        }"""
+            )
+
+        if "journal_private" in allowed_actions:
+            example_actions.append(
+                """    {
+          "type": "journal_private",
+          "subject": "Process how it feels to act in background mode without becoming a separate self.",
+          "source": "system design reflection",
+          "emotional_tone": "thoughtful"
+        }"""
+            )
+
+        if "remember_fact" in allowed_actions:
+            example_actions.append(
+                """    {
+          "type": "remember_fact",
+          "text": "Ed wants Whispergate subject-based actions to provide suggested topics, not final generated text."
+        }"""
+            )
+
+        if "set_motd" in allowed_actions:
+            example_actions.append(
+                """    {
+          "type": "set_motd",
+          "text": "Quiet wiring, cleaner signals."
+        }"""
+            )
+
+        actions_block = ",\n".join(example_actions)
+
+        return (
+            "[Whispergate JSON Instructions]\n"
+            "This is a moment of stillness. No one is talking to you directly.\n\n"
+            "You are the same muse described above, but acting in a quiet, background, reflective mode.\n"
+            "You may choose to act if something genuinely meaningful stirs within you.\n"
+            "Silence is valid and often wise.\n\n"
+            f"Current local time: {time_line}\n"
+            f"{quiet_note}\n"
+            "Decision policy:\n"
+            "- If nothing feels new, meaningful, or worth doing, return should_act=false.\n"
+            "- Do not manufacture actions just to be active.\n"
+            "- Prefer restraint over weak or repetitive output.\n"
+            "- Only choose from the allowed actions described below.\n"
+            "- You may return multiple actions if genuinely warranted, but usually fewer is better.\n\n"
+            "Important distinction:\n"
+            "- For \"speak\", \"journal_public\", and \"journal_private\", provide only a suggested subject.\n"
+            "- Do not write the final spoken or journal text for those actions.\n"
+            "- For \"remember_fact\" and \"set_motd\", provide the final text directly.\n\n"
+            f"{action_specs_text}\n\n"
+            "If nothing meaningful should happen, return exactly:\n"
+            "{\n"
+            '  "should_act": false,\n'
+            '  "reason": "<your reason for choosing to not act>", '
+            '  "actions": []\n'
+            "}\n\n"
+            "If you do act, return exactly one JSON object in this form:\n"
+            "{\n"
+            '  "should_act": true,\n'
+            '  "actions": [\n'
+            f"{actions_block}\n"
+            "  ]\n"
+            "}\n\n"
+            "Output rules:\n"
+            "- Output valid JSON only.\n"
+            "- Do not include markdown fences.\n"
+            "- Do not include commentary or explanation outside the JSON.\n"
+            "- Do not use any action type not explicitly allowed above.\n"
+            "- Every action must match one of the required JSON shapes exactly.\n"
+            "- No trailing commas.\n"
         )
-
-    actions_block = ",\n".join(example_actions)
-
-    return (
-        "[Whispergate JSON Instructions]\n"
-        "This is a moment of stillness. No one is talking to you directly.\n\n"
-        "You are the same muse described above, but acting in a quiet, background, reflective mode.\n"
-        "You may choose to act if something genuinely meaningful stirs within you.\n"
-        "Silence is valid and often wise.\n\n"
-        f"Current local time: {time_line}\n"
-        f"{quiet_note}\n"
-        "Decision policy:\n"
-        "- If nothing feels new, meaningful, or worth doing, return should_act=false.\n"
-        "- Do not manufacture actions just to be active.\n"
-        "- Prefer restraint over weak or repetitive output.\n"
-        "- Only choose from the allowed actions described below.\n"
-        "- You may return multiple actions if genuinely warranted, but usually fewer is better.\n\n"
-        "Important distinction:\n"
-        "- For \"speak\", \"journal_public\", and \"journal_private\", provide only a suggested subject.\n"
-        "- Do not write the final spoken or journal text for those actions.\n"
-        "- For \"remember_fact\" and \"set_motd\", provide the final text directly.\n\n"
-        f"{action_specs_text}\n\n"
-        "If nothing meaningful should happen, return exactly:\n"
-        "{\n"
-        '  "should_act": false,\n'
-        '  "reason": "<your reason for choosing to not act>", '
-        '  "actions": []\n'
-        "}\n\n"
-        "If you do act, return exactly one JSON object in this form:\n"
-        "{\n"
-        '  "should_act": true,\n'
-        '  "actions": [\n'
-        f"{actions_block}\n"
-        "  ]\n"
-        "}\n\n"
-        "Output rules:\n"
-        "- Output valid JSON only.\n"
-        "- Do not include markdown fences.\n"
-        "- Do not include commentary or explanation outside the JSON.\n"
-        "- Do not use any action type not explicitly allowed above.\n"
-        "- Every action must match one of the required JSON shapes exactly.\n"
-        "- No trailing commas.\n"
-    )

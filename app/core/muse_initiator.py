@@ -14,10 +14,11 @@ from app.services.openai_client import continuity_openai_client
 async def run_whispergate():
     print("\nWhisperGate: Evaluating...")
 
-    dev_prompt, system_prompt, user_prompt = prompt_profiles.build_whispergate_prompt()
+    dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_new_whispergate_prompt()
+
     print("Prompt built. Sending to model...")
 
-    response = await handle_muse_decision(dev_prompt, system_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="whispergate")
+    response = await handle_muse_decision(dev_prompt=dev_prompt, user_assistant_messages=user_assistant_messages, tool_bundle=tool_bundle, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="whispergate")
     #print("WhisperGate prompt:", prompt)
     write_system_log(level="info", module="core", component="initiator", function="run_whispergate",
                            action="whispergate_response", response=response)
@@ -26,74 +27,16 @@ async def run_whispergate():
 
 # </editor-fold>
 
-# <editor-fold desc="run_dropped_threads_check">
-async def run_dropped_threads_check():
-    print("\nWhisperGate: Evaluating...")
 
-    dev_prompt, user_prompt = prompt_profiles.build_dropped_threads_check_prompt()
-    print("Prompt built. Sending to model...")
 
-    response = await handle_muse_decision(dev_prompt, user_prompt, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"))
-    #print("WhiserGate prompt:", prompt)
-    write_system_log(level="info", module="core", component="initiator", function="run_dropped_threads_check",
-                           action="whispergate_response", response=response)
-
-    print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
-
-# </editor-fold>
-
-# <editor-fold desc="run_inactivity_check">
-async def run_inactivity_check():
-    # Get all times in UTC for consistent comparison
-    now_utc = datetime.now(timezone.utc)
-
-    # Get quiet_end in user timezone, convert to UTC
-    quiet_end_local = get_quiet_hours_end_today()
-    quiet_end_utc = quiet_end_local.astimezone(ZoneInfo("UTC"))
-
-    # If it's still quiet hours — exit early
-    if now_utc < quiet_end_utc:
-        print("Still within quiet hours. Skipping check-in.")
-        return
-
-    last_user_ts = get_last_user_activity_timestamp()
-    if last_user_ts:
-        last_time = last_user_ts
-        # Always ensure UTC timezone
-        if last_time.tzinfo is None:
-            last_time = last_time.replace(tzinfo=ZoneInfo("UTC"))
-        else:
-            last_time = last_time.astimezone(ZoneInfo("UTC"))
-
-        delta = (now_utc - last_time).total_seconds()
-
-        # NEW: if last message was before quiet_end, count from quiet_end instead
-        if last_time < quiet_end_utc:
-            delta = (now_utc - quiet_end_utc).total_seconds()
-
-        if delta < 10800:  # 3 hours
-            print("Not enough time since user was last active or since quiet hours ended.")
-            return
-
-        print("\nWhisperGate: Evaluating...")
-        dev_prompt, user_prompt = prompt_profiles.build_inactivity_check_prompt()
-        print("Prompt built. Sending to model...")
-
-        response = await handle_muse_decision(dev_prompt, user_prompt, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="inactivity_checker")
-        write_system_log(level="info", module="core", component="initiator", function="run_inactivity_check",
-                         action="whispergate_response", response=response)
-
-        print("WhisperGate response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
-
-# </editor-fold>
 
 # <editor-fold desc="run_discovery_feeds_gate">
 async def run_discoveryfeeds_lookup():
     print("\nWhisperGate: Evaluating...")
-    dev_prompt, system_prompt, user_prompt = prompt_profiles.build_discoveryfeeds_lookup_prompt()
+    dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_new_discoveryfeeds_prompt()
     print("Prompt built. Sending to model...")
 
-    response = await handle_muse_decision(dev_prompt, system_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="discovery")
+    response = await handle_muse_decision(dev_prompt=dev_prompt, user_assistant_messages=user_assistant_messages, tool_bundle=tool_bundle, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="discovery")
     #print("WhiserGate prompt:", prompt)
 
     write_system_log(level="info", module="core", component="initiator", function="run_discoveryfeeds_lookup",
@@ -112,13 +55,13 @@ async def run_check_reminders():
     if not muse_features.get("ENABLE_REMINDERS", True):
         return  # reminders globally disabled
     loc = _load_user_location()
-    reminders = search_for_timely_reminders()
-    if reminders:
+    due_reminders = search_for_timely_reminders()
+    if due_reminders:
         print("\nWhisperGate: Evaluating...")
-        dev_prompt, system_prompt, user_prompt = prompt_profiles.build_check_reminders_prompt(reminders)
+        dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_new_check_reminders_prompt(due_reminders=due_reminders)
         print("Prompt built. Sending to model...")
 
-        response = await handle_muse_decision(dev_prompt, system_prompt, user_prompt, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": reminders})
+        response = await handle_muse_decision(dev_prompt=dev_prompt, user_assistant_messages=user_assistant_messages, tool_bundle=tool_bundle, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": due_reminders})
         # print("WhisperGate prompt:", prompt)
 
         write_system_log(level="info", module="core", component="initiator", function="run_check_reminders",
@@ -128,7 +71,7 @@ async def run_check_reminders():
 
         # ---- Update reminder for each reminder fired to add new early_notification calculations----
         base_time = datetime.now(ZoneInfo(loc.timezone)) + timedelta(minutes=2)
-        for reminder in reminders:
+        for reminder in due_reminders:
             handle_edit({"id": reminder["id"]}, base_time=base_time)
             print(f"Updated next early_notification for {reminder.get('text', '')} ({reminder['id']})")
 

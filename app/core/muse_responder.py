@@ -20,10 +20,10 @@ from app.core.utils import (write_system_log,
 from app.core.time_location_utils import is_quiet_hour, _load_user_location, parse_iso_datetime
 from app.services.openai_client import get_openai_response
 from app.config import API_URL, muse_settings
-from app.core.states_core import set_motd
+from app.core.states_core import set_motd, get_active_project_state
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
-from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
+from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt, build_new_speak_prompt, build_new_journal_prompt
 from app.services.openai_client import speak_openai_client, journal_openai_client
 from app.api.queues import log_queue
 from app.interfaces.websocket_server import broadcast_message
@@ -621,11 +621,8 @@ COMMANDS = {
     },
     "remember_project_fact": {
         "triggers": ["remember project fact", "save this for the project", "record in project"],
-        "format": "[COMMAND: remember_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"{{project_id}}\"} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry(
-            f"project_facts_{payload.get('project_id')}",
-            {"text": payload.get("text")}
-        ),
+        "format": "[COMMAND: remember_project_fact] {\"text\": \"<TEXT>\"} [/COMMAND]",
+        "handler": lambda payload: remember_project_fact_handler(payload),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')} to {entry.get('doc_id')}",
             "hidden": entry
@@ -1080,21 +1077,22 @@ class RouteUserInputResult:
 
 async def route_user_input(
         dev_prompt: str,
-        system_prompt: str,
-        user_prompt: str,
+        system_prompt: str = None,
+        user_prompt: str = None,
+        user_assistant_messages: list = None,
         images=None,
         client=None,
         prompt_type="api",
-        apply_cmd_filters=True
+        apply_cmd_filters=True,
+        tool_bundle=None,
 ) -> RouteUserInputResult:
-    from app.core.muse_actions import build_tool_bundle
-    tool_bundle = build_tool_bundle(["search_memory", "search_web", "search_news", "search_images", "view_image", "read_webpage", "generate_muse_image", "generate_image"])
 
     response = await get_openai_response(
         dev_prompt,
         system_prompt,
         user_prompt,
         client=client,
+        user_assistant_messages=user_assistant_messages,
         prompt_type=prompt_type,
         images=images,
         model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
@@ -1137,7 +1135,7 @@ async def route_user_input(
         )
 
     followup_result = extract_followup_turn(cleaned_response)
-    print(f"DEBUG: {followup_result["intent"]}")
+    print(f"DEBUG: {followup_result['intent']}")
 
     return RouteUserInputResult(
         response_text=followup_result["cleaned_text"],
@@ -1148,12 +1146,14 @@ async def route_user_input(
 # Handles muse_initiator-specific responses
 async def handle_muse_decision(
     dev_prompt,
-    system_prompt,
-    user_prompt,
-    client,
+    system_prompt = None,
+    user_prompt = None,
+    user_assistant_messages: list = None,
+    client=None,
     model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"),
     source=None,
-    whispergate_data=None
+    whispergate_data=None,
+    tool_bundle=None,
 ) -> str:
     """
     Processes WhisperGate (muse) backend decisions using the unified command extraction pipeline.
@@ -1164,10 +1164,15 @@ async def handle_muse_decision(
         dev_prompt,
         system_prompt,
         user_prompt,
-        client,
+        client=client,
+        user_assistant_messages=user_assistant_messages,
         prompt_type="whispergate",
         images=None,
-        model=model
+        model=model,
+        tools=tool_bundle["tools"],
+        tool_choice=tool_bundle["tool_choice"],
+        handlers=tool_bundle["handlers"],
+        ui_meta=tool_bundle["ui_meta"],
     )
     print(f"WHISPERGATE COMMAND: {response}")
 
@@ -1315,8 +1320,8 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     """
     This is intended for when the AI prompts itself to speak
     """
-    from app.core.muse_actions import build_tool_bundle
-    tool_bundle = build_tool_bundle(["search_web", "search_news", "search_images", "view_image", "read_webpage", "generate_muse_image", "generate_image"])
+    #from app.core.muse_actions import build_tool_bundle
+    #tool_bundle = build_tool_bundle(["search_web", "search_news", "search_images", "view_image", "read_webpage", "generate_muse_image", "generate_image"])
 
     if is_quiet_hour():
         write_system_log(
@@ -1334,16 +1339,17 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     if not subject:
         return "Missing subject for speak command"
 
-    dev_prompt, system_prompt, user_prompt = build_speak_prompt(
+    dev_prompt, user_assistant_messages, tool_bundle = build_new_speak_prompt(
         subject=subject,
         payload=payload,
         destination="frontend"
     )
 
     response = await get_openai_response(
-        dev_prompt,
-        system_prompt,
-        user_prompt,
+        dev_prompt=dev_prompt,
+        system_prompt=None,
+        user_prompt=None,
+        user_assistant_messages=user_assistant_messages,
         client=speak_openai_client,
         prompt_type="api",
         model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
@@ -1528,16 +1534,17 @@ async def handle_journal_command(payload, entry_type="public", source=None):
     tags = payload.get("tags", [])
     source = "whispergate"
 
-    from app.core.muse_actions import build_tool_bundle
-    tool_bundle = build_tool_bundle(["search_web", "search_news", "read_webpage"])
+    #from app.core.muse_actions import build_tool_bundle
+    #tool_bundle = build_tool_bundle(["search_web", "search_news", "read_webpage"])
 
 
-    dev_prompt, system_prompt, user_prompt = build_journal_prompt(subject=subject, payload=payload)
+    dev_prompt, user_assistant_messages, tool_bundle = build_new_journal_prompt(subject=subject, payload=payload)
 
     response = await get_openai_response(
-        dev_prompt,
-        system_prompt,
-        user_prompt,
+        dev_prompt=dev_prompt,
+        user_prompt=None,
+        system_prompt=None,
+        user_assistant_messages=user_assistant_messages,
         client=journal_openai_client,
         prompt_type="journal",
         model=muse_settings.get_section("llm_config").get("OPENAI_FULL_MODEL"),
@@ -1566,6 +1573,22 @@ async def handle_journal_command(payload, entry_type="public", source=None):
         "timestamp": timestamp,
         "skip_index": True
     })
+
+def remember_project_fact_handler(payload):
+    fact_text = payload.get("text", "").strip()
+    project_id = payload.get("project_id")
+
+    if not project_id:
+        project_state = get_active_project_state() or {}
+        project_id = project_state.get("project_id")
+
+    #if not project_id:
+    #    raise ValueError("remember_project_fact called without a valid project_id")
+
+    return manager.add_entry(
+        f"project_facts_{project_id}",
+        {"text": fact_text}
+    )
 
 def manage_memories_handler(payload):
     doc_id = payload["id"]

@@ -12,7 +12,7 @@ from app.core.utils import strip_muse_thoughts
 from app.config import WEBSOCKET_URL, muse_settings
 from app.core.memory_core import log_message
 from app.services.openai_client import get_openai_response, discord_openai_client
-from app.core.prompt_profiles import build_discord_prompt
+from app.core.prompt_profiles import build_new_discord_prompt
 
 DISCORD_TOKEN = muse_settings.get_section("social_config").get("DISCORD_TOKEN")
 PRIMARY_USER_DISCORD_ID = muse_settings.get_section("social_config").get("PRIMARY_USER_DISCORD_ID")
@@ -81,6 +81,18 @@ async def handle_incoming_discord_message(message):
                         "data": b64,
                     })
 
+
+            timestamp_for_context = datetime.now(timezone.utc).isoformat()
+            # Call prompt_profiles to build the prompt for the frontend UI
+            #dev_prompt, system_prompt, user_prompt, ephemeral_images = build_discord_prompt(
+            dev_prompt, messages, tool_bundle = build_new_discord_prompt(
+                user_input,
+                author_name=message.author.name,
+                source="discord",
+                timestamp=timestamp_for_context,
+                ephemeral_files=files_payload,
+                public=True,
+            )
             # Log the incoming user message
             await log_message(
                 role=get_user_role(message.author.id),
@@ -95,19 +107,19 @@ async def handle_incoming_discord_message(message):
                     "modality_hint": "text"
                 }
             )
-            timestamp_for_context = datetime.now(timezone.utc).isoformat()
-            # Call prompt_profiles to build the prompt for the frontend UI
-            dev_prompt, system_prompt, user_prompt, ephemeral_images = build_discord_prompt(
-                user_input,
-                author_name=message.author.name,
-                source="discord",
-                timestamp=timestamp_for_context,
-                ephemeral_files=files_payload,
-            )
+
             #print(f"USER PROMPT: {user_prompt}")
-            print(f"ATTACHMENTS: {ephemeral_images}")
+            #print(f"ATTACHMENTS: {ephemeral_images}")
             # Get Muse's response
-            muse_response = await get_openai_response(dev_prompt, system_prompt, user_prompt, client=discord_openai_client, prompt_type="discord", images=ephemeral_images)
+            muse_response = await get_openai_response(
+                dev_prompt,
+                system_prompt=None,
+                user_prompt=None,
+                user_assistant_messages=messages,
+                client=discord_openai_client,
+                prompt_type="discord"
+            )
+            print(messages)
             #print("🧠 Muse response generated:")
             #print(muse_response)
 

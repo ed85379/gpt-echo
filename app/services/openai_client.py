@@ -88,6 +88,59 @@ Maintain a natural, human tone while following the full Iris profile.
 - Emojis: as appropriate
 """
 
+def build_message_content(msg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    content: List[Dict[str, Any]] = []
+    role = msg.get("role")
+
+    if msg.get("text"):
+        text_type = "output_text" if role == "assistant" else "input_text"
+        content.append({
+            "type": text_type,
+            "text": msg["text"]
+        })
+
+    for attachment in msg.get("attachments", []) or []:
+        mime_type = attachment.get("mime_type", "") or "application/octet-stream"
+        file_data = attachment.get("file_data")
+        filename = attachment.get("filename", "file")
+
+        if not file_data:
+            continue
+
+        if mime_type.startswith("image/"):
+            content.append({
+                "type": "input_image",
+                "image_url": f"data:{mime_type};base64,{file_data}",
+            })
+        else:
+            content.append({
+                "type": "input_file",
+                "filename": filename,
+                "file_data": f"data:{mime_type};base64,{file_data}",
+            })
+
+    return content
+
+
+def build_openai_input_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    compiled: List[Dict[str, Any]] = []
+
+    for msg in messages:
+        role = msg.get("role")
+        if not role:
+            continue
+
+        content = build_message_content(msg)
+        if not content:
+            continue
+
+        compiled.append({
+            "role": role,
+            "content": content,
+        })
+
+    return compiled
+
 def build_user_content(user_prompt: str, images: Optional[List[Dict]] = None) -> List[Dict[str, Any]]:
     content = [{"type": "input_text", "text": user_prompt}]
     if images:
@@ -126,7 +179,7 @@ def build_payload_for_model(model: str,
                             developer_pre_prompt_verbose: str,
                             dev_content: List[Dict[str, Any]],
                             system_content: List[Dict[str, Any]],
-                            user_content: List[Dict[str, Any]]) -> Dict[str, Any]:
+                            compiled_messages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Returns a dict with:
       - input: the messages array
@@ -152,14 +205,15 @@ def build_payload_for_model(model: str,
         "gpt-5.2-chat-latest",
         "gpt-5.3-chat-latest",
         "gpt-5-nano",
-        "gpt-5.4-nano"
+        "gpt-5.4-nano",
+        "gpt-5.5"
     }
 
     CHAT_MODELS_WITH_CACHE_RETENTION = {
         "gpt-5.1",
         "gpt-5.2",
         "gpt-5.4",
-        "gpt-5.4-mini"
+        "gpt-5.4-mini",
     }
     # Note: reasoning effort for <=5 supports minimal, low, medium, high. >=5.1 replaces minimal with none
 
@@ -168,7 +222,7 @@ def build_payload_for_model(model: str,
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
             {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
+            *compiled_messages,
         ]
         kwargs = {"reasoning": {"effort": "minimal"}, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
 
@@ -177,32 +231,38 @@ def build_payload_for_model(model: str,
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
             {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
+            *compiled_messages,
         ]
         kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
 
     elif m in CHAT_MODELS_WITH_CACHE_RETENTION_AND_REASONING:
         input_msgs = [
-            {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
         ]
+
+        if system_content:
+            input_msgs.append({"role": "system", "content": system_content})
+
+        input_msgs.extend(compiled_messages)
         kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
 
     elif m in CHAT_MODELS:
         input_msgs = [
             {"role": "developer", "content": dev_content},
             {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
+            *compiled_messages,
         ]
         kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
 
     elif m in CHAT_MODELS_WITH_CACHE_RETENTION:
         input_msgs = [
             {"role": "developer", "content": dev_content},
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
+            *(
+                [{"role": "system", "content": system_content}]
+                if system_content is not None
+                else []
+            ),
+            *compiled_messages,
         ]
         kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_retention": "24h"}
 
@@ -210,7 +270,7 @@ def build_payload_for_model(model: str,
         # Default assumption: treat unknown models as chat-style unless proven reasoning-capable
         input_msgs = [
             {"role": "developer", "content": dev_content},
-            {"role": "user", "content": user_content},
+            *compiled_messages,
         ]
         kwargs = {"temperature": 0.7, "max_output_tokens": 8000}
 
@@ -221,6 +281,7 @@ async def get_openai_response(
     system_prompt,
     user_prompt,
     client,
+    user_assistant_messages = None,
     prompt_type="default",
     images=None,
     model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
@@ -232,21 +293,31 @@ async def get_openai_response(
 ):
     try:
         user_content = build_user_content(user_prompt, images)
-        system_content = build_system_content(system_prompt)
+        user_content = [{"role": "user", "content": user_content}]
+        if user_assistant_messages:
+            compiled_messages = build_openai_input_messages(user_assistant_messages)
+        else:
+            compiled_messages = user_content
+        #print(f"DEBUG {compiled_messages}")
+        if system_prompt:
+            system_content = build_system_content(system_prompt)
+        else:
+            system_content = None
         dev_content = build_dev_content(
             dev_prompt,
             muse_settings.get_section("muse_config").get("MUSE_NAME")
         )
         prompt_cache_key = PROMPT_CACHE_KEYS[prompt_type]
-
+        print(system_content)
         bundle = build_payload_for_model(
             model=model,
             developer_pre_prompt_verbose=developer_pre_prompt_verbose,
             dev_content=dev_content,
             system_content=system_content,
-            user_content=user_content,
+            compiled_messages=compiled_messages,
             prompt_cache_key=prompt_cache_key
         )
+        #print(bundle["input"])
 
         current_input = bundle["input"]
         tool_turns = 0
@@ -264,7 +335,7 @@ async def get_openai_response(
                 else:
                     request_kwargs["tool_choice"] = tool_choice
             timestamp = datetime.now(timezone.utc).isoformat()
-            msg = f"{muse_settings.get_section("muse_config").get("MUSE_NAME")} is thinking..."
+            msg = f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} is thinking..."
             await broadcast_message(
                 message=msg,
                 timestamp=timestamp,
@@ -275,7 +346,7 @@ async def get_openai_response(
             response = client.responses.create(
                 model=model,
                 input=current_input,
-                store=False,
+                store=True,
                 **request_kwargs
             )
 

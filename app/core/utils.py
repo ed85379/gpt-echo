@@ -234,7 +234,7 @@ def prompt_projects_helper(project_id=None):
     if project_id and project_filter_lookup:
         project_code_intensity = project_filter_lookup.get(project_id)
 
-    return project_id, project_name, project_meta, project_code_intensity
+    return project_name, project_meta, project_code_intensity
 
 def prompt_threads_helper(thread_id=None):
     thread_lookup = build_thread_lookup()
@@ -262,6 +262,17 @@ def get_objectids_for_message_ids(message_ids):
         for doc in docs
         if doc.get("message_id") and doc.get("_id")
     }
+
+def normalize_role(role: str) -> str:
+    """
+    Map roles from Mongo to the role for sending to the model.
+    Sending `muse` as `assistant` tends to flatten responses, therefore, both sides should be sent as `user`
+    """
+    return {
+        "muse": "user",
+        "user": "user",
+        "system": "system",
+    }.get(role, "user")
 
 def format_context_entry(
         e,

@@ -11,7 +11,7 @@ from app.core.files_core import get_all_message_ids_for_files
 from app.core.utils import get_adaptive_top_k, slugify, strip_muse_thoughts
 from app.core.states_core import set_active_project
 from app.core.muse_responder import route_user_input
-from app.core.prompt_profiles import build_api_prompt, build_speaker_prompt
+from app.core.prompt_profiles import build_api_prompt, build_speaker_prompt, build_new_api_prompt, build_new_speaker_prompt
 from app.services.openai_client import api_openai_client, speak_openai_client
 from app.api.queues import broadcast_queue, log_queue
 from app.interfaces.websocket_server import broadcast_message
@@ -200,7 +200,8 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
 
     # Call prompt_profiles to build the prompt for the frontend UI
     timestamp_for_context = datetime.now(timezone.utc).isoformat()
-    dev_prompt, system_prompt, user_prompt, ephemeral_images = build_api_prompt(
+    # dev_prompt, system_prompt, user_prompt, ephemeral_images, user_assistant_messages = build_api_prompt(
+    dev_prompt, user_assistant_messages, tool_bundle = build_new_api_prompt(
         user_input,
         source="frontend",
         timestamp=timestamp_for_context,
@@ -215,7 +216,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         active_project_report=active_project_report,
     )
     #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
-    print(f"USER_PROMPT:\n" + user_prompt)
+    #print(user_assistant_messages)
     user_msg = {
         "message": user_input,
         "timestamp": user_timestamp or datetime.now(timezone.utc).isoformat(),
@@ -231,7 +232,13 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     #print(f"DEBUG user_msg: {user_msg}")
     await broadcast_queue.put(user_msg)
     # Get Muse's response
-    result = await route_user_input(dev_prompt, system_prompt, user_prompt, client=api_openai_client, prompt_type="api", images=ephemeral_images)
+    result = await route_user_input(
+        dev_prompt=dev_prompt,
+        user_assistant_messages=user_assistant_messages,
+        client=api_openai_client,
+        prompt_type="api",
+        tool_bundle=tool_bundle,
+    )
     cleaned = result.response_text.strip()
     if not cleaned:
         # Only commands were present; nothing to display in frontend
@@ -255,8 +262,25 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
             "Do not repeat the previous response unless necessary for a brief correction.\n"
             "Do not use <followup-turn /> again in this response."
         )
-        followup_result = await route_user_input(dev_prompt, system_prompt, augmented_user_prompt, client=api_openai_client, prompt_type="api",
-                                        images=ephemeral_images)
+        augmented_muse_response_text = (
+                "\n\nIris said:\n" + result.response_text + "\n\n"
+                "This is a follow-up turn you chose to take after your previous response.\n"
+                f"Your intent for this turn: {result.followup_turn}\n"
+                "Treat this response as a continuation, correction, or completion of the previous response.\n"
+                "Do not repeat the previous response unless necessary for a brief correction.\n"
+                "Do not use <followup-turn /> again in this response."
+        )
+        augmented_muse_response = {'role': 'user', 'text': augmented_muse_response_text}
+        user_assistant_messages.append(augmented_muse_response)
+        followup_result = await route_user_input(
+            dev_prompt,
+            #system_prompt,
+            #augmented_user_prompt,
+            user_assistant_messages=user_assistant_messages,
+            client=api_openai_client,
+            prompt_type="api",
+            #images=ephemeral_images
+        )
 
         if followup_result.response_text.strip():
             final_text += "\n\n***\n\n" + followup_result.response_text.strip()
@@ -316,15 +340,14 @@ async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):
 
     # Call prompt_profiles to build the prompt for the frontend UI
     timestamp_for_context = datetime.now(timezone.utc).isoformat()
-    dev_prompt, system_prompt, user_prompt, ephemeral_images = build_speaker_prompt(
+    dev_prompt, user_assistant_messages, tool_bundle = build_new_speaker_prompt(
         user_input,
         source="smartspaker",
         timestamp=timestamp_for_context,
         final_top_k=final_top_k,
     )
     print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
-    print(f"SYSTEM_PROMPT:\n" + system_prompt)
-    print(f"USER_PROMPT:\n" + user_prompt)
+
     user_msg = {
         "message": user_input,
         "timestamp": user_timestamp or datetime.now(timezone.utc).isoformat(),
@@ -334,7 +357,7 @@ async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):
     print(f"DEBUG user_msg: {user_msg}")
     await broadcast_queue.put(user_msg)
     # Get Muse's response
-    result = await route_user_input(dev_prompt, system_prompt, user_prompt, client=speak_openai_client, prompt_type="speak", apply_cmd_filters=False)
+    result = await route_user_input(dev_prompt, user_assistant_messages, tool_bundle, client=speak_openai_client, prompt_type="speak", apply_cmd_filters=False)
     cleaned = result.response_text.strip()
     if not cleaned:
         # Only commands were present; nothing to display in frontend
