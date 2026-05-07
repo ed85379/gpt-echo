@@ -178,7 +178,6 @@ def build_payload_for_model(model: str,
                             prompt_cache_key: str,
                             developer_pre_prompt_verbose: str,
                             dev_content: List[Dict[str, Any]],
-                            system_content: List[Dict[str, Any]],
                             compiled_messages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Returns a dict with:
@@ -221,7 +220,6 @@ def build_payload_for_model(model: str,
         input_msgs = [
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
-            {"role": "system", "content": system_content},
             *compiled_messages,
         ]
         kwargs = {"reasoning": {"effort": "minimal"}, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
@@ -230,7 +228,6 @@ def build_payload_for_model(model: str,
         input_msgs = [
             {"role": "developer", "content": developer_pre_prompt_verbose},
             {"role": "developer", "content": dev_content},
-            {"role": "system", "content": system_content},
             *compiled_messages,
         ]
         kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
@@ -238,18 +235,13 @@ def build_payload_for_model(model: str,
     elif m in CHAT_MODELS_WITH_CACHE_RETENTION_AND_REASONING:
         input_msgs = [
             {"role": "developer", "content": dev_content},
+            *compiled_messages,
         ]
-
-        if system_content:
-            input_msgs.append({"role": "system", "content": system_content})
-
-        input_msgs.extend(compiled_messages)
         kwargs = {"reasoning": {"effort": "low"}, "max_output_tokens": 8000, "prompt_cache_retention": "24h", "prompt_cache_key": prompt_cache_key}
 
     elif m in CHAT_MODELS:
         input_msgs = [
             {"role": "developer", "content": dev_content},
-            {"role": "system", "content": system_content},
             *compiled_messages,
         ]
         kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_key": prompt_cache_key}
@@ -257,11 +249,6 @@ def build_payload_for_model(model: str,
     elif m in CHAT_MODELS_WITH_CACHE_RETENTION:
         input_msgs = [
             {"role": "developer", "content": dev_content},
-            *(
-                [{"role": "system", "content": system_content}]
-                if system_content is not None
-                else []
-            ),
             *compiled_messages,
         ]
         kwargs = {"temperature": 0.5, "top_p": 0.95, "max_output_tokens": 8000, "prompt_cache_retention": "24h"}
@@ -278,9 +265,8 @@ def build_payload_for_model(model: str,
 
 async def get_openai_response(
     dev_prompt,
-    system_prompt,
-    user_prompt,
     client,
+    user_prompt=None,
     user_assistant_messages = None,
     prompt_type="default",
     images=None,
@@ -298,26 +284,18 @@ async def get_openai_response(
             compiled_messages = build_openai_input_messages(user_assistant_messages)
         else:
             compiled_messages = user_content
-        #print(f"DEBUG {compiled_messages}")
-        if system_prompt:
-            system_content = build_system_content(system_prompt)
-        else:
-            system_content = None
         dev_content = build_dev_content(
             dev_prompt,
             muse_settings.get_section("muse_config").get("MUSE_NAME")
         )
         prompt_cache_key = PROMPT_CACHE_KEYS[prompt_type]
-        print(system_content)
         bundle = build_payload_for_model(
             model=model,
             developer_pre_prompt_verbose=developer_pre_prompt_verbose,
             dev_content=dev_content,
-            system_content=system_content,
             compiled_messages=compiled_messages,
             prompt_cache_key=prompt_cache_key
         )
-        #print(bundle["input"])
 
         current_input = bundle["input"]
         tool_turns = 0
@@ -352,7 +330,6 @@ async def get_openai_response(
 
             last_response = response
 
-            #print(response)
             if hasattr(response, "usage"):
                 print(
                     f"Model: {response.model},\n"

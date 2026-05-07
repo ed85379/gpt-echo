@@ -113,13 +113,15 @@ async def handle_incoming_discord_message(message):
             # Get Muse's response
             muse_response = await get_openai_response(
                 dev_prompt,
-                system_prompt=None,
-                user_prompt=None,
                 user_assistant_messages=messages,
                 client=discord_openai_client,
-                prompt_type="discord"
+                prompt_type="discord",
+                tools=tool_bundle["tools"],
+                tool_choice=tool_bundle["tool_choice"],
+                handlers=tool_bundle["handlers"],
+                ui_meta=tool_bundle["ui_meta"],
             )
-            print(messages)
+            #print(messages)
             #print("🧠 Muse response generated:")
             #print(muse_response)
 

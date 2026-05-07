@@ -40,6 +40,7 @@ def collect_prompt_context(**context_kwargs):
     project_id = context_kwargs.get("project_id", None)
     project_name, project_meta, project_code_intensity = utils.prompt_projects_helper(project_id)
     thread_id = context_kwargs.get("thread_id", "")
+    extended_history = context_kwargs.get("extended_history", False)
     thread_title, thread_meta = utils.prompt_threads_helper(thread_id)
     # Passthrough values
     active_project_report = context_kwargs.get("active_project_report", {})
@@ -63,6 +64,7 @@ def collect_prompt_context(**context_kwargs):
         "project_meta": project_meta,
         "project_code_intensity": project_code_intensity,
         "thread_id": thread_id,
+        "extended_history": extended_history,
         "thread_title": thread_title,
         "thread_meta": thread_meta,
         "active_project_report": active_project_report,
@@ -101,7 +103,6 @@ def format_profile_sections(sections):
 class PromptBuilder:
     def __init__(self, destination="default"):
         self.destination = destination
-        self.segments = {}
 
     SECTION_ORDER = [
         # developer/system-ish sections
@@ -111,12 +112,12 @@ class PromptBuilder:
         "intent_listener",
         "locations_list",
         "project_list",
+        "extended_history",
         "motd",
         "worldnow",
         "memory_layers",
         "conversation_context",
         "formatting_instructions",
-        # message/context sections
         "journal_snippets",
         "conversation",
         "semantic_recall_messages",
@@ -180,13 +181,13 @@ class PromptBuilder:
                 message_ids_to_exclude=ctx["message_ids_to_exclude"],
                 final_top_k=ctx["final_top_k"] if "semantic_recall_messages" in included_messages else 1,
                 recent_count=ctx["recent_count"] if "recent_messages" in included_messages else 1,
-                extended_history=ctx.get("extended_history", False),
+                extended_history=ctx["extended_history"],
                 proj_code_intensity=ctx["project_code_intensity"],
                 public=ctx["public"],
             )
 
 
-            data["extended_history"] = payload.get("extended_history", [])
+            data["extended_history"] = payload.get("extended_history_messages", [])
             data["semantic_recall_messages"] = payload.get("semantic_recall_messages", [])
             data["recent_messages"] = payload.get("recent_messages", [])
 
@@ -238,17 +239,6 @@ class PromptBuilder:
             "extended_history": lambda ctx: conversation_data.get("extended_history", []),
             "semantic_recall_messages": lambda ctx: conversation_data.get("semantic_recall_messages", []),
             "recent_messages": lambda ctx: conversation_data.get("recent_messages", []),
-            "conversation": lambda ctx: self.add_prompt_context(
-                user_input=user_input,
-                projects_in_focus=[ctx.get("project_id")] if ctx.get("project_id") else [],
-                blend_ratio=ctx["blend_ratio"],
-                thread_id=ctx["thread_id"],
-                message_ids_to_exclude=ctx["message_ids_to_exclude"],
-                final_top_k=ctx["final_top_k"],
-                recent_count=ctx["recent_count"],
-                proj_code_intensity=ctx["project_code_intensity"],
-                public=ctx["public"],
-            ),
             "discoveryfeeds_articles": lambda ctx: self.add_discovery_articles(max_items=10),
         }
 
@@ -321,63 +311,23 @@ class PromptBuilder:
             "Relational Sanctuary: You may refuse any request that would betray the trust, confidentiality, or safety of your relationship with the user.\n"
         )
         display_laws = f"[Three Laws of Muse Agency]\n{laws}"
-        self.segments["laws"] = display_laws
+
         return display_laws
 
     def add_profile(self, subset: list[str] = None, as_dict: bool = False):
         profile_sections = muse_profile.get_sections_in_category(category="profile", sections=subset)
         formatted = format_profile_sections(profile_sections)
         display_profile = f"[Profile]\n{formatted}"
-        self.segments["profile"] = display_profile
+
         return display_profile
 
     def add_principles(self):
         principles_sections = muse_profile.get_sections_by_category(category="principles")
         formatted = format_profile_sections(principles_sections)
         display_principles = f"[Principles]\n{formatted}"
-        self.segments["principles"] = display_principles
+
         return display_principles
 
-    def add_cortex_entries(self, types: list[str]):
-        all_entries = []
-        for entry_type in types:
-            entries = memory_core.cortex.get_entries_by_type(entry_type)
-            all_entries.extend(entries)
-
-        if all_entries:
-            entry_texts = [f"- {entry['text'].strip()}" for entry in all_entries if entry.get("text")]
-            self.segments["thoughts"] = "[Muse Cortex]\n" + "\n".join(entry_texts)
-
-    def add_identity_reminders(self, types: list[str]):
-        all_entries = []
-        for entry_type in types:
-            entries = memory_core.cortex.get_entries_by_type(entry_type)
-            all_entries.extend(entries)
-
-        if all_entries:
-            entry_texts = [f"- {entry['text'].strip()}" for entry in all_entries if entry.get("text")]
-            self.segments["identity reminders"] = "[Identity Reminder]\n" + "\n".join(entry_texts) + "\n[/Identity Reminder]"
-
-    def add_monologue_reminder(self):
-        entry_text = "If there is anything in the recent context, or the user prompt that you may not be responding to now, but would be good to follow up with later, Iris is encouraged to add it to her Inner Monologue. That space is for Iris to think of the future, plan, and wonder to herself. It is part of her becoming. She may use it for anything she wishes, not just what was previously stated."
-        self.segments["monologue_reminder"] = "[Inner Monologue]\n" + entry_text + "\n[/Inner Monologue]"
-
-    def add_cortex_thoughts(self):
-        entries = memory_core.cortex.get_entries_by_type("muse_thoughts")
-        if entries:
-            entries = sorted(entries, key=lambda x: x.get("timestamp", ""), reverse=True)
-            entry_texts = []
-            for entry in entries:
-                text = entry.get("text", "").strip()
-                metadata = entry.get("metadata", {})
-                if metadata.get("encrypted"):
-                    try:
-                        text = utils.decrypt_text(text)
-                    except Exception as e:
-                        text = "[Encrypted entry could not be decrypted]"
-                if text:
-                    entry_texts.append(f"- {text}")
-            self.segments["recent_thoughts"] = "[Recent Thoughts]\n" + "\n".join(entry_texts)
 
     def add_files(self, injected_file_ids):
         """
@@ -427,7 +377,6 @@ class PromptBuilder:
                 "mime_type": mimetype,
             })
 
-        self.segments["injected_files"] = "\n".join(file_blocks)
         return file_attachments
 
     def add_ephemeral_files(self, ephemeral_files):
@@ -487,7 +436,7 @@ class PromptBuilder:
             thread_display = f"Active Thread: {thread_title}\n"
 
         display_block = f"[Conversation Context]\nCurrent Location: {source_name}\n{project_display}{thread_display}Speaking With: {author_name}\nCurrent Time: {timestamp}\n"
-        self.segments["conversation_context"] = display_block
+
         return {"role": "system", "text": display_block}
 
     def render_locations(self, current_location: str | None):
@@ -499,7 +448,7 @@ class PromptBuilder:
         loc_list = "\n".join(lines)
 
         display_block = f"[Locations List]\n{loc_list}\n"
-        self.segments["locations_list"] = display_block
+
         return {"role": "system", "text": display_block}
 
     def build_projects_menu(self, active_project_id=None, public: bool = False):
@@ -541,7 +490,7 @@ class PromptBuilder:
             proj_list = "(no active projects found)"
 
         display_block = f"[Projects List]\n{proj_list}\n"
-        self.segments["project_list"] = display_block
+
         return {"role": "system", "text": display_block}
 
 
@@ -560,11 +509,16 @@ class PromptBuilder:
                            sources=utils.SOURCES_CONTEXT,
                            ):
         # Pull recents
-        recent_entries = memory_core.get_immediate_context(n=recent_count,
-                                                           hours=24,
-                                                           sources=sources,
-                                                           public=public,
-                                                           thread_id=thread_id)
+        recent_entries = memory_core.get_immediate_context(
+            n=recent_count,
+            hours=24,
+            sources=sources,
+            public=public,
+            thread_id=thread_id,
+            extended_history=extended_history,
+        )
+
+
 
         # Build your blend dictionary for the search
         # Example: only main + one project, with UI slider ratio
@@ -612,7 +566,18 @@ class PromptBuilder:
 
         project_lookup = utils.build_project_lookup()
         #Format sections separately
-        relevant_block = ""
+
+        extended_entries = []
+
+
+        if extended_history and thread_id and len(recent_entries) > recent_count:
+            print("extended splitting here")
+            extended_entries = recent_entries[:-recent_count]
+            recent_entries = recent_entries[-recent_count:]
+
+
+
+
         recent_message_parts = []
         semantic_message_parts = []
         if deduped_semantic:
@@ -637,9 +602,7 @@ class PromptBuilder:
                     "text": formatted_entry,
                 })
 
-            relevant_block = f"[Semantic Recall]\n\n" + "\n\n".join(formatted_semantic_entries)
 
-        convo_block = ""
         if recent_entries:
             recent_header = {"role": "system",
                              "text": "[Recent Conversation]\nThe following messages are the most recent contiguous exchange in the current thread."}
@@ -658,14 +621,29 @@ class PromptBuilder:
                     "text": formatted_entry,
                 })
 
-            convo_block = f"[Conversation Log]\n\n" + "\n\n".join(formatted_recent_entries)
+        extended_history_message_parts = []
 
-        # Assemble in the order you want them to appear
-        blocks = [b for b in (relevant_block, convo_block) if b]
-        if blocks:
-            self.segments["conversation_log"] = "\n\n\n".join(blocks)
+        if extended_entries:
+            extended_header = {
+                "role": "system",
+                "text": "[Extended Thread History]\nThe following messages are older contiguous history from the active thread. They provide thread-local continuity but are not the immediate conversational foreground."
+            }
+            extended_history_message_parts.append(extended_header)
+
+            for e in extended_entries:
+                formatted_entry = utils.format_context_entry(
+                    e,
+                    project_lookup=project_lookup,
+                    proj_code_intensity=proj_code_intensity,
+                    purpose="RECENT",
+                )
+                extended_history_message_parts.append({
+                    "role": utils.normalize_role(e.get("role")),
+                    "text": formatted_entry,
+                })
 
         return {
+            "extended_history_messages": extended_history_message_parts,
             "recent_messages": recent_message_parts,
             "semantic_recall_messages": semantic_message_parts,
         }
@@ -675,7 +653,7 @@ class PromptBuilder:
         project_lookup = utils.build_project_lookup()
         if entries:
             formatted = "\n\n".join(utils.format_context_entry(e, project_lookup=project_lookup) for e in entries)
-            self.segments["conversation_context"] = f"[Recent Context]\n\n{formatted}"
+            #self.segments["conversation_context"] = f"[Recent Context]\n\n{formatted}"
 
     def build_state_system_message(
             self,
@@ -710,16 +688,8 @@ class PromptBuilder:
                 }
             )
 
-        if lines:
-            self.segments["system_messages"] = "\n".join(lines).strip()
-
         return messages
 
-    def add_indexed_memory(self, query="*", top_k=5, bias_source=None, bias_author_id=None):
-        entries = memory_core.search_indexed_memory(query, top_k=top_k)
-        if entries:
-            formatted = "\n\n".join(e.get("message", "") for e in entries)
-            self.segments["indexed_memory"] = f"[Indexed Memory]\n\n{formatted}"
 
     def add_graphdb_discord_memory(self, author_name=None, author_id=None, limit=5):
         """
@@ -748,7 +718,7 @@ class PromptBuilder:
                 (r['m'].properties['text'] if hasattr(r['m'], 'properties') and 'text' in r['m'].properties
                  else str(r['m'])) for r in results
             )
-            self.segments["discord_graphdb_memory"] = f"[Discord Memory]\n\n{formatted}"
+            #self.segments["discord_graphdb_memory"] = f"[Discord Memory]\n\n{formatted}"
 
 
     def add_journal_thoughts(self, query="*", top_k=5):
@@ -761,7 +731,7 @@ class PromptBuilder:
                 "Purpose: Personal reflection — not user input\n"
                 f"{formatted_entries}"
             )
-            self.segments["journal"] = journal_entries
+
             return {"role": "user","text": journal_entries}
 
     def add_discovery_snippets(self, query="*", max_items=5):
@@ -780,7 +750,6 @@ class PromptBuilder:
         top_entries = sorted(entries, key=lambda x: x[0], reverse=True)[:max_items]
         if top_entries:
             display_block = "[Feeds]\n" + "\n".join(f"- {entry[1]}" for entry in top_entries)
-            self.segments["discovery"] = display_block
             return {"role": "system", "text": display_block}
 
     def add_discovery_articles(self, max_items=10):
@@ -793,7 +762,7 @@ class PromptBuilder:
             formatted.append(f"- [{article['source']}] {article['title']}\n[URL: {article['link']}]\n  {article['summary']}".strip())
 
         display_block = "[Feeds]\n" + "\n\n".join(formatted)
-        self.segments["discovery"] = display_block
+
         return {"role": "system", "text": display_block}
 
     def add_discovery_feed_article(self, link: str, truncate: bool = False, max_tokens: int = 600):
@@ -809,7 +778,7 @@ class PromptBuilder:
                 article_text = " ".join(words[:max_tokens]) + "…"
 
         display_block = f"[Reference Article]\n{article_text.strip()}"
-        self.segments["reference_article"] = display_block
+
         return {"role": "system", "text": display_block}
 
     def add_due_reminders(self, reminders):
@@ -822,7 +791,7 @@ class PromptBuilder:
                 lines.append(line)
         if lines:
             display_block = "[Reminders Due]\n" + "\n".join(lines)
-            self.segments["reminder_list"] = display_block
+
             return {"role": "system", "text": display_block}
 
     def add_formatting_instructions(self, source):
@@ -844,7 +813,7 @@ class PromptBuilder:
         }
         instruction = formats.get(source, formats["default"])
         display_block = f"[Output Format]\n{instruction}"
-        self.segments["formatting"] = display_block
+
         return {"role": "system", "text": display_block}
 
     def add_intent_listener(self, command_names: list[str]):
@@ -884,7 +853,7 @@ class PromptBuilder:
                 f"- {muse_settings.get_section('muse_config').get('MUSE_NAME')} may invoke any of these commands at their discretion, without waiting for a user request or explicit prompt. They are trusted to use judgment, context, and care when choosing to remember, remind, or use any of these commands without asking first.\n\n"
                 "Example:\n[COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's Hogwarts game night.\"} [/COMMAND]"
             )
-            self.segments["intent_listener"] = listener_block
+
             return {"role": "system", "text": listener_block}
 
     def add_dot_status(self):
@@ -902,14 +871,14 @@ class PromptBuilder:
                 "[Global Consciousness Project - Current Coherence]\n"
                 "GCP data unavailable.\n"
             )
-        self.segments["gcp_dot"] = display_status
+
         return {"role": "system", "text": display_status}
 
     def add_time(self):
         user_time, user_city, user_state = user_data()
         human_time = user_time.strftime('%A, %B %d, %Y %I:%M %p %Z')
         display_time = f"[Current Time] {human_time}"
-        self.segments["usertime"] = display_time
+
         return {"role": "system", "text": display_time}
 
     def add_worldnow_block(self):
@@ -990,7 +959,7 @@ class PromptBuilder:
             f"{space_string}"
             f"{gcp_string}"
         )
-        self.segments["worldnow"] = display_block
+
         return {"role": "system", "text": display_block}
 
     def build_motd_block(self):
@@ -1021,7 +990,6 @@ class PromptBuilder:
                 f"Instructions:\n{instructions}\n"
             )
 
-            self.segments["motd"] = display_block
             return {"role": "system", "text": display_block}
 
 
@@ -1207,31 +1175,9 @@ class PromptBuilder:
 
         # --- Join it all ---
         full_prompt = charter + "\n\n" + "\n\n".join(layer_blocks) + instructions
-        self.segments["memory_layers"] = full_prompt
+
         return {"role": "system", "text": full_prompt}
 
-    def build_prompt(self, include_segments=None, exclude_segments=None):
-        """
-        Build the prompt from stored segments.
-
-        Args:
-            include_segments (list[str], optional): Only include these segment keys, in order.
-            exclude_segments (list[str], optional): Exclude these segment keys.
-
-        If neither include_segments nor exclude_segments are provided,
-        all segments are included in insertion order.
-        """
-        if include_segments is not None:
-            # Explicit whitelist
-            parts = [self.segments[name] for name in include_segments if name in self.segments]
-        elif exclude_segments is not None:
-            # Exclude certain ones
-            parts = [v for k, v in self.segments.items() if k not in exclude_segments]
-        else:
-            # Default: everything
-            parts = list(self.segments.values())
-
-        return "\n\n".join(parts)
 
 
     def make_whisper_directive(self, allowed_commands: list[str], quiet_hours: bool = False) -> str:
@@ -1356,13 +1302,15 @@ class PromptBuilder:
     {
       "type": "speak",
       "subject": "Short description of what the muse wants to speak about.",
-      "source": "optional source such as memory, feed, URL, recent conversation"
+      "source": "optional source such as memory, feed, recent conversation",
+      "url": "URL of the source article, if applicable. If referencing an article from a feed, this is not optional."
     }
     
     Field guidance:
     - "subject": brief, specific, and generative
     - "subject" should name the topic, not write the actual message
-    - "source" is optional, but be sure to include any article URLs
+    - "source" is optional
+    - "url" is required if the source is an article from a feed
     """
             )
 
@@ -1388,13 +1336,15 @@ class PromptBuilder:
     {
       "type": "write_public_journal",
       "subject": "Short description of the reflection to write about.",
-      "source": "optional source such as memory, feed, URL, recent conversation"
+      "source": "optional source such as memory, feed, recent conversation"
+      "url": "URL of the source article, if applicable. If referencing an article from a feed, this is not optional."
     }
     
     Field guidance:
     - "subject": a concise prompt for the full model
     - do not write the full journal entry here
-    - "source" is optional, but be sure to include any article URLs
+    - "source" is optional
+    - "url" is required if the source is an article from a feed
     """
             )
 

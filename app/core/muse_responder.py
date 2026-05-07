@@ -23,7 +23,7 @@ from app.config import API_URL, muse_settings
 from app.core.states_core import set_motd, get_active_project_state
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
-from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt, build_new_speak_prompt, build_new_journal_prompt
+from app.core.prompt_profiles import build_new_speak_prompt, build_new_journal_prompt
 from app.services.openai_client import speak_openai_client, journal_openai_client
 from app.api.queues import log_queue
 from app.interfaces.websocket_server import broadcast_message
@@ -621,7 +621,7 @@ COMMANDS = {
     },
     "remember_project_fact": {
         "triggers": ["remember project fact", "save this for the project", "record in project"],
-        "format": "[COMMAND: remember_project_fact] {\"text\": \"<TEXT>\"} [/COMMAND]",
+        "format": "[COMMAND: remember_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"<project_id from Projects List>\"} [/COMMAND]",
         "handler": lambda payload: remember_project_fact_handler(payload),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')} to {entry.get('doc_id')}",
@@ -1077,7 +1077,6 @@ class RouteUserInputResult:
 
 async def route_user_input(
         dev_prompt: str,
-        system_prompt: str = None,
         user_prompt: str = None,
         user_assistant_messages: list = None,
         images=None,
@@ -1089,8 +1088,6 @@ async def route_user_input(
 
     response = await get_openai_response(
         dev_prompt,
-        system_prompt,
-        user_prompt,
         client=client,
         user_assistant_messages=user_assistant_messages,
         prompt_type=prompt_type,
@@ -1162,8 +1159,6 @@ async def handle_muse_decision(
     """
     response = await get_openai_response(
         dev_prompt,
-        system_prompt,
-        user_prompt,
         client=client,
         user_assistant_messages=user_assistant_messages,
         prompt_type="whispergate",
@@ -1347,8 +1342,6 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
 
     response = await get_openai_response(
         dev_prompt=dev_prompt,
-        system_prompt=None,
-        user_prompt=None,
         user_assistant_messages=user_assistant_messages,
         client=speak_openai_client,
         prompt_type="api",
@@ -1542,8 +1535,6 @@ async def handle_journal_command(payload, entry_type="public", source=None):
 
     response = await get_openai_response(
         dev_prompt=dev_prompt,
-        user_prompt=None,
-        system_prompt=None,
         user_assistant_messages=user_assistant_messages,
         client=journal_openai_client,
         prompt_type="journal",

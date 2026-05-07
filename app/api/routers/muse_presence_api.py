@@ -11,7 +11,7 @@ from app.core.files_core import get_all_message_ids_for_files
 from app.core.utils import get_adaptive_top_k, slugify, strip_muse_thoughts
 from app.core.states_core import set_active_project
 from app.core.muse_responder import route_user_input
-from app.core.prompt_profiles import build_api_prompt, build_speaker_prompt, build_new_api_prompt, build_new_speaker_prompt
+from app.core.prompt_profiles import build_new_api_prompt, build_new_speaker_prompt
 from app.services.openai_client import api_openai_client, speak_openai_client
 from app.api.queues import broadcast_queue, log_queue
 from app.interfaces.websocket_server import broadcast_message
@@ -174,6 +174,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     blend_ratio = data.get("blend_ratio", 0.0)
     project_id = data.get("project_id")
     thread_id = data.get("thread_id")
+    extended_history = muse_settings.get_section('muse_features').get('ENABLE_THREAD_EXTENDED_HISTORY')
     #print(f"Sent ThreadID: {thread_id}")
     # Normalize blank/empty project_id to None
     if isinstance(project_id, str) and not project_id.strip():
@@ -211,6 +212,7 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         ephemeral_files=ephemeral_files,
         # ui states
         thread_id=thread_id,
+        extended_history=extended_history,
         project_id=project_id,
         blend_ratio=blend_ratio,
         active_project_report=active_project_report,
@@ -274,8 +276,6 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         user_assistant_messages.append(augmented_muse_response)
         followup_result = await route_user_input(
             dev_prompt,
-            #system_prompt,
-            #augmented_user_prompt,
             user_assistant_messages=user_assistant_messages,
             client=api_openai_client,
             prompt_type="api",
@@ -357,7 +357,13 @@ async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):
     print(f"DEBUG user_msg: {user_msg}")
     await broadcast_queue.put(user_msg)
     # Get Muse's response
-    result = await route_user_input(dev_prompt, user_assistant_messages, tool_bundle, client=speak_openai_client, prompt_type="speak", apply_cmd_filters=False)
+    result = await route_user_input(
+        dev_prompt,
+        user_assistant_messages,
+        tool_bundle=tool_bundle,
+        client=speak_openai_client,
+        prompt_type="speak",
+        apply_cmd_filters=False)
     cleaned = result.response_text.strip()
     if not cleaned:
         # Only commands were present; nothing to display in frontend
