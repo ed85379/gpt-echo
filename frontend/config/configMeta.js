@@ -191,5 +191,10 @@ export const SETTINGS_META = {
       description:
         "If enabled, your muse can set a short message of the day under their portrait in the UI.",
     },
+    ENABLE_THREAD_EXTENDED_HISTORY: {
+      label: "Thread Extended History",
+      description:
+        "If enabled, while in a thread, your muse will see the entire history of the thread. This can increase API costs.",
+    },
   },
 };

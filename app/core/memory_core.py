@@ -250,6 +250,7 @@ def get_immediate_context(
     thread_id=None,
     before: int | None = None,
     after: int = 0,
+    extended_history: bool = False,
 ):
     """
     Return a list of messages, starting from a moment and working backward.
@@ -399,10 +400,15 @@ def get_immediate_context(
         convo_count = n
     else:
         now = datetime.utcnow()
-        convo_count = n
+        if extended_history and thread_id:
+            convo_count = None
+        else:
+            convo_count = n
 
-
-    overfetch_limit = max(convo_count * 2, convo_count + 10)
+    if extended_history and thread_id:
+        overfetch_limit = None  # or a generous safety cap
+    else:
+        overfetch_limit = max(convo_count * 2, convo_count + 10)
 
     # 2) Build final query
     base_query = build_base_query()
@@ -431,16 +437,20 @@ def get_immediate_context(
     # by `sources`, but they do not consume the message budget.
     selected = []
     convo_seen = 0
-    for msg in raw_messages:
-        selected.append(msg)
+    if extended_history and thread_id:
+        selected = list(reversed(raw_messages))
+        return selected
+    else:
+        for msg in raw_messages:
+            selected.append(msg)
 
-        if msg.get("source") in utils.SOURCES_CHAT:
-            convo_seen += 1
-            if convo_seen >= convo_count:
-                break
+            if msg.get("source") in utils.SOURCES_CHAT:
+                convo_seen += 1
+                if convo_seen >= convo_count:
+                    break
 
-    selected.reverse()
-    return selected
+        selected.reverse()
+        return selected
 
 def recency_weight(ts, now=None, half_life_hours=36):
     if not ts:
