@@ -12,7 +12,7 @@ from app.core.utils import strip_muse_thoughts
 from app.config import WEBSOCKET_URL, muse_settings
 from app.core.memory_core import log_message
 from app.services.openai_client import get_openai_response, discord_openai_client
-from app.core.prompt_profiles import build_new_discord_prompt
+from app.core.prompt_profiles import build_discord_prompt
 
 DISCORD_TOKEN = muse_settings.get_section("social_config").get("DISCORD_TOKEN")
 PRIMARY_USER_DISCORD_ID = muse_settings.get_section("social_config").get("PRIMARY_USER_DISCORD_ID")
@@ -85,7 +85,7 @@ async def handle_incoming_discord_message(message):
             timestamp_for_context = datetime.now(timezone.utc).isoformat()
             # Call prompt_profiles to build the prompt for the frontend UI
             #dev_prompt, system_prompt, user_prompt, ephemeral_images = build_discord_prompt(
-            dev_prompt, messages, tool_bundle = build_new_discord_prompt(
+            dev_prompt, messages, tool_bundle = build_discord_prompt(
                 user_input,
                 author_name=message.author.name,
                 source="discord",

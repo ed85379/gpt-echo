@@ -23,7 +23,7 @@ from app.config import API_URL, muse_settings
 from app.core.states_core import set_motd, get_active_project_state
 from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
 from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
-from app.core.prompt_profiles import build_new_speak_prompt, build_new_journal_prompt
+from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
 from app.services.openai_client import speak_openai_client, journal_openai_client
 from app.api.queues import log_queue
 from app.interfaces.websocket_server import broadcast_message
@@ -611,7 +611,7 @@ COMMANDS = {
         "handler": lambda payload, **kwargs: ""  # No action, just logs
     },
     "remember_fact": {
-        "triggers": ["remember that", "save this to memory", "just to be clear", "record this", "for the record"],
+        "triggers": ["remember that", "save this to memory", "record this"],
         "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
         "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")}),
         "filter": lambda entry: {
@@ -1334,7 +1334,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     if not subject:
         return "Missing subject for speak command"
 
-    dev_prompt, user_assistant_messages, tool_bundle = build_new_speak_prompt(
+    dev_prompt, user_assistant_messages, tool_bundle = build_speak_prompt(
         subject=subject,
         payload=payload,
         destination="frontend"
@@ -1344,11 +1344,12 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
         dev_prompt=dev_prompt,
         user_assistant_messages=user_assistant_messages,
         client=speak_openai_client,
-        prompt_type="api",
+        prompt_type="speak",
         model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
         tools = tool_bundle["tools"],
         tool_choice = tool_bundle["tool_choice"],
         handlers = tool_bundle["handlers"],
+        ui_meta=tool_bundle["ui_meta"],
     )
 
     raw_response = normalize_muse_experience_tags((response or "").strip())
@@ -1531,7 +1532,7 @@ async def handle_journal_command(payload, entry_type="public", source=None):
     #tool_bundle = build_tool_bundle(["search_web", "search_news", "read_webpage"])
 
 
-    dev_prompt, user_assistant_messages, tool_bundle = build_new_journal_prompt(subject=subject, payload=payload)
+    dev_prompt, user_assistant_messages, tool_bundle = build_journal_prompt(subject=subject, payload=payload)
 
     response = await get_openai_response(
         dev_prompt=dev_prompt,
@@ -1542,6 +1543,7 @@ async def handle_journal_command(payload, entry_type="public", source=None):
         tools=tool_bundle["tools"],
         tool_choice=tool_bundle["tool_choice"],
         handlers=tool_bundle["handlers"],
+        ui_meta=tool_bundle["ui_meta"],
     )
 
     journal_core.create_journal_entry(

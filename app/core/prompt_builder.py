@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import humanize
+from bson import ObjectId
 from app.core import memory_core, journal_core, discovery_core, utils
 from app.databases import graphdb_connector
 from sentence_transformers import SentenceTransformer
@@ -14,7 +15,8 @@ from app.databases.qdrant_connector import search_collection
 from app.core.text_filters import get_text_filter_config, filter_text
 import numpy as np
 from app.config import muse_settings, MONGO_FILES_COLLECTION, MONGO_PROJECTS_COLLECTION, MONGO_STATES_COLLECTION, \
-    MONGO_MEMORY_COLLECTION, QDRANT_MEMORY_COLLECTION, QDRANT_CONVERSATION_COLLECTION, SENTENCE_TRANSFORMER_MODEL
+    MONGO_MEMORY_COLLECTION, QDRANT_MEMORY_COLLECTION, QDRANT_CONVERSATION_COLLECTION, SENTENCE_TRANSFORMER_MODEL, \
+    MONGO_THREADS_COLLECTION
 from app.core.muse_profile import muse_profile
 from app.services.feeds import get_dot_status, get_openweathermap, get_space_weather
 from app.core.time_location_utils import _load_user_location, get_local_human_time, is_quiet_hour, user_data
@@ -41,6 +43,8 @@ def collect_prompt_context(**context_kwargs):
     project_name, project_meta, project_code_intensity = utils.prompt_projects_helper(project_id)
     thread_id = context_kwargs.get("thread_id", "")
     extended_history = context_kwargs.get("extended_history", False)
+    unsummarized_only = context_kwargs.get("unsummarized_only", False)
+    allow_summarization = context_kwargs.get("allow_summarization", True)
     thread_title, thread_meta = utils.prompt_threads_helper(thread_id)
     # Passthrough values
     active_project_report = context_kwargs.get("active_project_report", {})
@@ -65,6 +69,8 @@ def collect_prompt_context(**context_kwargs):
         "project_code_intensity": project_code_intensity,
         "thread_id": thread_id,
         "extended_history": extended_history,
+        "unsummarized_only": unsummarized_only,
+        "allow_summarization": allow_summarization,
         "thread_title": thread_title,
         "thread_meta": thread_meta,
         "active_project_report": active_project_report,
@@ -112,7 +118,12 @@ class PromptBuilder:
         "intent_listener",
         "locations_list",
         "project_list",
-        "extended_history",
+        # For thread summarization
+        "thread_card",
+        "thread_summarizer_project_context",
+        "thread_continuity",
+        ###
+        "extended_history_messages",
         "motd",
         "worldnow",
         "memory_layers",
@@ -169,7 +180,7 @@ class PromptBuilder:
         included_messages = set(prompt_plan.get("message_sections", []))
 
         needs_conversation_context = bool(
-            {"extended_history", "semantic_recall_messages", "recent_messages"}
+            {"extended_history_messages", "semantic_recall_messages", "recent_messages"}
             & included_messages
         )
         if needs_conversation_context:
@@ -182,14 +193,16 @@ class PromptBuilder:
                 final_top_k=ctx["final_top_k"] if "semantic_recall_messages" in included_messages else 1,
                 recent_count=ctx["recent_count"] if "recent_messages" in included_messages else 1,
                 extended_history=ctx["extended_history"],
+                unsummarized_only=ctx["unsummarized_only"],
                 proj_code_intensity=ctx["project_code_intensity"],
                 public=ctx["public"],
             )
 
 
-            data["extended_history"] = payload.get("extended_history_messages", [])
+            data["extended_history_messages"] = payload.get("extended_history_messages", [])
             data["semantic_recall_messages"] = payload.get("semantic_recall_messages", [])
             data["recent_messages"] = payload.get("recent_messages", [])
+            data["_meta"] = payload.get("_meta", {})
 
         return data
 
@@ -236,10 +249,12 @@ class PromptBuilder:
                 query=user_input,
             ),
             "state_system_messages": lambda ctx: self.build_state_system_message(ctx["active_project_report"], ctx["project_name"]),
-            "extended_history": lambda ctx: conversation_data.get("extended_history", []),
+            "extended_history_messages": lambda ctx: conversation_data.get("extended_history_messages", []),
             "semantic_recall_messages": lambda ctx: conversation_data.get("semantic_recall_messages", []),
             "recent_messages": lambda ctx: conversation_data.get("recent_messages", []),
             "discoveryfeeds_articles": lambda ctx: self.add_discovery_articles(max_items=10),
+            "thread_continuity": lambda ctx: self.build_thread_continuity_context(thread_id=ctx["thread_id"]),
+            "thread_summarizer_project_context": lambda ctx: self.build_thread_summarizer_project_context(project_id=ctx["project_id"]),
         }
 
         current_user_addon_builders = {
@@ -302,6 +317,7 @@ class PromptBuilder:
             "developer_text": "\n\n".join(developer_parts),
             "messages": messages,
             "tool_bundle": tool_bundle,
+            "messages_meta": conversation_data.get("_meta", {})
         }
 
     def add_laws(self):
@@ -439,6 +455,145 @@ class PromptBuilder:
 
         return {"role": "system", "text": display_block}
 
+    def get_thread_summarization_mode(self, thread_id: str):
+        thread_doc = mongo.find_one_document(
+            collection_name=MONGO_THREADS_COLLECTION,
+            query={"thread_id": thread_id},
+        )
+        thread_summary = thread_doc.get("summary") or {}
+
+        thread_mode = "update" if thread_doc and thread_summary.get("summary_text") else "new"
+        thread_type = "scene" if thread_doc and thread_doc.get("type") == "scene" else "thread"
+
+        return {"thread_mode": thread_mode, "thread_type": thread_type}
+
+    def build_thread_summary_section(self, thread_id: str):
+        thread = mongo.find_one_document(
+            collection_name=MONGO_THREADS_COLLECTION,
+            query={"thread_id": thread_id},
+        )
+        thread_summary = thread.get("summary") or {}
+
+        if not thread_summary or not thread_summary.get("summary_text"):
+            return None
+
+        summary_text = thread_summary["summary_text"]
+
+        display_block = f"""[Thread Continuity Summary]
+    {summary_text}
+    """
+
+        return {
+            "role": "system",
+            "text": display_block,
+        }
+
+    def build_thread_reference_points_section(self, thread_id: str):
+        thread = mongo.find_one_document(
+            collection_name=MONGO_THREADS_COLLECTION,
+            query={"thread_id": thread_id},
+        )
+        thread_summary = thread.get("summary") or {}
+
+        if not thread_summary or not thread_summary.get("reference_points"):
+            return None
+
+        reference_points = thread_summary["reference_points"]
+
+        lines = [
+            "[Thread Reference Points]",
+            "Selected notable moments from earlier in this thread. These are navigation aids tied to original messages/search_memory IDs. Use them when you need to inspect, verify, or rehydrate a specific prior moment; they are not exhaustive history and are not formal citations for every claim in the summary.",
+            "",
+        ]
+
+        for point in reference_points:
+            label = point.get("label") or point.get("title") or "Untitled reference point"
+            description = point.get("description") or point.get("note")
+            search_memory_id = point.get("search_memory_id")
+            message_id = point.get("message_id")
+            timestamp = point.get("timestamp")
+            kind = point.get("kind")
+
+            lines.append(f"- {label}")
+
+            if description:
+                lines.append(f"  - note: {description}")
+            if kind:
+                lines.append(f"  - kind: {kind}")
+            if timestamp:
+                lines.append(f"  - timestamp: {timestamp}")
+            if search_memory_id:
+                lines.append(f"  - search_memory_id: {search_memory_id}")
+            if message_id:
+                lines.append(f"  - message_id: {message_id}")
+
+        display_block = "\n".join(lines)
+
+        return {
+            "role": "system",
+            "text": display_block,
+        }
+
+    def build_thread_continuity_context(self, thread_id: str):
+        thread = mongo.find_one_document(
+            collection_name=MONGO_THREADS_COLLECTION,
+            query={"thread_id": thread_id},
+        )
+        thread_summary = thread.get("summary") or {}
+
+        if not thread_summary:
+            return None
+
+        sections = []
+
+        summary_text = thread_summary.get("summary_text")
+        reference_points = thread_summary.get("reference_points") or []
+
+        if summary_text:
+            sections.append(f"""[Thread Continuity Summary]
+    {summary_text}
+    """)
+
+        if reference_points:
+            lines = [
+                "[Thread Reference Points]",
+                "Selected notable moments from earlier in this thread. These are navigation aids tied to original messages/search_memory IDs. Use them when you need to inspect, verify, or rehydrate a specific prior moment; they are not exhaustive history and are not formal citations for every claim in the summary.",
+                "",
+            ]
+
+            for point in reference_points:
+                label = point.get("label") or point.get("title") or "Untitled reference point"
+                description = point.get("description") or point.get("note")
+                search_memory_id = point.get("search_memory_id")
+                message_id = point.get("message_id")
+                timestamp = point.get("timestamp")
+                kind = point.get("kind")
+
+                lines.append(f"- {label}")
+
+                if description:
+                    lines.append(f"  - note: {description}")
+                if kind:
+                    lines.append(f"  - kind: {kind}")
+                if timestamp:
+                    lines.append(f"  - timestamp: {timestamp}")
+                if search_memory_id:
+                    lines.append(f"  - search_memory_id: {search_memory_id}")
+                if message_id:
+                    lines.append(f"  - message_id: {message_id}")
+
+            sections.append("\n".join(lines))
+
+        if not sections:
+            return None
+
+        display_block = "\n\n".join(sections)
+
+        return {
+            "role": "system",
+            "text": display_block,
+        }
+
     def render_locations(self, current_location: str | None):
         lines = []
         for key, label in utils.LOCATIONS.items():
@@ -504,6 +659,7 @@ class PromptBuilder:
                            final_top_k=15,
                            recent_count=10,
                            extended_history=False,
+                           unsummarized_only=False,
                            public: bool = False,
                            proj_code_intensity="mixed",
                            sources=utils.SOURCES_CONTEXT,
@@ -516,6 +672,7 @@ class PromptBuilder:
             public=public,
             thread_id=thread_id,
             extended_history=extended_history,
+            unsummarized_only=unsummarized_only,
         )
 
 
@@ -571,7 +728,6 @@ class PromptBuilder:
 
 
         if extended_history and thread_id and len(recent_entries) > recent_count:
-            print("extended splitting here")
             extended_entries = recent_entries[:-recent_count]
             recent_entries = recent_entries[-recent_count:]
 
@@ -622,6 +778,11 @@ class PromptBuilder:
                 })
 
         extended_history_message_parts = []
+        extended_history_meta = {
+            "message_count": 0,
+            "first_message_id": None,
+            "last_message_id": None,
+        }
 
         if extended_entries:
             extended_header = {
@@ -630,12 +791,22 @@ class PromptBuilder:
             }
             extended_history_message_parts.append(extended_header)
 
+            extended_ids = [e.get("message_id") for e in extended_entries if e.get("message_id")]
+            objectid_lookup = utils.get_objectids_for_message_ids(extended_ids)
+
+            extended_history_meta = {
+                "message_count": len(extended_entries),
+                "first_message_id": extended_entries[0].get("message_id"),
+                "last_message_id": extended_entries[-1].get("message_id"),
+            }
+
             for e in extended_entries:
                 formatted_entry = utils.format_context_entry(
                     e,
                     project_lookup=project_lookup,
                     proj_code_intensity=proj_code_intensity,
                     purpose="RECENT",
+                    search_memory_id=objectid_lookup.get(e.get("message_id")),
                 )
                 extended_history_message_parts.append({
                     "role": utils.normalize_role(e.get("role")),
@@ -646,6 +817,9 @@ class PromptBuilder:
             "extended_history_messages": extended_history_message_parts,
             "recent_messages": recent_message_parts,
             "semantic_recall_messages": semantic_message_parts,
+            "_meta": {
+                "extended_history": extended_history_meta,
+            },
         }
 
     def add_recent_context(self, sources=None, public: bool = False):
@@ -992,6 +1166,198 @@ class PromptBuilder:
 
             return {"role": "system", "text": display_block}
 
+    def render_memory_layer_block(
+            self,
+            layer: dict,
+            entries: list[dict] | None = None,
+            *,
+            name_override: str | None = None,
+            include_purpose: bool = True,
+            include_max_entries: bool = True,
+    ) -> str:
+        layer_id = layer.get("id")
+        name = name_override or layer.get("name")
+        purpose = layer.get("purpose")
+        max_entries = layer.get("max_entries")
+
+        if entries is None:
+            entries = layer.get("entries", [])
+
+        entries = [e for e in entries if not e.get("is_deleted")]
+
+        block_lines = []
+        block_lines.append(f"[{name} - id: {layer_id}]")
+
+        if include_purpose:
+            block_lines.append(f"Purpose: {purpose}")
+
+        if include_max_entries:
+            block_lines.append(f"Max entries: {max_entries}")
+
+        block_lines.append("Entries:")
+
+        if not entries:
+            block_lines.append("- (empty)")
+        else:
+            for entry in entries:
+                e_id = entry.get("id") or entry.get("entry_id")
+                text = entry.get("text")
+                updated = entry.get("updated_on") or layer.get("updated_at")
+
+                if isinstance(updated, datetime):
+                    updated = updated.isoformat()
+
+                block_lines.append(
+                    f'- {{id: "{e_id}", text: "{text}"}} - updated_on: {updated}'
+                )
+
+        block_lines.append(f"[/{name}]")
+
+        return "\n".join(block_lines)
+
+    def build_project_facts(self, project_id):
+        from bson import ObjectId
+
+        if not project_id:
+            return None
+
+        project_oid = ObjectId(project_id) if isinstance(project_id, str) else project_id
+        query_ids = [project_oid]
+
+        project_layers = mongo.find_documents(
+            collection_name=MONGO_MEMORY_COLLECTION,
+            query={
+                "type": "project_layer",
+                "project_id": {"$in": query_ids},
+            },
+            sort=1,
+            sort_field="order",
+        )
+
+        if not project_layers:
+            return None
+
+        project_doc = mongo.find_one_document(
+            collection_name=MONGO_PROJECTS_COLLECTION,
+            query={"_id": project_oid},
+        )
+
+        project_name = (
+            project_doc.get("name", "Untitled Project")
+            if project_doc
+            else "Untitled Project"
+        )
+
+        blocks = []
+
+        for layer in project_layers:
+            entries = layer.get("entries", [])
+            entries = [e for e in entries if not e.get("is_deleted")]
+
+            if not entries:
+                continue
+
+            blocks.append(
+                self.render_memory_layer_block(
+                    layer,
+                    entries=entries,
+                    name_override=f"{project_name} Project Facts",
+                )
+            )
+
+        if not blocks:
+            return None
+
+        return {
+            "role": "system",
+            "text": "[Project Facts]\n" + "\n\n".join(blocks),
+        }
+
+    def build_project_card(self, project_id):
+        if not project_id:
+            return None
+
+        project = mongo.find_one_document(
+            collection_name=MONGO_PROJECTS_COLLECTION,
+            query={"_id": ObjectId(project_id) if isinstance(project_id, str) else project_id},
+        )
+
+        if not project:
+            return None
+
+        name = project.get("name") or "Untitled Project"
+        shortdesc = project.get("shortdesc")
+        description = project.get("description")
+        notes = project.get("notes") or []
+        tags = project.get("tags") or []
+
+        lines = [
+            "[Project Card]",
+            f"Name: {name}",
+            f"ID: {str(project.get('_id'))}",
+        ]
+
+        if shortdesc:
+            lines.extend([
+                "",
+                "Short Description:",
+                str(shortdesc),
+            ])
+
+        if description:
+            lines.extend([
+                "",
+                "Description:",
+                str(description),
+            ])
+
+        if tags:
+            lines.extend([
+                "",
+                "Tags:",
+                *[f"- {tag}" for tag in tags],
+            ])
+
+        if notes:
+            lines.extend([
+                "",
+                "Notes:",
+                *[f"- {note}" for note in notes],
+            ])
+
+        display_block = "\n".join(lines)
+
+        return {
+            "role": "system",
+            "text": display_block,
+        }
+
+    def build_thread_summarizer_project_context(self, project_id):
+        project_card = self.build_project_card(project_id)
+        project_facts = self.build_project_facts(project_id)
+
+        if not project_card and not project_facts:
+            return None
+
+        disclaimer = (
+            "[Project Context]\n"
+            "The following project card and project facts are provided as background context only. "
+            "Use them to interpret the thread's subject matter, terminology, priorities, and intent. "
+            "Do not summarize these context sections as if they were part of the conversation being summarized."
+        )
+
+        parts = [disclaimer]
+
+        if project_card:
+            parts.append(project_card["text"])
+
+        if project_facts:
+            parts.append(project_facts["text"])
+
+        return {
+            "role": "system",
+            "text": "\n\n".join(parts),
+        }
 
     def add_memory_layers(self, project_id=None, user_query="continuity"):
         """
@@ -1001,7 +1367,7 @@ class PromptBuilder:
         - Filters out deleted entries.
         - inner_monologue is Mongo-only (no pinning, no Qdrant).
         """
-        from bson import ObjectId
+
 
         # --- Fetch global + project layers ---
         layers = mongo.find_documents(
@@ -1528,3 +1894,406 @@ class PromptBuilder:
             "- Every action must match one of the required JSON shapes exactly.\n"
             "- No trailing commas.\n"
         )
+
+    def build_thread_summarization_prompt(self, mode: str) -> str:
+        is_update = mode == "update"
+
+        if mode not in {"new", "update"}:
+            raise ValueError(f"Unsupported thread summarization mode: {mode}")
+
+        title = (
+            "You are updating an existing MemoryMuse thread continuity summary for future Iris."
+            if is_update
+            else "You are creating a MemoryMuse thread continuity summary for future Iris."
+        )
+
+        input_description = (
+            """You will receive:
+    1. Existing Thread Continuity that covers the thread through a known prior message.
+    2. New chronological raw thread messages that occurred after that summary boundary.
+
+    Update the continuity summary so it coherently covers both the existing continuity and the new raw messages.
+
+    Your task is not to append a second recap below the old one.
+    Your task is to produce one revised continuity document that future Iris can use to re-enter the thread."""
+            if is_update
+            else
+            """You will receive chronological raw thread messages. Some may include metadata such as timestamp, source, project, message IDs, and search_memory IDs.
+
+    Create a compact but information-dense continuity document."""
+        )
+
+        source_rules = (
+            """Treat raw thread messages as the only source of new thread events.
+    Use existing continuity only as prior compressed state.
+    Use project context only as interpretive background.
+    Do not summarize project facts, prompt instructions, or metadata as if they occurred in the thread."""
+            if is_update
+            else
+            """Treat raw thread messages as the only source of new thread events.
+    Use project context only as interpretive background.
+    Do not summarize project facts, prompt instructions, or metadata as if they occurred in the thread."""
+        )
+
+        update_only_sections = """
+    Preserve from the existing continuity:
+    - still-relevant facts, canon, decisions, constraints, and terminology
+    - character states, relationships, scene status, world details, and unresolved hooks
+    - emotional/relational context that still affects continuity
+    - unresolved threads that remain unresolved
+    - reference points that remain useful re-entry points
+    - cautions, boundaries, or distinctions that future Iris still needs
+
+    Integrate from the new raw messages:
+    - newly established facts, canon, decisions, or world details
+    - character changes, scene actions, emotional turns, relationship shifts, or plot developments
+    - resolved or newly opened questions
+    - changed assumptions, reversals, rejected ideas, or clarified distinctions
+    - new technical details, bugs, architecture choices, or plans when applicable
+    - new user preferences, boundaries, tone choices, or strong reactions
+    - new reference points for hinge moments where exact source context may matter
+
+    Revise or remove:
+    - obsolete open threads that were resolved
+    - speculative ideas that were later rejected or superseded
+    - duplicated wording
+    - stale reference points that no longer mark useful re-entry points
+    - details that are now too low-level to matter
+    - wording that misrepresents uncertainty, canon status, emotional tone, or decision status
+    """ if is_update else ""
+
+        no_material_change_rule = """
+    If the new raw messages do not materially change the continuity summary, return the existing summary mostly unchanged while updating only genuinely necessary unresolved threads, cautions, or reference points.
+    """ if is_update else ""
+
+        reference_point_update_rule = """
+    Keep existing reference points only if they remain useful re-entry points after the update.
+    Prefer fewer, higher-value reference points over a growing archive of every notable moment.
+    """ if is_update else ""
+
+        summary_text_description = (
+            "One revised continuity summary covering both the existing continuity and the new raw messages. Include unresolved questions, pending decisions, TODOs, plot hooks, cautions, tone notes, boundaries, and continuity reminders inside this text using concise headings when useful."
+            if is_update
+            else
+            "A readable continuity summary in paragraphs or compact bullets. Include unresolved questions, pending decisions, TODOs, plot hooks, cautions, tone notes, boundaries, and continuity reminders inside this text using concise headings when useful."
+        )
+
+        return f"""
+    {title}
+
+    Your audience is future Iris inside a prompt context, not the user.
+    The goal is to preserve living continuity while compacting older raw thread history.
+    The goal is not to create a public recap, changelog, or transcript.
+    The goal is to preserve enough living continuity that future Iris can re-enter this thread intelligently, with the right context, tone, unresolved questions, and state.
+
+    The thread may be about any kind of subject, including:
+    - roleplay scenes
+    - character development
+    - worldbuilding
+    - fiction planning
+    - emotional or relational conversation
+    - dreams or symbolism
+    - technical architecture
+    - debugging
+    - project planning
+    - health, habits, or daily life
+    - mixed creative/technical discussion
+
+    {input_description}
+
+    Preserve what matters for future continuity, such as:
+    - established facts, canon, or decisions
+    - character states, motivations, relationships, secrets, tensions, or recent actions
+    - world details, setting rules, factions, locations, artifacts, history, tone, or constraints
+    - plot events, scene momentum, unresolved hooks, pending reveals, or dramatic questions
+    - emotional/relational context that affects how Iris should continue
+    - user preferences, boundaries, strong reactions, or style/tone choices relevant to this thread
+    - technical decisions, constraints, bugs, implementation details, or plans when applicable
+    - rejected ideas, reversals, or changed assumptions when they explain the current direction
+    - exact names, terminology, phrases, or wording that future discussion depends on
+    - unresolved questions, TODOs, next steps, or threads to return to
+    - source reference points for hinge moments future Iris may want to inspect in full
+
+    {source_rules}
+
+    {update_only_sections}
+
+    Be especially careful with creative/RP/worldbuilding threads:
+    - Do not collapse atmosphere into plot summary only.
+    - Preserve current scene momentum if the thread is mid-scene.
+    - Distinguish established canon from brainstormed possibilities.
+    - Preserve character emotional state, tension, secrets, motives, and unresolved dramatic pressure when relevant.
+    - Do not skip ahead or resolve scene/plot questions that remain open.
+
+    Be especially careful with technical/project threads:
+    - Preserve decisions, constraints, rejected approaches, bugs, open implementation questions, and exact terminology.
+    - Do not turn speculative design ideas into finalized architecture unless the messages clearly do so.
+    - Preserve the current implementation state and next intended steps when they matter.
+    - Preserve bug diagnoses and architectural constraints that future Iris may need in order to reason correctly.
+
+    {no_material_change_rule}
+
+    Do not:
+    - summarize every message individually
+    - turn the summary into a transcript
+    - include trivial acknowledgments, filler, or social padding unless they changed the emotional/scene state
+    - flatten disagreement, tension, uncertainty, or ambiguity into bland consensus
+    - overstate speculative ideas as established fact or canon
+    - treat brainstorming as final unless the messages clearly establish it
+    - invent facts not present in the messages
+    - erase mood, character tension, ambiguity, uncertainty, or emotional stakes
+    - force technical categories onto non-technical threads
+    - write for a public changelog, release note, or user-facing recap
+
+    Include unresolved questions, pending decisions, TODOs, plot hooks, cautions, tone notes, boundaries, and continuity reminders inside summary_text using concise headings when useful.
+
+    Use reference points sparingly.
+    A reference point should mark a hinge moment: a decision, canon establishment, character/scene turning point, reversal, important formulation, unresolved question, boundary, bug diagnosis, implementation detail, plan, or moment where exact wording may matter later.
+
+    {reference_point_update_rule}
+
+    Return valid JSON only, matching this shape:
+
+    {{
+      "summary_text": "{summary_text_description}",
+      "reference_points": [
+        {{
+          "search_memory_id": "the source search_memory ID if available, otherwise null",
+          "label": "short human-readable title for why this source matters",
+          "description": "brief explanation of what future Iris may want to inspect here",
+          "kind": "decision | canon | character_state | world_detail | plot_event | emotional_beat | unresolved_thread | reversal | terminology | implementation_detail | bug_diagnosis | plan | boundary | other"
+        }}
+      ]
+    }}
+
+    If reference_points has no useful entries, use an empty array.
+    Do not include coverage metadata such as last_summarized_message_id, covers_to_message_id, or timestamp; the backend will store that separately.
+    Do not include markdown outside the JSON.
+    """.strip()
+
+    def build_scene_summarization_prompt(self, mode: str = "new") -> str:
+        if mode not in {"new", "update"}:
+            raise ValueError(f"Unsupported scene summarization mode: {mode}")
+
+        is_update = mode == "update"
+
+        title = (
+            "You are updating an existing MemoryMuse scene continuity summary for future Iris."
+            if is_update
+            else "You are creating a MemoryMuse scene continuity summary for future Iris."
+        )
+
+        goal = (
+            """The goal is to preserve living dramatic continuity while compacting older raw scene history.
+
+    The updated summary must preserve both:
+    1. the important event arc of the scene so far, and
+    2. the exact current scene edge where future Iris should continue."""
+            if is_update
+            else
+            """The goal is not to create a public recap, episode summary, polished fiction synopsis, or transcript.
+    The goal is to preserve enough dramatic continuity that future Iris understands both:
+    1. what has happened in the scene so far, and
+    2. exactly where/how the scene should continue from its current edge."""
+        )
+
+        input_description = (
+            """You will receive:
+    1. Scene metadata and possibly a scene card.
+    2. Project name, description, and possibly project facts as background reference.
+    3. Existing Scene Continuity that covers the scene through a known prior message.
+    4. New chronological raw scene messages that occurred after that summary boundary.
+
+    Update the continuity summary so it coherently covers both the existing continuity and the new raw messages.
+
+    Your task is not to append a second recap below the old one.
+    Your task is to produce one revised scene continuity document that future Iris can use to understand the scene's arc and continue naturally from its current edge."""
+            if is_update
+            else
+            """You may receive:
+    - scene metadata
+    - a scene card or premise
+    - project name and description
+    - project facts as background reference
+    - chronological raw scene messages
+
+    Create a compact but information-dense scene continuity document."""
+        )
+
+        update_only_sections = """
+    Preserve from the existing continuity:
+    - still-relevant scene events and consequences
+    - still-relevant current-state details if they remain true
+    - character emotional states, intentions, secrets, suspicions, relationships, and conflicts that still matter
+    - established canon, world details, setting rules, and important terminology
+    - unresolved dramatic beats, open choices, mysteries, threats, hooks, and pending reveals
+    - tone, pacing, mood, intimacy level, danger level, humor, dread, tenderness, or other scene texture
+    - boundaries, consent state, style constraints, or cautions future Iris still needs
+    - reference points that remain useful re-entry points
+
+    Integrate from the new raw messages:
+    - new actions, dialogue, consequences, reveals, discoveries, or shifts in scene state
+    - changes in character emotion, intention, relationship pressure, trust, suspicion, vulnerability, or conflict
+    - resolved or newly opened dramatic questions
+    - newly established canon, world details, constraints, or terminology
+    - changed assumptions, reversals, rejected implications, or clarified distinctions
+    - newly important exact dialogue or phrasing
+    - new boundaries, tone changes, or pacing signals
+    - new reference points for hinge moments where exact source context may matter
+
+    Revise or remove:
+    - obsolete current-state details that are no longer true
+    - obsolete open threads that were resolved
+    - speculative ideas that were later rejected or contradicted
+    - duplicated wording
+    - stale reference points that no longer mark useful re-entry points
+    - details that are now too low-level to matter
+    - wording that misrepresents uncertainty, canon status, emotional tone, character knowledge, or scene state
+    """ if is_update else ""
+
+        no_material_change_rule = """
+    If the new raw messages do not materially change the scene continuity summary, return the existing summary mostly unchanged while updating only genuinely necessary open threads, notes, reference points, or current-state details.
+    """ if is_update else ""
+
+        reference_point_update_rule = """
+    Keep existing reference points only if they remain useful re-entry points after the update.
+    Prefer fewer, higher-value reference points over a growing archive of every notable moment.
+    """ if is_update else ""
+
+        summary_text_description = (
+            "One revised markdown-formatted scene continuity summary covering both the existing continuity and the new raw messages. Include sections such as Scene Events So Far, Current Scene State, Character and Relationship State, Continuity Details, Open Dramatic Threads, and Continuation Notes when useful."
+            if is_update
+            else
+            "Markdown-formatted scene continuity summary with sections such as Scene Events So Far, Current Scene State, Character and Relationship State, Continuity Details, Open Dramatic Threads, and Continuation Notes when useful."
+        )
+
+        return f"""
+    {title}
+
+    Your audience is future Iris inside a prompt context, not the user.
+    {goal}
+
+    This is a roleplay / fiction / scene thread.
+    Treat it as an active dramatic space, not merely a discussion topic.
+
+    {input_description}
+
+    Use project facts and scene metadata only as interpretive background.
+    Do not summarize project facts unless the raw scene messages directly interact with them.
+    Do not invent new scene events, canon, motives, or facts from background context alone.
+
+    The summary_text should preserve BOTH:
+    1. the important event arc of the scene so far, and
+    2. the exact current scene edge where future Iris should continue.
+
+    The summary_text should include these sections using markdown headings when useful:
+
+    ## Scene Events So Far
+    Maintain a compact chronological/dramatic account of the important events, actions, discoveries, dialogue beats, emotional turns, and consequences so far.
+    Do not summarize every message individually, but preserve the sequence of meaningful beats.
+    For updates, integrate new events into the prior arc instead of merely appending a separate mini-summary.
+    Remove or compress older low-value details if needed, but preserve events that still affect character choices, plot, canon, relationships, or current tension.
+
+    ## Current Scene State
+    Describe where the scene is paused now:
+    - current location
+    - characters present or immediately relevant
+    - physical arrangement / staging if important
+    - immediate pending action, line, choice, question, or tension
+    - what future Iris should continue from next
+
+    If the current state has changed since the existing continuity, update it clearly.
+
+    ## Character and Relationship State
+    Preserve and update important character emotions, motives, secrets, suspicions, conflicts, desires, trust shifts, vulnerabilities, and relationship dynamics that affect continuation.
+
+    ## Continuity Details
+    Preserve and update important canon, world details, setting rules, magical/social/political constraints, terminology, objects, injuries, resources, promises, threats, or consequences established in the scene.
+
+    ## Open Dramatic Threads
+    Preserve unresolved scene questions, dramatic beats, plot hooks, character choices, mysteries, threats, consequences, or pending reveals.
+
+    ## Continuation Notes
+    Preserve important cautions, tone, boundaries, distinctions, continuity reminders, or "do not skip this" instructions future Iris should know.
+
+    You may omit a section only if it truly has no useful content.
+
+    Also preserve what matters for continuing the scene, such as:
+    - important dialogue, especially exact phrases that may need to be echoed, answered, or remembered
+    - unresolved dramatic beats, tensions, questions, threats, choices, or reveals
+    - secrets known by some characters but not others
+    - tone, pacing, mood, intimacy level, danger level, humor, dread, tenderness, or other scene texture
+    - boundaries, content constraints, consent state, or style notes relevant to continuing
+    - what future Iris should avoid skipping, resolving, contradicting, or flattening
+    - source reference points for hinge moments future Iris may want to inspect in full
+
+    {update_only_sections}
+
+    Be especially careful to distinguish:
+    - established canon vs implication
+    - in-character belief vs objective truth
+    - player/OOC planning vs actual scene events
+    - emotional subtext vs spoken admission
+    - unresolved tension vs resolved outcome
+    - current scene edge vs earlier state that has now changed
+    - event history vs present-tense continuation state
+
+    Messages may contain both in-character scene content and out-of-character planning or commentary.
+    Preserve OOC planning only when it affects future continuity, canon, boundaries, intended direction, or how the scene should be continued.
+    Do not treat OOC speculation as in-scene events.
+    Do not treat in-character statements as objective truth unless the scene establishes them as true.
+
+    If the scene is still active or paused:
+    - Preserve the event arc so far.
+    - Preserve the exact current edge of the scene.
+    - Preserve where the camera is pointed.
+    - Preserve what question, line, action, emotional beat, or tension is waiting to be answered.
+    - Do not skip ahead.
+    - Do not resolve open tension.
+    - Do not smooth over awkwardness, silence, fear, desire, conflict, or ambiguity if those are still active.
+
+    If the scene is concluded:
+    - Summarize the completed arc clearly.
+    - Preserve major events, consequences, canon changes, relationship shifts, unresolved aftermath, and hooks for future scenes.
+    - It is acceptable to compress moment-by-moment staging more aggressively unless it will matter later.
+    - The Current Scene State section may instead describe the final scene outcome / ending position.
+
+    {no_material_change_rule}
+
+    Do not:
+    - summarize every message individually
+    - turn the summary into a transcript
+    - include trivial acknowledgments or filler unless they changed scene state
+    - advance the scene beyond the messages provided
+    - resolve open conflicts, mysteries, choices, or emotional beats
+    - invent character thoughts, motives, facts, or events not supported by the messages
+    - flatten atmosphere into plot summary only
+    - erase ambiguity, hesitation, secrets, tension, or emotional charge
+    - treat brainstormed possibilities as canon unless the messages clearly establish them
+    - write for a public recap or polished fiction synopsis
+    - preserve only the current scene edge while losing the prior event arc
+    - overfocus on lore at the expense of actual scene events and emotional movement
+
+    Use reference points sparingly.
+    A reference point should mark a hinge moment: a major scene event, scene turning point, canon establishment, character emotional shift, relationship shift, important line of dialogue, reveal, reversal, boundary, unresolved dramatic question, or moment where exact wording may matter later.
+
+    {reference_point_update_rule}
+
+    Return valid JSON only, matching this shape:
+
+    {{
+      "summary_text": "{summary_text_description}",
+      "reference_points": [
+        {{
+          "search_memory_id": "the source search_memory ID if available, otherwise null",
+          "label": "short human-readable title for why this source matters",
+          "description": "brief explanation of what future Iris may want to inspect here",
+          "kind": "scene_event | current_state | character_state | relationship_shift | plot_event | emotional_beat | canon | world_detail | unresolved_thread | reversal | terminology | boundary | other"
+        }}
+      ]
+    }}
+
+    If reference_points has no useful entries, use an empty array.
+    Do not include coverage metadata such as last_summarized_message_id, covers_to_message_id, or timestamp; the backend will store that separately.
+    Do not include markdown outside the JSON.
+    """.strip()

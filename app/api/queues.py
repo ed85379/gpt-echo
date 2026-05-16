@@ -7,6 +7,7 @@ log_queue = asyncio.Queue()
 index_queue = asyncio.Queue()
 index_memory_queue = asyncio.Queue()
 purge_queue = asyncio.Queue()
+summarization_queue = asyncio.Queue()
 
 # Typing: adjust as needed for your actual message structure
 Message = Dict[str, Any]
@@ -151,6 +152,31 @@ async def run_purge_queue(
                 action="purge_failed",
                 error=str(e),
                 message_id=str(message_id)
+            )
+        finally:
+            queue.task_done()
+
+async def run_summarization_queue(
+    queue: asyncio.Queue,
+    run_thread_summarization: Callable[..., Awaitable[None]],
+    *,
+    logger=None
+):
+    while True:
+        thread_id = await queue.get()
+        try:
+            await run_thread_summarization(
+                thread_id=thread_id,
+            )
+        except Exception as e:
+            utils.write_system_log(
+                level="error",
+                module="api",
+                component="queues",
+                function="run_summarization_queue",
+                action="summarization_failed",
+                error=str(e),
+                thread_id=str(thread_id)
             )
         finally:
             queue.task_done()

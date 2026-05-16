@@ -382,18 +382,30 @@ async def get_openai_response(
                     f"Function Call: {function_name},\n"
                     f"Function Arguments: {arguments},\n"
                 )
+                print("calling function")
 
                 try:
                     timestamp = datetime.now(timezone.utc).isoformat()
+                    print(f"timestamp: {timestamp}")
                     msg = ui_meta[function_name]["start"]
-                    await broadcast_message(
-                        message=msg,
-                        timestamp=timestamp,
-                        role="muse",
-                        to_modality="frontend",
-                        payload_type="status_message",
-                    )
+                    print(f"msg: {msg}")
+                    try:
+                        if prompt_type == "api":
+                            await asyncio.wait_for(
+                                broadcast_message(
+                                    message=msg,
+                                    timestamp=timestamp,
+                                    role="muse",
+                                    to_modality="frontend",
+                                    payload_type="status_message",
+                                ),
+                                timeout=1,
+                            )
+                    except Exception as e:
+                        print("error or timeout broadcasting:", repr(e))
+                    print("calling run_tool")
                     tool_result = run_tool(function_name, arguments, handlers or {})
+                    print(f"tool_result: {tool_result}")
                 except Exception as tool_error:
                     tool_result = {
                         "error": str(tool_error)

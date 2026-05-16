@@ -251,6 +251,7 @@ def get_immediate_context(
     before: int | None = None,
     after: int = 0,
     extended_history: bool = False,
+    unsummarized_only: bool = False,
 ):
     """
     Return a list of messages, starting from a moment and working backward.
@@ -331,6 +332,12 @@ def get_immediate_context(
         clauses = [part for part in parts if part]
         return {"$and": clauses} if clauses else {}
 
+    def find_message_by_id(message_id: str):
+        return mongo.find_one_document(
+            collection_name=MONGO_CONVERSATION_COLLECTION,
+            query={"message_id": message_id},
+        )
+
     def find_anchor_message(message_id: str):
         anchor = mongo.find_one_document(
             collection_name=MONGO_CONVERSATION_COLLECTION,
@@ -339,6 +346,34 @@ def get_immediate_context(
         if not anchor:
             raise ValueError(f"No message found for id={message_id}")
         return anchor
+
+    def find_thread_doc(thread_id: str):
+        return mongo.find_one_document(
+            collection_name=MONGO_THREADS_COLLECTION,
+            query={"thread_id": str(thread_id)},
+        )
+
+    def build_unsummarized_clause():
+        if not (unsummarized_only and extended_history and thread_id):
+            return None
+
+        thread = find_thread_doc(thread_id)
+        if not thread:
+            return None
+
+        last_summarized_message_id = thread.get("last_summarized_message_id")
+        if not last_summarized_message_id:
+            return None
+
+        last_summarized_msg = find_message_by_id(last_summarized_message_id)
+        if not last_summarized_msg:
+            # Don't break prompt assembly because a stored summary boundary is stale.
+            # The caller can still get full extended history.
+            return None
+
+        return {
+            "timestamp": {"$gt": last_summarized_msg["timestamp"]}
+        }
 
     def resolve_shifted_anchor(anchor: dict, after_count: int):
         if after_count <= 0:
@@ -415,12 +450,14 @@ def get_immediate_context(
     project_clause = build_project_clause()
     thread_clause = build_thread_clause()
     time_clause = build_time_clause(now)
+    unsummarized_clause = build_unsummarized_clause()
 
     final_query = combine_clauses(
         base_query,
         project_clause,
         thread_clause,
         time_clause,
+        unsummarized_clause,
     )
 
     # 3) Fetch + post-filter to desired count
@@ -440,17 +477,17 @@ def get_immediate_context(
     if extended_history and thread_id:
         selected = list(reversed(raw_messages))
         return selected
-    else:
-        for msg in raw_messages:
-            selected.append(msg)
 
-            if msg.get("source") in utils.SOURCES_CHAT:
-                convo_seen += 1
-                if convo_seen >= convo_count:
-                    break
+    for msg in raw_messages:
+        selected.append(msg)
 
-        selected.reverse()
-        return selected
+        if msg.get("source") in utils.SOURCES_CHAT:
+            convo_seen += 1
+            if convo_seen >= convo_count:
+                break
+
+    selected.reverse()
+    return selected
 
 def recency_weight(ts, now=None, half_life_hours=36):
     if not ts:

@@ -1,38 +1,10 @@
 # prompt_profiles.py
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from bson import ObjectId
 from app.core.prompt_builder import PromptBuilder, collect_prompt_context
 from app.core.utils import is_conversation_active
-from app.core.time_location_utils import is_quiet_hour, _load_user_location
-from app.config import muse_settings
+from app.core.time_location_utils import is_quiet_hour
 
-# ============================
-# Prompt Segment Reference
-# ============================
-# This manifest is for **human reference only**.
-# It ties together the builder method, the segment name it produces,
-# and a short description of its purpose. Keep this updated if method
-# names or segment keys drift.
-# The source for this data is in prompt_builder.py
-SEGMENT_MANIFEST = [
-    {"method": "add_laws", "segment": "laws", "purpose": "Three Laws of Muse Agency"},
-    {"method": "add_profile", "segment": "profile", "purpose": "Muse profile (voice, tone, style, identity)"},
-    {"method": "add_principles", "segment": "principles", "purpose": "Core principles and creed"},
-    {"method": "add_memory_layers", "segment": "memory_layers", "purpose": "Persistent memory layers (user info, insights, monologue, facts)"},
-    {"method": "add_cortex_entries", "segment": "cortex_entries", "purpose": "Cortex entries like insight, seed, user_data"},
-    {"method": "add_intent_listener", "segment": "intent_listener", "purpose": "Command listeners (reminder, journal, etc.)"},
-    {"method": "add_journal_thoughts", "segment": "journal_thoughts", "purpose": "Recent journal reflections"},
-    {"method": "add_files", "segment": "files", "purpose": "Stable injected files"},
-    {"method": "add_ephemeral_files", "segment": "ephemeral_files", "purpose": "Temporary images/files for current prompt only"},
-    {"method": "add_prompt_context", "segment": "prompt_context", "purpose": "Conversation context (recent messages and semantic recall)"},
-    {"method": "add_time", "segment": "time", "purpose": "Current time/date info"},
-    {"method": "add_identity_reminders", "segment": "identity_reminder", "purpose": "Identity reinforcement snippet"},
-    {"method": "add_formatting_instructions", "segment": "formatting_instructions", "purpose": "Formatting suggestions for different output types."},
-    {"method": "add_due_reminders", "segment": "due_reminders", "purpose": "Reminders that are due now"},
-]
-# <editor-fold desc="new_api_prompt">
-def build_new_api_prompt(user_input, **kwargs):
+# <editor-fold desc="api_prompt">
+def build_api_prompt(user_input, **kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -41,7 +13,7 @@ def build_new_api_prompt(user_input, **kwargs):
             "intent_listener",
             "locations_list",
             "project_list",
-            "extended_history",
+            "extended_history_messages",
             "motd",
             "worldnow",
             "memory_layers",
@@ -87,8 +59,8 @@ def build_new_api_prompt(user_input, **kwargs):
 
     return dev_prompt, messages, tool_bundle
 # </editor-fold>
-# <editor-fold desc="new_discord_prompt">
-def build_new_discord_prompt(user_input, **kwargs):
+# <editor-fold desc="discord_prompt">
+def build_discord_prompt(user_input, **kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -130,8 +102,8 @@ def build_new_discord_prompt(user_input, **kwargs):
 
     return dev_prompt, messages, tool_bundle
 # </editor-fold>
-# <editor-fold desc="new_reminders_prompt">
-def build_new_check_reminders_prompt(**kwargs):
+# <editor-fold desc="reminders_prompt">
+def build_check_reminders_prompt(**kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -188,8 +160,8 @@ def build_new_check_reminders_prompt(**kwargs):
 
     return dev_prompt, messages, tool_bundle
 # </editor-fold>
-# <editor-fold desc="new_speak_prompt">
-def build_new_speak_prompt(**kwargs):
+# <editor-fold desc="speak_prompt">
+def build_speak_prompt(**kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -234,6 +206,7 @@ def build_new_speak_prompt(**kwargs):
         "If the website is blocked with an anti-bot/interstitial page, you can try using `search_web` to find out more information if you choose.\n"
         "Also, be sure to include the URL in your message, so your user can follow along.\n"
         "You may also choose not to speak.\n"
+        "If you have already spoken recently on this same topic or article, choosing silence is the better choice.\n"
         "If you choose silence, return exactly: <silence />\n\n"
         f"Topic: {kwargs.get('subject')}\n\n"
         f"Payload: {kwargs.get('payload')}"
@@ -246,8 +219,8 @@ def build_new_speak_prompt(**kwargs):
 
     return dev_prompt, messages, tool_bundle
 # </editor-fold>
-# <editor-fold desc="new_journal_prompt">
-def build_new_journal_prompt(**kwargs):
+# <editor-fold desc="journal_prompt">
+def build_journal_prompt(**kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -291,8 +264,8 @@ def build_new_journal_prompt(**kwargs):
 
     return dev_prompt, messages, tool_bundle
 # </editor-fold>
-# <editor-fold desc="new_speaker_prompt">
-def build_new_speaker_prompt(user_input, **kwargs):
+# <editor-fold desc="speaker_prompt">
+def build_speaker_prompt(user_input, **kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -335,8 +308,8 @@ def build_new_speaker_prompt(user_input, **kwargs):
 
     return dev_prompt, messages, tool_bundle
 # </editor-fold>
-# <editor-fold desc="new_whispergate_prompt">
-def build_new_whispergate_prompt(**kwargs):
+# <editor-fold desc="whispergate_prompt">
+def build_whispergate_prompt(**kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -374,8 +347,8 @@ def build_new_whispergate_prompt(**kwargs):
 
     return dev_prompt, messages, tool_bundle
 # </editor-fold>
-# <editor-fold desc="new_discoveryfeeds_prompt">
-def build_new_discoveryfeeds_prompt(**kwargs):
+# <editor-fold desc="discoveryfeeds_prompt">
+def build_discoveryfeeds_prompt(**kwargs):
     builder = PromptBuilder()
     ctx = collect_prompt_context(**kwargs)
     prompt_plan = {
@@ -410,4 +383,40 @@ def build_new_discoveryfeeds_prompt(**kwargs):
 
 
     return dev_prompt, messages, tool_bundle
+# </editor-fold>
+# <editor-fold desc="thread_summarization_prompt">
+def build_thread_summarization_prompt(**kwargs):
+    builder = PromptBuilder()
+    ctx = collect_prompt_context(**kwargs)
+    prompt_plan = {
+        "developer_sections": ["laws", "profile", "principles"],
+        "message_sections": [
+            "thread_card", ## May just be a thread title, or a whole scene card
+            "thread_summarizer_project_context",
+            "thread_continuity",
+            "extended_history_messages",
+        ],
+        "current_user": {
+            "mode": "raw",
+            "addons": [],
+        },
+        "commands": [],
+        "tools": [],
+    }
+
+    thread_summarization_mode = builder.get_thread_summarization_mode(kwargs.get("thread_id"))
+
+    if thread_summarization_mode["thread_type"] == "scene":
+        user_input = builder.build_scene_summarization_prompt(thread_summarization_mode["thread_mode"])
+    else:
+        user_input = builder.build_thread_summarization_prompt(thread_summarization_mode["thread_mode"])
+
+    assembled_prompt_sections = builder.assemble_prompt_sections(user_input, prompt_plan, **ctx)
+    dev_prompt = assembled_prompt_sections["developer_text"]
+    messages = assembled_prompt_sections["messages"]
+    tool_bundle = assembled_prompt_sections["tool_bundle"]
+    messages_meta = assembled_prompt_sections["messages_meta"]
+
+
+    return dev_prompt, messages, tool_bundle, messages_meta
 # </editor-fold>

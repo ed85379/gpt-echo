@@ -1,20 +1,22 @@
 # muse_initiator.py
 # This handles Muse's internal thought triggers and initiative logic
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from app.config import muse_settings
 from app.core.utils import write_system_log
 from app.core.time_location_utils import get_quiet_hours_end_today, get_last_user_activity_timestamp, _load_user_location
 from app.core.muse_responder import handle_muse_decision
 from app.core import prompt_profiles
 from app.core.reminders_core import handle_edit, search_for_timely_reminders
-from app.services.openai_client import continuity_openai_client
+from app.core.threads_core import apply_thread_summary
+from app.services.openai_client import continuity_openai_client, get_openai_response
 
 
 # <editor-fold desc="run_whispergate">
 async def run_whispergate():
     print("\nWhisperGate: Evaluating...")
 
-    dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_new_whispergate_prompt()
+    dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_whispergate_prompt()
 
     print("Prompt built. Sending to model...")
 
@@ -33,7 +35,7 @@ async def run_whispergate():
 # <editor-fold desc="run_discovery_feeds_gate">
 async def run_discoveryfeeds_lookup():
     print("\nWhisperGate: Evaluating...")
-    dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_new_discoveryfeeds_prompt()
+    dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_discoveryfeeds_prompt()
     print("Prompt built. Sending to model...")
 
     response = await handle_muse_decision(dev_prompt=dev_prompt, user_assistant_messages=user_assistant_messages, tool_bundle=tool_bundle, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"), source="discovery")
@@ -47,9 +49,6 @@ async def run_discoveryfeeds_lookup():
 # </editor-fold>
 
 # <editor-fold desc="run_check_reminders">
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
 async def run_check_reminders():
     muse_features = muse_settings.get_section("muse_features") or {}
     if not muse_features.get("ENABLE_REMINDERS", True):
@@ -58,7 +57,7 @@ async def run_check_reminders():
     due_reminders = search_for_timely_reminders()
     if due_reminders:
         print("\nWhisperGate: Evaluating...")
-        dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_new_check_reminders_prompt(due_reminders=due_reminders)
+        dev_prompt, user_assistant_messages, tool_bundle = prompt_profiles.build_check_reminders_prompt(due_reminders=due_reminders)
         print("Prompt built. Sending to model...")
 
         response = await handle_muse_decision(dev_prompt=dev_prompt, user_assistant_messages=user_assistant_messages, tool_bundle=tool_bundle, client=continuity_openai_client, model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"), source="reminder", whispergate_data={"reminders": due_reminders})
@@ -78,6 +77,39 @@ async def run_check_reminders():
 
 # </editor-fold>
 
+# <editor-fold desc="run_thread_summarization">
+async def run_thread_summarization(thread_id):
+    print("\nThread summarization starting...")
+
+    dev_prompt, user_assistant_messages, tool_bundle, messages_meta = prompt_profiles.build_thread_summarization_prompt(
+        allow_summarization=False,
+        thread_id=thread_id,
+        )
+
+    print("Prompt built. Sending to model...")
+    response = await get_openai_response(
+        dev_prompt,
+        client=continuity_openai_client,
+        user_assistant_messages=user_assistant_messages,
+        prompt_type="summarizer",
+        images=None,
+        model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"),
+        tools=tool_bundle["tools"],
+        tool_choice=tool_bundle["tool_choice"],
+        handlers=tool_bundle["handlers"],
+        ui_meta=tool_bundle["ui_meta"],
+    )
+
+
+    result = apply_thread_summary(thread_id, response, messages_meta["extended_history"])
+
+    write_system_log(level="info", module="core", component="initiator", function="run_thread_summarization",
+                           action="summarizer_response", response=response)
+
+    print("Thread summarization response:", response[:200].replace("\n", " ") + ("..." if len(response) > 200 else ""))
+    return result
+
+# </editor-fold>
 
 
 # <editor-fold desc="run_dream_gate">

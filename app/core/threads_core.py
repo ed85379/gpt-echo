@@ -1,5 +1,6 @@
 # /app/core/threads_core.py
 from typing import List, Dict
+import json
 from app.core.utils import generate_new_id
 from app.core.time_location_utils import get_local_human_time
 from datetime import datetime
@@ -101,6 +102,26 @@ def edit_thread_fields(filter_query, patch_fields):
     if "is_archived" in patch_fields:
         is_archived = patch_fields["is_archived"]
         updates["is_archived"] = is_archived
+    if "summary" in patch_fields:
+        summary = patch_fields["summary"]
+
+        if summary is not None:
+            if not isinstance(summary, dict):
+                raise ValueError("summary must be an object or null.")
+
+            summary_text = summary.get("summary_text")
+            if not isinstance(summary_text, str) or not summary_text.strip():
+                raise ValueError("summary.summary_text must be a non-empty string.")
+
+            last_id = summary.get("last_summarized_message_id")
+            if not isinstance(last_id, str) or not last_id.strip():
+                raise ValueError("summary.last_summarized_message_id must be a non-empty string.")
+
+            reference_points = summary.get("reference_points", [])
+            if not isinstance(reference_points, list):
+                raise ValueError("summary.reference_points must be a list.")
+
+        updates["summary"] = summary
     if updates:
         updates["updated_at"] = datetime.utcnow()
     if not updates:
@@ -115,6 +136,31 @@ def edit_thread_fields(filter_query, patch_fields):
         updated["thread_id"] = updated["thread_id"]
     return serialize_doc(updated)
 
+def apply_thread_summary(thread_id: str, response_text: str, extended_history_meta: dict):
+    payload = json.loads(response_text)
+
+    summary_text = str(payload["summary_text"]).strip()
+    last_id = extended_history_meta["last_message_id"]
+    reference_points = payload.get("reference_points", [])
+
+    if not summary_text:
+        raise ValueError("summary_text is required")
+    if not last_id:
+        raise ValueError("last_summarized_message_id is required")
+    if not isinstance(reference_points, list):
+        raise ValueError("reference_points must be a list")
+
+    return edit_thread_fields(
+        {"thread_id": thread_id},
+        {
+            "summary": {
+                "summary_text": summary_text,
+                "last_summarized_message_id": last_id,
+                "reference_points": reference_points,
+                "updated_at": datetime.utcnow(),
+            }
+        }
+    )
 
 def delete_thread(thread_id):
     return mongo.delete_one_document(MONGO_THREADS_COLLECTION, {"thread_id": thread_id})

@@ -196,5 +196,10 @@ export const SETTINGS_META = {
       description:
         "If enabled, while in a thread, your muse will see the entire history of the thread. This can increase API costs.",
     },
+    HIDE_SUMMARIZED_THREAD_MESSAGES: {
+      label: "Skip summarized thread messages",
+      description:
+        "If enabled, in combination with Thread Extended History, messages already summarized in the thread will not appear in full to your muse. Disabling this will increase thread API costs.",
+    },
   },
 };
