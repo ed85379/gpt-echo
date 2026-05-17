@@ -13,6 +13,7 @@ def build_api_prompt(user_input, **kwargs):
             "intent_listener",
             "locations_list",
             "project_list",
+            "thread_continuity",
             "extended_history_messages",
             "motd",
             "worldnow",
@@ -391,7 +392,7 @@ def build_thread_summarization_prompt(**kwargs):
     prompt_plan = {
         "developer_sections": ["laws", "profile", "principles"],
         "message_sections": [
-            "thread_card", ## May just be a thread title, or a whole scene card
+            #"thread_card", ## May just be a thread title, or a whole scene card
             "thread_summarizer_project_context",
             "thread_continuity",
             "extended_history_messages",

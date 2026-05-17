@@ -251,7 +251,7 @@ def get_immediate_context(
     before: int | None = None,
     after: int = 0,
     extended_history: bool = False,
-    unsummarized_only: bool = False,
+    unsummarized_only: bool = True,
 ):
     """
     Return a list of messages, starting from a moment and working backward.
@@ -360,8 +360,9 @@ def get_immediate_context(
         thread = find_thread_doc(thread_id)
         if not thread:
             return None
+        thread_summary = thread.get("summary", {})
 
-        last_summarized_message_id = thread.get("last_summarized_message_id")
+        last_summarized_message_id = thread_summary.get("last_summarized_message_id")
         if not last_summarized_message_id:
             return None
 

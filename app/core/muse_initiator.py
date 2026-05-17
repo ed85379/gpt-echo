@@ -78,15 +78,21 @@ async def run_check_reminders():
 # </editor-fold>
 
 # <editor-fold desc="run_thread_summarization">
-async def run_thread_summarization(thread_id):
+async def run_thread_summarization(
+        thread_id: str,
+):
     print("\nThread summarization starting...")
 
     dev_prompt, user_assistant_messages, tool_bundle, messages_meta = prompt_profiles.build_thread_summarization_prompt(
         allow_summarization=False,
         thread_id=thread_id,
+        extended_history=True,
+        unsummarized_only=True,
         )
 
     print("Prompt built. Sending to model...")
+    print(f"user_assist: {user_assistant_messages}")
+    print(f"messages_meta: {messages_meta}")
     response = await get_openai_response(
         dev_prompt,
         client=continuity_openai_client,

@@ -174,6 +174,31 @@ class PromptBuilder:
 
         raise TypeError(f"Unsupported message section shape: {type(value)}")
 
+
+    def infer_dominant_project_id(self, entries, min_count=2, threshold=0.60):
+        from collections import Counter
+        project_ids = []
+
+        for e in entries or []:
+            project_id = e.get("project_id")
+            if project_id:
+                project_ids.append(str(project_id))
+
+        if not project_ids:
+            return None
+
+        counts = Counter(project_ids)
+        project_id, count = counts.most_common(1)[0]
+        total = sum(counts.values())
+
+        if count < min_count:
+            return None
+
+        if count / total < threshold:
+            return None
+
+        return project_id
+
     def collect_conversation_data(self, user_input, prompt_plan, **ctx):
         data = {}
 
@@ -183,6 +208,7 @@ class PromptBuilder:
             {"extended_history_messages", "semantic_recall_messages", "recent_messages"}
             & included_messages
         )
+
         if needs_conversation_context:
             payload = self.add_prompt_context(
                 user_input=user_input,
@@ -198,6 +224,27 @@ class PromptBuilder:
                 public=ctx["public"],
             )
 
+            messages_meta = payload.get("_meta", {})
+            extended_history_meta = messages_meta.get("extended_history", {})
+
+            thread_id = ctx.get("thread_id")
+            extended_history_count = extended_history_meta.get("message_count", 0)
+
+            should_enqueue_summary = (
+                    thread_id
+                    and ctx.get("allow_summarization", True)
+                    and "extended_history_messages" in included_messages
+                    and ctx.get("extended_history")
+                    and ctx.get("unsummarized_only")
+                    and muse_settings.get_section('muse_features').get('HIDE_SUMMARIZED_THREAD_MESSAGES')
+                    and extended_history_count > 10
+            )
+
+            if should_enqueue_summary:
+                from app.api.queues import summarization_queue
+                import asyncio
+
+                asyncio.create_task(summarization_queue.put(thread_id))
 
             data["extended_history_messages"] = payload.get("extended_history_messages", [])
             data["semantic_recall_messages"] = payload.get("semantic_recall_messages", [])
@@ -534,7 +581,9 @@ class PromptBuilder:
             "text": display_block,
         }
 
-    def build_thread_continuity_context(self, thread_id: str):
+    def build_thread_continuity_context(self, thread_id = None):
+        if not thread_id:
+            return None
         thread = mongo.find_one_document(
             collection_name=MONGO_THREADS_COLLECTION,
             query={"thread_id": thread_id},
@@ -659,7 +708,7 @@ class PromptBuilder:
                            final_top_k=15,
                            recent_count=10,
                            extended_history=False,
-                           unsummarized_only=False,
+                           unsummarized_only=True,
                            public: bool = False,
                            proj_code_intensity="mixed",
                            sources=utils.SOURCES_CONTEXT,
@@ -794,10 +843,16 @@ class PromptBuilder:
             extended_ids = [e.get("message_id") for e in extended_entries if e.get("message_id")]
             objectid_lookup = utils.get_objectids_for_message_ids(extended_ids)
 
+            dominant_project_id = self.infer_dominant_project_id(
+                extended_entries,
+                min_count=2,
+                threshold=0.60,
+            )
             extended_history_meta = {
                 "message_count": len(extended_entries),
                 "first_message_id": extended_entries[0].get("message_id"),
                 "last_message_id": extended_entries[-1].get("message_id"),
+                "dominant_project_id": dominant_project_id,
             }
 
             for e in extended_entries:
