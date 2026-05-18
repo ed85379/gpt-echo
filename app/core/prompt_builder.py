@@ -918,7 +918,6 @@ class PromptBuilder:
                     "text": formatted_entry,
                 })
 
-        print(recent_message_parts)
         return {
             "extended_history_messages": extended_history_message_parts,
             "recent_messages": recent_message_parts,
