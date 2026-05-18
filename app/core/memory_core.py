@@ -243,7 +243,7 @@ def get_excluded_thread_ids(public: bool = False) -> set:
 
 def get_immediate_context(
     n: int = 10,
-    hours: int = 4,
+    hours: int = 0, # Set to 0 to disable time check
     sources=None,
     public: bool = False,
     anchor_message_id: str | None = None,
@@ -410,6 +410,9 @@ def get_immediate_context(
             }
 
         if thread_id:
+            return {}
+
+        if hours == 0:
             return {}
 
         since = now_value - timedelta(hours=hours)
