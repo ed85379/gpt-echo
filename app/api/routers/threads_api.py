@@ -83,7 +83,7 @@ async def delete_thread_and_messages(thread_id: str) -> Dict:
     if message_ids:
         async with httpx.AsyncClient() as client:
             await client.post(
-                f"{API_BASE_URL}/api/messages/tag",
+                f"{API_URL}/api/messages/tag",
                 json={
                     "message_ids": message_ids,
                     "remove_threads": [thread_id],
