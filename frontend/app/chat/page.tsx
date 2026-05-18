@@ -184,7 +184,7 @@ export default function ChatPage() {
   );
   const openThread = threads.find(thread => thread.thread_id === openThreadId);
   const openThreadTitle = openThread?.title ?? 'Thread';
-  const closedThreadTitle = "Threads - Select/Manage";
+  const closedThreadTitle = "Threads & Scenes";
 
 
   // ------------------------------------
@@ -742,7 +742,7 @@ export default function ChatPage() {
                     className="ml-1 text-xs text-neutral-400 hover:text-neutral-100"
                     title="Open thread manager"
                   >
-                    ▼
+                    <Settings className="w-4 h-4 translate-y-[1px]" />
                   </button>
                 )}
               </div>
