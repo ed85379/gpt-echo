@@ -716,7 +716,7 @@ class PromptBuilder:
         # Pull recents
         recent_entries = memory_core.get_immediate_context(
             n=recent_count,
-            hours=24,
+            hours=0,
             sources=sources,
             public=public,
             thread_id=thread_id,
@@ -724,6 +724,25 @@ class PromptBuilder:
             unsummarized_only=unsummarized_only,
         )
 
+        # If in a thread, and recent are fewer than recent_count, get some more messages to pad the recent conversation.
+        filtered_ambient_entries = []
+        if thread_id and len(recent_entries) < recent_count:
+            ambient_entries = memory_core.get_immediate_context(
+                n=recent_count,
+                hours=0, # no time limit
+                sources=sources,
+                public=public,
+                thread_id=None,
+                extended_history=extended_history,
+                unsummarized_only=unsummarized_only,
+            )
+
+            filtered_ambient_entries = []
+            for e in ambient_entries:
+                entry_thread_ids = [str(tid) for tid in e.get("thread_ids", [])]
+                if thread_id in entry_thread_ids:
+                    continue
+                filtered_ambient_entries.append(e)
 
 
         # Build your blend dictionary for the search
@@ -807,11 +826,42 @@ class PromptBuilder:
                     "text": formatted_entry,
                 })
 
+        if filtered_ambient_entries or recent_entries:
+            recent_message_parts.append({
+                "role": "system",
+                "text": (
+                    "[Recent Conversation]\n"
+                    "The following messages are recent conversation used for short-term continuity. "
+                    "When working inside a thread, a boundary marker may separate ambient outside-thread "
+                    "context from current in-thread messages."
+                )
+            })
+            formatted_ambient_entries = []
+            for e in filtered_ambient_entries:
+                formatted_entry = utils.format_context_entry(
+                    e,
+                    project_lookup=project_lookup,
+                    proj_code_intensity=proj_code_intensity,
+                    purpose="RECENT",
+                )
+                formatted_ambient_entries.append(formatted_entry)
+                recent_message_parts.append({
+                    "role": utils.normalize_role(e.get("role")),
+                    "text": formatted_entry,
+                })
 
-        if recent_entries:
-            recent_header = {"role": "system",
-                             "text": "[Recent Conversation]\nThe following messages are the most recent contiguous exchange in the current thread."}
-            recent_message_parts.append(recent_header)
+            if filtered_ambient_entries and recent_entries:
+                recent_message_parts.append({
+                    "role": "system",
+                    "text": (
+                        "[Thread Boundary]\n"
+                        "Messages above this marker are ambient conversation from outside the active thread, "
+                        "included only for short-term orientation. They are not part of this thread's canonical "
+                        "history and should not be summarized into thread continuity. Messages below this marker "
+                        "are current in-thread conversation."
+                    )
+                })
+
             formatted_recent_entries = []
             for e in recent_entries:
                 formatted_entry = utils.format_context_entry(
@@ -868,6 +918,7 @@ class PromptBuilder:
                     "text": formatted_entry,
                 })
 
+        print(recent_message_parts)
         return {
             "extended_history_messages": extended_history_message_parts,
             "recent_messages": recent_message_parts,
