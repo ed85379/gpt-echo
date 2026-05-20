@@ -14,6 +14,92 @@ function buildDefaultThreadTitle() {
   )}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
+export async function createThread({
+  setOpenThreadId,
+  setActiveTab,
+  updateThreadsState,
+  refreshThreads,
+  fetchThreads,
+  title,
+  setThreads,
+  type = "thread",
+  scene = null,
+}) {
+  const threadId = nanoid();
+
+  const nowIso = new Date().toISOString();
+  const effectiveTitle = title && title.trim().length
+    ? title.trim()
+    : type === "scene"
+      ? "New Scene"
+      : buildDefaultThreadTitle();
+
+  const optimisticThread = {
+    thread_id: threadId,
+    title: effectiveTitle,
+    type,
+    is_archived: false,
+    is_hidden: false,
+    is_private: false,
+    created_at: nowIso,
+    updated_at: nowIso,
+    ...(scene ? { scene } : {}),
+  };
+
+  // Optimistic thread insert
+  if (setThreads) {
+    setThreads(prev => [
+      ...prev,
+      optimisticThread,
+    ]);
+  }
+
+  try {
+    const res = await fetch("/api/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        thread_id: threadId,
+        title: effectiveTitle,
+        type,
+        ...(scene ? { scene } : {}),
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("Failed to create thread");
+
+      // Optional rollback if you want:
+      // if (setThreads) {
+      //   setThreads(prev => prev.filter(t => t.thread_id !== threadId));
+      // }
+
+      return null;
+    }
+
+    if (refreshThreads) {
+      await refreshThreads();
+    } else if (fetchThreads) {
+      await fetchThreads();
+    }
+
+    setOpenThreadId(threadId);
+    setActiveTab("thread");
+    updateThreadsState({ open_thread_id: threadId });
+
+    return threadId;
+  } catch (err) {
+    console.error("Error creating thread", err);
+
+    // Optional rollback
+    // if (setThreads) {
+    //   setThreads(prev => prev.filter(t => t.thread_id !== threadId));
+    // }
+
+    return null;
+  }
+}
+
 export async function createThreadWithMessages({
   setMessages,
   setThreadMessages,
@@ -131,6 +217,10 @@ export async function setThreadPrivate(threadId, isPrivate) {
 
 export async function setThreadArchived(threadId, isArchived) {
   return updateThread(threadId, { is_archived: isArchived });
+}
+
+export async function setThreadScene(threadId, scene) {
+  return updateThread(threadId, { scene: scene });
 }
 
 export async function deleteThread(threadId) {

@@ -12,7 +12,9 @@ import {
   Trash2,
   ArrowUpDown,
   Split,
-  Pencil
+  Pencil,
+  Clapperboard,
+  Plus,
    } from "lucide-react";
 import {
   clearOpenThread,
@@ -20,10 +22,12 @@ import {
   setThreadHidden,
   setThreadArchived,
   setThreadTitle,
+  setThreadScene,
   updateSingleThreadInState,
   upsertThreadInState,
   deleteThread,
   deleteThreadWithMessages,
+  createThread,
    } from '@/utils/threadActions'
 
 export default function ThreadManagerPanel({
@@ -50,6 +54,53 @@ export default function ThreadManagerPanel({
   const [deleteScope, setDeleteScope] = React.useState("thread-only");
   const [editingThreadId, setEditingThreadId] = React.useState(null);
   const [editingTitle, setEditingTitle] = React.useState("");
+  const [createPanelOpen, setCreatePanelOpen] = React.useState(false);
+  const [newThreadTitle, setNewThreadTitle] = React.useState("");
+  const [managingThreadId, setManagingThreadId] = React.useState(null);
+
+  const managingThread = managingThreadId
+    ? threads.find(t => t.thread_id === managingThreadId)
+    : null;
+
+  const handleCreateThread = async () => {
+    const title = newThreadTitle.trim();
+
+    const threadId = await createThread({
+      setOpenThreadId,
+      setActiveTab,
+      updateThreadsState,
+      refreshThreads: fetchThreads,
+      title: title || undefined,
+      setThreads,
+      type: "thread",
+    });
+
+    if (threadId) {
+      setNewThreadTitle("");
+      setCreatePanelOpen(false);
+      setThreadManagerOpen(false);
+    }
+  };
+
+  const handleCreateScene = async () => {
+    const title = newThreadTitle.trim();
+
+    const threadId = await createThread({
+      setOpenThreadId,
+      setActiveTab,
+      updateThreadsState,
+      refreshThreads: fetchThreads,
+      title: title || "New Scene",
+      setThreads,
+      type: "scene",
+    });
+
+    if (threadId) {
+      setNewThreadTitle("");
+      setCreatePanelOpen(false);
+      setThreadManagerOpen(false);
+    }
+  };
 
   const handleOpenThread = (threadId) => {
     setOpenThreadId(threadId);
@@ -257,6 +308,16 @@ export default function ThreadManagerPanel({
         <div className="flex items-center gap-2 text-neutral-300">
           <Split className="w-4 h-4" />
           <span className="font-semibold">Thread Manager</span>
+
+
+        <button
+          type="button"
+          onClick={() => setCreatePanelOpen(prev => !prev)}
+          className="inline-flex items-center gap-1 rounded border border-purple-500/60 px-2 py-1 text-xs text-purple-200 hover:bg-purple-500/10"
+        >
+          <Plus size={13} />
+          Create
+        </button>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-neutral-400">
@@ -279,6 +340,45 @@ export default function ThreadManagerPanel({
           </button>
         </div>
       </div>
+      {createPanelOpen && (
+        <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-950/70 space-y-2">
+          <input
+            value={newThreadTitle}
+            onChange={e => setNewThreadTitle(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCreateThread();
+              } else if (e.key === "Escape") {
+                setCreatePanelOpen(false);
+                setNewThreadTitle("");
+              }
+            }}
+            placeholder="Title, optional"
+            className="w-full rounded bg-neutral-900/80 px-2 py-1 text-sm text-neutral-100 border border-neutral-700 focus:outline-none focus:ring-1 focus:ring-purple-500"
+          />
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleCreateThread}
+              className="inline-flex items-center gap-1 rounded border border-purple-500/60 px-2 py-1 text-xs text-purple-200 hover:bg-purple-500/10"
+            >
+              <Split size={13} />
+              Thread
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCreateScene}
+              className="inline-flex items-center gap-1 rounded border border-purple-500/60 px-2 py-1 text-xs text-purple-200 hover:bg-purple-500/10"
+            >
+              <Clapperboard size={13} />
+              Scene
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Active threads */}
       <div className="max-h-64 overflow-y-auto">
@@ -342,6 +442,11 @@ export default function ThreadManagerPanel({
                         title={thread.title || "(untitled thread)"}
                       >
                         {thread.title || "(untitled thread)"}
+                        {thread.type === "scene" && (
+                          <span className="ml-1 rounded border border-purple-500/40 px-1 py-0.5 text-[10px] uppercase tracking-wide text-purple-300">
+                            Scene
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -352,6 +457,15 @@ export default function ThreadManagerPanel({
               </div>
 
               <div className="ml-2 flex items-center gap-1 shrink-0">
+                {thread.type === "scene" && (
+                <button
+                  type="button"
+                  onClick={() => setManagingThreadId(thread.thread_id)}
+                  className="px-1.5 py-0.5 rounded border border-neutral-700 text-[11px] text-neutral-300 hover:bg-neutral-800"
+                >
+                  Setup
+                </button>
+                )}
                 {/* Open */}
                 <button
                   type="button"
@@ -361,6 +475,7 @@ export default function ThreadManagerPanel({
                 >
                   Open
                 </button>
+
 
                 {/* Hide / unhide */}
                 <button
@@ -604,6 +719,396 @@ export default function ThreadManagerPanel({
           </div>
         </div>
       )}
+      {managingThread && (
+        <ThreadManagePopup
+          thread={managingThread}
+          onClose={() => setManagingThreadId(null)}
+          setThreads={setThreads}
+          fetchThreads={fetchThreads}
+          openThreadId={openThreadId}
+          setOpenThreadId={setOpenThreadId}
+          setActiveTab={setActiveTab}
+          updateThreadsState={updateThreadsState}
+        />
+      )}
+    </div>
+  );
+}
+
+const SCENE_STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "paused", label: "Paused" },
+  { value: "complete", label: "Complete" },
+];
+
+const SCENE_FIELD_OPTIONS = [
+  { key: "setting", label: "Setting", nsfwOnly: false },
+  { key: "location", label: "Location", nsfwOnly: false },
+  { key: "time", label: "Time", nsfwOnly: false },
+  { key: "characters", label: "Characters", nsfwOnly: false },
+  { key: "point_of_view", label: "Point of View", nsfwOnly: false },
+  { key: "tone", label: "Tone", nsfwOnly: false },
+  { key: "genre", label: "Genre", nsfwOnly: false },
+  { key: "opening_situation", label: "Opening Situation", nsfwOnly: false },
+  { key: "relationship_context", label: "Relationship Context", nsfwOnly: false },
+  { key: "stakes", label: "Stakes", nsfwOnly: false },
+  { key: "conflict", label: "Conflict", nsfwOnly: false },
+  { key: "boundaries", label: "Boundaries", nsfwOnly: false },
+  { key: "continuity_notes", label: "Continuity Notes", nsfwOnly: false },
+  { key: "secrets_iris_should_know", label: "Secrets Iris Should Know", nsfwOnly: false },
+  { key: "desired_pacing", label: "Desired Pacing", nsfwOnly: false },
+  { key: "image_style", label: "Image Style", nsfwOnly: false },
+
+  { key: "desire_dynamic", label: "Desire Dynamic", nsfwOnly: true },
+  { key: "explicitness_level", label: "Explicitness Level", nsfwOnly: true },
+  { key: "sexual_boundaries", label: "Sexual Boundaries", nsfwOnly: true },
+  { key: "hard_limits", label: "Hard Limits", nsfwOnly: true },
+  { key: "kinks_interests", label: "Kinks / Interests", nsfwOnly: true },
+  { key: "power_dynamic", label: "Power Dynamic", nsfwOnly: true },
+  { key: "aftercare_tone", label: "Aftercare Tone", nsfwOnly: true },
+  { key: "language_style", label: "Language Style", nsfwOnly: true },
+];
+
+function getSceneFieldLabel(key) {
+  return SCENE_FIELD_OPTIONS.find(opt => opt.key === key)?.label || key;
+}
+
+function makeFieldId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  return `field_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+function normalizeScene(scene) {
+  return {
+    premise: scene?.premise || "",
+    nsfw: Boolean(scene?.nsfw),
+    status: scene?.status || "active",
+    fields: Array.isArray(scene?.fields) ? scene.fields : [],
+    instructions: scene?.instructions ?? null,
+  };
+}
+
+function ThreadManagePopup({
+  thread,
+  onClose,
+  setThreads,
+  fetchThreads,
+}) {
+  const isScene = thread.type === "scene";
+
+  const [sceneDraft, setSceneDraft] = React.useState(() =>
+    normalizeScene(thread.scene)
+  );
+
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    setSceneDraft(normalizeScene(thread.scene));
+  }, [thread.thread_id, thread.scene]);
+
+  const selectedKeys = new Set(
+    sceneDraft.fields
+      .map(field => field.key)
+      .filter(Boolean)
+  );
+
+  const availableFieldOptions = SCENE_FIELD_OPTIONS.filter(opt => {
+    if (opt.nsfwOnly && !sceneDraft.nsfw) return false;
+    return !selectedKeys.has(opt.key);
+  });
+
+  const updateSceneDraft = patch => {
+    setSceneDraft(prev => ({
+      ...prev,
+      ...patch,
+    }));
+  };
+
+  const updateField = (fieldId, patch) => {
+    setSceneDraft(prev => ({
+      ...prev,
+      fields: prev.fields.map(field =>
+        field.id === fieldId ? { ...field, ...patch } : field
+      ),
+    }));
+  };
+
+  const addField = key => {
+    if (!key) return;
+
+    setSceneDraft(prev => {
+      if (prev.fields.some(field => field.key === key)) return prev;
+
+      return {
+        ...prev,
+        fields: [
+          ...prev.fields,
+          {
+            id: makeFieldId(),
+            key,
+            value: "",
+          },
+        ],
+      };
+    });
+  };
+
+  const removeField = fieldId => {
+    setSceneDraft(prev => ({
+      ...prev,
+      fields: prev.fields.filter(field => field.id !== fieldId),
+    }));
+  };
+
+  const moveField = (fieldId, direction) => {
+    setSceneDraft(prev => {
+      const idx = prev.fields.findIndex(field => field.id === fieldId);
+      if (idx === -1) return prev;
+
+      const nextIdx = idx + direction;
+      if (nextIdx < 0 || nextIdx >= prev.fields.length) return prev;
+
+      const fields = [...prev.fields];
+      const [field] = fields.splice(idx, 1);
+      fields.splice(nextIdx, 0, field);
+
+      return {
+        ...prev,
+        fields,
+      };
+    });
+  };
+
+  const handleSave = async () => {
+    if (!isScene) return;
+
+    setSaving(true);
+    setError("");
+
+    try {
+      const cleanedScene = {
+        premise: sceneDraft.premise || "",
+        nsfw: Boolean(sceneDraft.nsfw),
+        status: sceneDraft.status || "active",
+        fields: sceneDraft.fields
+          .filter(field => field.key)
+          .map(field => ({
+            id: field.id || makeFieldId(),
+            key: field.key,
+            value: field.value || "",
+          })),
+        instructions: sceneDraft.instructions ?? null,
+      };
+
+      const updated = await setThreadScene(thread.thread_id, cleanedScene);
+
+      upsertThreadInState(setThreads, updated);
+
+      // Optional: only if you distrust the returned payload or want to refresh ordering/filtering.
+      // await fetchThreads?.();
+
+      onClose();
+    } catch (err) {
+      console.error("Failed to update scene setup:", err);
+      setError(err.message || "Failed to update scene setup.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-full max-w-2xl rounded-lg border border-neutral-700 bg-neutral-950 p-4 shadow-xl">
+        <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+          <div>
+            <div className="text-lg font-semibold text-neutral-100">
+              {thread.title || "(untitled scene)"}
+            </div>
+            <div className="text-xs uppercase tracking-wide text-purple-300">
+              Scene Setup
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-neutral-400 hover:text-neutral-100"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="mt-3 space-y-3">
+          {isScene ? (
+            <>
+              <div className="rounded border border-purple-500/30 bg-purple-950/20 p-3">
+
+                <label className="mt-3 block">
+                  <div className="mb-1 text-sm font-medium text-neutral-300">
+                    Premise
+                  </div>
+                  <textarea
+                    value={sceneDraft.premise}
+                    onChange={e => updateSceneDraft({ premise: e.target.value })}
+                    rows={4}
+                    className="w-full rounded border border-neutral-700 bg-neutral-900 p-2 text-sm text-neutral-100 outline-none focus:border-purple-500"
+                    placeholder="What is this scene? What room are we entering?"
+                  />
+                </label>
+
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={sceneDraft.nsfw}
+                      onChange={e => updateSceneDraft({ nsfw: e.target.checked })}
+                      className="accent-purple-500"
+                    />
+                    NSFW / adult scene
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm text-neutral-300">
+                    <span className="text-xs text-neutral-400">Status</span>
+                    <select
+                      value={sceneDraft.status}
+                      onChange={e => updateSceneDraft({ status: e.target.value })}
+                      className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-purple-500"
+                    >
+                      {SCENE_STATUS_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div className="rounded border border-neutral-800 bg-neutral-900/60 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+                      Scene Fields
+                    </div>
+                    <div className="mt-1 text-xs text-neutral-500">
+                      Optional structured context for the scene.
+                    </div>
+                  </div>
+
+                  <select
+                    value=""
+                    onChange={e => {
+                      addField(e.target.value);
+                      e.target.value = "";
+                    }}
+                    className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100 outline-none focus:border-purple-500"
+                  >
+                    <option value="">Add field…</option>
+                    {availableFieldOptions.map(opt => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  {sceneDraft.fields.length === 0 ? (
+                    <div className="rounded border border-dashed border-neutral-700 p-3 text-xs text-neutral-500">
+                      No extra scene fields yet. Add only what this scene actually needs.
+                    </div>
+                  ) : (
+                    sceneDraft.fields.map((field, idx) => (
+                      <div
+                        key={field.id}
+                        className="rounded border border-neutral-800 bg-neutral-950 p-2"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="text-xs font-semibold text-neutral-300">
+                            {getSceneFieldLabel(field.key)}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => moveField(field.id, -1)}
+                              disabled={idx === 0}
+                              className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 disabled:opacity-30"
+                            >
+                              ↑
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => moveField(field.id, 1)}
+                              disabled={idx === sceneDraft.fields.length - 1}
+                              className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 disabled:opacity-30"
+                            >
+                              ↓
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => removeField(field.id)}
+                              className="rounded px-2 py-1 text-xs text-red-300 hover:bg-red-950/40 hover:text-red-200"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+
+                        <textarea
+                          value={field.value || ""}
+                          onChange={e =>
+                            updateField(field.id, { value: e.target.value })
+                          }
+                          rows={3}
+                          className="w-full rounded border border-neutral-700 bg-neutral-900 p-2 text-sm text-neutral-100 outline-none focus:border-purple-500"
+                          placeholder={`Enter ${getSceneFieldLabel(field.key).toLowerCase()}...`}
+                        />
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {error && (
+                <div className="rounded border border-red-500/30 bg-red-950/30 p-2 text-xs text-red-200">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 border-t border-neutral-800 pt-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={saving}
+                  className="rounded border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save Setup"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-neutral-500">
+              Ordinary thread.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -24,6 +24,7 @@ def get_threads():
     for thread in threads:
         mapped = {
             "thread_id": thread.get("thread_id"),
+            "type": thread.get("type") or "thread",
             "title": thread.get("title") or "",
             "is_hidden": thread.get("is_hidden", False),
             "is_private": thread.get("is_private", False),
@@ -50,7 +51,7 @@ def get_thread_message_count(thread_id: str) -> int:
     """
     return mongo.count_matching_documents(MONGO_CONVERSATION_COLLECTION, {"thread_ids": thread_id})
 
-def create_thread(thread_id=None, title=None):
+def create_thread(thread_id=None, title=None, type="thread"):
     mongo.ensure_mongo_collection(collection_name=MONGO_THREADS_COLLECTION)
     now = datetime.utcnow()
     if thread_id is None:
@@ -58,6 +59,7 @@ def create_thread(thread_id=None, title=None):
     default_title = f"Thread - {get_local_human_time(time_format='thread')}"
     thread = {
         "thread_id": thread_id,
+        "type": type,
         "title": title or default_title,
         "is_hidden": False,
         "is_private": False,
@@ -122,6 +124,63 @@ def edit_thread_fields(filter_query, patch_fields):
                 raise ValueError("summary.reference_points must be a list.")
 
         updates["summary"] = summary
+    if "scene" in patch_fields:
+        scene = patch_fields["scene"]
+
+        if scene is None:
+            updates["scene"] = None
+        else:
+            if not isinstance(scene, dict):
+                raise ValueError("scene must be an object or null.")
+
+            cleaned_scene = {
+                "premise": "",
+                "nsfw": False,
+                "fields": [],
+            }
+
+            if "premise" in scene:
+                cleaned_scene["premise"] = str(scene.get("premise") or "").strip()
+
+            if "nsfw" in scene:
+                nsfw = scene["nsfw"]
+                if not isinstance(nsfw, bool):
+                    raise ValueError("scene.nsfw must be a boolean.")
+                cleaned_scene["nsfw"] = nsfw
+
+            if "fields" in scene:
+                fields = scene["fields"]
+
+                if fields is None:
+                    cleaned_scene["fields"] = []
+                elif not isinstance(fields, list):
+                    raise ValueError("scene.fields must be a list.")
+                else:
+                    cleaned_fields = []
+
+                    for field in fields:
+                        if not isinstance(field, dict):
+                            raise ValueError("Each scene.fields item must be an object.")
+
+                        field_id = str(field.get("id") or "").strip()
+                        key = str(field.get("key") or "").strip()
+                        value = str(field.get("value") or "").strip()
+
+                        # Drop entirely blank rows.
+                        if not field_id and not key and not value:
+                            continue
+
+                        cleaned_field = {
+                            "id": field_id[:80],
+                            "key": key[:80],
+                            "value": value,
+                        }
+
+                        cleaned_fields.append(cleaned_field)
+
+                    cleaned_scene["fields"] = cleaned_fields
+
+            updates["scene"] = cleaned_scene
     if updates:
         updates["updated_at"] = datetime.utcnow()
     if not updates:

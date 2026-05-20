@@ -18,11 +18,13 @@ def get_threads():
 def create_thread(body: dict):
     thread_id = body.get("thread_id")
     title = body.get("title")
+    type = body.get("type")
     try:
-        thread = threads_core.create_thread(thread_id=thread_id, title=title)
+        thread = threads_core.create_thread(thread_id=thread_id, title=title, type=type)
         # Strip any internal fields if needed
         thread_response = {
             "thread_id": thread.get("thread_id"),
+            "type": thread.get("type", "thread"),
             "title": thread.get("title", ""),
             "is_hidden": thread.get("is_hidden", False),
             "is_private": thread.get("is_private", False),
