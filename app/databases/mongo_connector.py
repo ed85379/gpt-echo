@@ -1,6 +1,6 @@
 # app/databases/mongo_connector.py
 from typing import Optional, Dict, Any
-from pymongo import MongoClient, ASCENDING
+from pymongo import MongoClient, ASCENDING, ReturnDocument
 from pymongo.database import Database
 from pymongo.collection import Collection
 from datetime import datetime
@@ -81,7 +81,7 @@ class MongoConnector:
         return self.db[collection_name].find_one_and_update(
             filter_query,
             {"$set": update_data},
-            return_document=True  # pymongo.ReturnDocument.AFTER
+            return_document=ReturnDocument.AFTER
         )
 
     def update_one_document_array(self, collection_name, filter_query, update_data):
@@ -89,7 +89,7 @@ class MongoConnector:
         return self.db[collection_name].find_one_and_update(
             filter_query,
             update_data,
-            return_document=True  # pymongo.ReturnDocument.AFTER
+            return_document=ReturnDocument.AFTER
         )
 
     def delete_one_document(self, collection_name, query):
