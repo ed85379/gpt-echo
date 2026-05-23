@@ -21,6 +21,10 @@ speak_openai_client = openai.OpenAI()
 journal_openai_client = openai.OpenAI()
 audio_openai_client = openai.OpenAI()
 mnemosyne_openai_client = openai.OpenAI()
+llamacpp_client = openai.OpenAI(
+    base_url="http://10.1.1.107:8080/v1",
+    api_key = "sk-no-key-required"
+)
 
 PROMPT_CACHE_KEYS = {
     "default": "iris_default_v1",
@@ -330,7 +334,7 @@ async def get_openai_response(
             )
 
             last_response = response
-
+            #print(response)
             if hasattr(response, "usage"):
                 print(
                     f"Model: {response.model},\n"

@@ -12,7 +12,7 @@ from app.core.utils import get_adaptive_top_k, slugify, strip_muse_thoughts
 from app.core.states_core import set_active_project
 from app.core.muse_responder import route_user_input
 from app.core.prompt_profiles import build_api_prompt, build_scene_api_prompt, build_speaker_prompt
-from app.services.openai_client import api_openai_client, speak_openai_client
+from app.services.openai_client import api_openai_client, speak_openai_client, llamacpp_client
 from app.api.queues import broadcast_queue, log_queue
 from app.interfaces.websocket_server import broadcast_message
 from app.core.journal_core import load_journal_index, save_journal_index
