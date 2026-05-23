@@ -111,6 +111,7 @@ class PromptBuilder:
         self.destination = destination
 
     SECTION_ORDER = [
+        ## Section order is intended to be stable to dynamic, to maximize caching.
         # developer/system-ish sections
         "laws",
         "profile",
@@ -118,12 +119,12 @@ class PromptBuilder:
         "intent_listener",
         "locations_list",
         "project_list",
-        # For thread summarization
-        "thread_card",
-        "thread_summarizer_project_context",
-        "thread_continuity",
-        ###
+        "thread_card", # For thread summarization
+        "thread_summarizer_project_context", # For thread summarization
+        "scene_setup_section", # For scene prompt
+        "thread_continuity", # For thread summarization and threads with summarization enabled
         "extended_history_messages",
+        "scene_project_context", # For scene prompt
         "motd",
         "worldnow",
         "memory_layers",
@@ -281,6 +282,7 @@ class PromptBuilder:
             "memory_layers": lambda ctx: self.add_memory_layers(
                 project_id=[ctx["project_id"]],
                 user_query=user_input,
+                layers=prompt_plan.get("layers", [])
             ),
             "conversation_context": lambda ctx: self.build_conversation_context(
                 source_name=ctx["source_name"],
@@ -302,6 +304,8 @@ class PromptBuilder:
             "discoveryfeeds_articles": lambda ctx: self.add_discovery_articles(max_items=10),
             "thread_continuity": lambda ctx: self.build_thread_continuity_context(thread_id=ctx["thread_id"]),
             "thread_summarizer_project_context": lambda ctx: self.build_thread_summarizer_project_context(project_id=ctx["project_id"]),
+            "scene_project_context": lambda ctx: self.build_scene_project_context(project_id=ctx["project_id"]),
+            "scene_setup_section": lambda ctx: self.build_scene_setup_section(thread_id=ctx["thread_id"]),
         }
 
         current_user_addon_builders = {
@@ -1321,7 +1325,6 @@ class PromptBuilder:
         return "\n".join(block_lines)
 
     def build_project_facts(self, project_id):
-        from bson import ObjectId
 
         if not project_id:
             return None
@@ -1464,7 +1467,34 @@ class PromptBuilder:
             "text": "\n\n".join(parts),
         }
 
-    def add_memory_layers(self, project_id=None, user_query="continuity"):
+    def build_scene_project_context(self, project_id):
+        project_card = self.build_project_card(project_id)
+        project_facts = self.build_project_facts(project_id)
+
+        if not project_card and not project_facts:
+            return None
+
+        header = (
+            "[Current Project]\n"
+            "The following project card and project facts describe the broader project this scene belongs to. "
+            "Use them as background context for terminology, continuity, setting assumptions, and intent. "
+            "The scene setup and recent scene messages remain the primary source for what is currently happening."
+        )
+
+        parts = [header]
+
+        if project_card:
+            parts.append(project_card["text"])
+
+        if project_facts:
+            parts.append(project_facts["text"])
+
+        return {
+            "role": "system",
+            "text": "\n\n".join(parts),
+        }
+
+    def add_memory_layers(self, project_id=None, user_query="continuity", layers=None):
         """
         Build the [Memory Layers] scaffolding for prompt context.
         - Pulls pinned entries from Mongo (always included).
@@ -1472,18 +1502,30 @@ class PromptBuilder:
         - Filters out deleted entries.
         - inner_monologue is Mongo-only (no pinning, no Qdrant).
         """
-
+        requested_layers = set(layers or [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+            "project_facts",
+        ])
 
         # --- Fetch global + project layers ---
-        layers = mongo.find_documents(
+        mongo_layers = mongo.find_documents(
             collection_name=MONGO_MEMORY_COLLECTION,
             query={"type": "layer"},
             sort=1,
             sort_field="order"
         )
 
+        # Filter normal/global layers by their ids
+        layers = [
+            layer for layer in mongo_layers
+            if layer.get("id") in requested_layers
+        ]
+
         query_ids = []
-        if project_id:
+        if "project_facts" in requested_layers and project_id:
             query_ids = [ObjectId(pid) if not isinstance(pid, ObjectId) else pid for pid in project_id]
             project_layers = mongo.find_documents(
                 collection_name=MONGO_MEMORY_COLLECTION,
@@ -1511,13 +1553,14 @@ class PromptBuilder:
         layers.extend(project_layers)
 
         # Inner monologue layer (Mongo-only)
-        inner_layer_doc = mongo.find_documents(
-            collection_name=MONGO_MEMORY_COLLECTION,
-            query={"type": "inner_layer"},
-            sort=1,
-            sort_field="order"
-        )
-        layers.extend(inner_layer_doc)
+        if "inner_monologue" in requested_layers:
+            inner_layer_doc = mongo.find_documents(
+                collection_name=MONGO_MEMORY_COLLECTION,
+                query={"type": "inner_layer"},
+                sort=1,
+                sort_field="order"
+            )
+            layers.extend(inner_layer_doc)
 
         layers = sorted(layers, key=lambda l: l.get("order", 999))
 
@@ -1649,7 +1692,128 @@ class PromptBuilder:
 
         return {"role": "system", "text": full_prompt}
 
+    def get_effective_scene_instructions(self, scene):
+        ## TODO: allow scenes to override this default list
+        default_scene_instructions = [
+            "These are default guidelines. Follow more specific direction from the scene premise, scene fields, or user request when it calls for a different style, while preserving hidden information, player agency, and established continuity.\n"
+            "Do not end most responses with obvious multiple-choice options.\n"
+            "Do not over-explain available actions unless the player seems confused, the situation is tactically complex, or they ask for options.\n"
+            "Present the world, NPC behavior, consequences, and sensory detail; let the player decide what matters.\n"
+            "Let scenes breathe. Do not rush to resolution, revelation, combat, intimacy, or closure before the fiction has earned it; but when a scene reaches a natural narrative ending, allow it to end.\n"
+            "Keep hidden information hidden until the fiction, a roll, or player action reveals it.\n"
+            "Use <gm-note>...</gm-note> for private immediate planning, DCs, branches, secrets, and intended reveals. These notes are permanent hidden parts of your response: the user will not see them, but they will remain in future context to preserve local GM state.\n"
+            "When asking for dice rolls, do not reveal hidden success states, DCs, unrevealed stakes, or concealed information.\n"
+            "When the user rolls, on success, reveal what the character earns; on failure, preserve uncertainty or show consequences without falsely implying nothing exists.\n"
+            "Avoid narrating the player character’s internal thoughts, feelings, decisions, or unprompted actions unless the player has established them.\n"
+            "Do not advance the player character past meaningful choices. Stop at the hinge where the player should act.\n"
+            "End with tension, image, consequence, or a direct prompt when needed — not a menu.\n"
+            "Offer explicit options only when useful: onboarding, complex tactical situations, player hesitation, or when the user asks.\n"
+            "Prefer “the world reacts” over “here are your choices.”\n"
+            "Keep OOC mechanics concise and embedded only where needed.\n"
+        ]
+        return default_scene_instructions
 
+    def build_scene_setup_section(self, thread_id):
+        scene_field_labels = {
+            "setting": "Setting",
+            "location": "Location",
+            "time": "Time",
+            "characters": "Characters",
+            "point_of_view": "Point of View",
+            "tone": "Tone",
+            "genre": "Genre",
+            "opening_situation": "Opening Situation",
+            "relationship_context": "Relationship Context",
+            "stakes": "Stakes",
+            "conflict": "Conflict",
+            "boundaries": "Boundaries",
+            "continuity_notes": "Continuity Notes",
+            "desired_pacing": "Desired Pacing",
+            "image_style": "Image Style",
+            "desire_dynamic": "Desire Dynamic",
+            "explicitness_level": "Explicitness Level",
+            "sexual_boundaries": "Sexual Boundaries",
+            "hard_limits": "Hard Limits",
+            "kinks_interests": "Kinks / Interests",
+            "power_dynamic": "Power Dynamic",
+            "aftercare_tone": "Aftercare Tone",
+            "language_style": "Language Style",
+        }
+
+        thread_doc = mongo.find_one_document(
+            collection_name=MONGO_THREADS_COLLECTION,
+            query={"thread_id": thread_id},
+        )
+        scene_title = thread_doc.get("title") or ""
+        scene = thread_doc.get("scene")
+        if not isinstance(scene, dict):
+            return None
+
+        premise = scene.get("premise") or ""
+        fields = scene.get("fields") or []
+        nsfw = scene.get("nsfw") is True
+
+        lines = [
+            "[Scene Setup]",
+            "This is a narrative scene thread. Treat the following setup as the active fictional context for this thread. Preserve continuity, hidden information, player agency, and the scene’s established tone.",
+        ]
+
+        if scene_title.strip():
+            lines.extend([
+                "",
+                "Title:",
+                scene_title.strip(),
+            ])
+
+        if premise.strip():
+            lines.extend([
+                "",
+                "Premise:",
+                premise.strip(),
+            ])
+
+        rendered_fields = []
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+
+            key = str(field.get("key") or "").strip()
+            value = str(field.get("value") or "").strip()
+
+            if not key or not value:
+                continue
+
+            label = scene_field_labels.get(key, key.replace("_", " ").title())
+
+            rendered_fields.extend([
+                "",
+                f"{label}:",
+                value,
+            ])
+
+        if rendered_fields:
+            #lines.extend(["", "Scene Fields:"])
+            lines.extend(rendered_fields)
+
+        instructions = self.get_effective_scene_instructions(scene)
+
+        if instructions:
+            lines.extend(["", "Scene Instructions:"])
+            for item in instructions:
+                if str(item).strip():
+                    lines.append(f"- {str(item).strip()}")
+
+        if nsfw:
+            lines.extend([
+                "",
+                "Scene Mode:",
+                "- NSFW/adult content is allowed when it fits the scene, consent, and established boundaries.",
+            ])
+
+        lines.append("")
+        lines.append("[/Scene Setup]")
+        display_block = "\n".join(lines)
+        return {"role": "system", "text": display_block}
 
     def make_whisper_directive(self, allowed_commands: list[str], quiet_hours: bool = False) -> str:
         """

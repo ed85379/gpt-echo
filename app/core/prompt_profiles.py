@@ -33,7 +33,7 @@ def build_api_prompt(user_input, **kwargs):
         },
         "commands": [
             "remember_fact",
-            "remember_project_fact",
+            "save_project_fact",
             "record_userinfo",
             "realize_insight",
             "note_to_self",
@@ -50,6 +50,59 @@ def build_api_prompt(user_input, **kwargs):
             "read_webpage",
             "generate_muse_image",
             "generate_image"
+        ],
+    }
+    assembled_prompt_sections = builder.assemble_prompt_sections(user_input, prompt_plan, **ctx)
+
+    dev_prompt = assembled_prompt_sections["developer_text"]
+    messages = assembled_prompt_sections["messages"]
+    tool_bundle = assembled_prompt_sections["tool_bundle"]
+
+    return dev_prompt, messages, tool_bundle
+# </editor-fold>
+# <editor-fold desc="scene_api_prompt">
+def build_scene_api_prompt(user_input, **kwargs):
+    builder = PromptBuilder()
+    ctx = collect_prompt_context(**kwargs)
+    prompt_plan = {
+        "developer_sections": ["laws", "profile", "principles"],
+        "message_sections": [
+            "intent_listener",
+            "thread_continuity",
+            "extended_history_messages",
+            "scene_setup_section",
+            "scene_project_context",
+            "semantic_recall_messages",
+            "recent_messages",
+        ],
+        "current_user": {
+            "mode": "chat_turn",
+            "addons": [
+                "injected_files",
+                "ephemeral_files",
+            ],
+        },
+        "layers": [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+            "project_facts",
+        ],
+        "commands": [
+            "save_project_fact",
+            # later dice commands and scene memory commands
+        ],
+        "tools": [
+            "search_memory",
+            "search_web",
+            "search_news",
+            "search_images",
+            "view_image",
+            "read_webpage",
+            "generate_muse_image",
+            "generate_image"
+            # later dice commands
         ],
     }
     assembled_prompt_sections = builder.assemble_prompt_sections(user_input, prompt_plan, **ctx)
@@ -83,6 +136,9 @@ def build_discord_prompt(user_input, **kwargs):
                 "ephemeral_files",
             ],
         },
+        "layers": [
+            "project_facts",
+        ],
         "commands": [],
         "tools": [
             "search_memory",
@@ -120,6 +176,12 @@ def build_check_reminders_prompt(**kwargs):
             "mode": "raw",
             "addons": [],
         },
+        "layers": [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+        ],
         "commands": [],
         "tools": [],
     }
@@ -179,6 +241,13 @@ def build_speak_prompt(**kwargs):
             "mode": "raw",
             "addons": [],
         },
+        "layers": [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+            "project_facts",
+        ],
         "commands": [
             "remember_fact",
             "record_userinfo",
@@ -236,6 +305,13 @@ def build_journal_prompt(**kwargs):
             "mode": "raw",
             "addons": [],
         },
+        "layers": [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+            "project_facts",
+        ],
         "commands": [],
         "tools": [
             "search_memory",
@@ -286,6 +362,13 @@ def build_speaker_prompt(user_input, **kwargs):
             "mode": "chat_turn",
             "addons": [],
         },
+        "layers": [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+            "project_facts",
+        ],
         "commands": [
             "remember_fact",
             "record_userinfo",
@@ -324,6 +407,13 @@ def build_whispergate_prompt(**kwargs):
             "mode": "raw",
             "addons": [],
         },
+        "layers": [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+            "project_facts",
+        ],
         "commands": [
             "write_public_journal",
             "write_private_journal",
@@ -363,6 +453,13 @@ def build_discoveryfeeds_prompt(**kwargs):
             "mode": "raw",
             "addons": [],
         },
+        "layers": [
+            "user_info",
+            "facts",
+            "insights",
+            "inner_monologue",
+            "project_facts",
+        ],
         "commands": [
             "write_public_journal",
         ] + ([] if is_conversation_active() else ["speak"]),

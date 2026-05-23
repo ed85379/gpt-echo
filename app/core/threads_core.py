@@ -51,6 +51,10 @@ def get_thread_message_count(thread_id: str) -> int:
     """
     return mongo.count_matching_documents(MONGO_CONVERSATION_COLLECTION, {"thread_ids": thread_id})
 
+def get_thread_type(thread_id: str):
+    thread_doc = mongo.find_one_document(MONGO_THREADS_COLLECTION, {"thread_id": thread_id})
+    return thread_doc.get("type") or "thread"
+
 def create_thread(thread_id=None, title=None, type="thread"):
     mongo.ensure_mongo_collection(collection_name=MONGO_THREADS_COLLECTION)
     now = datetime.utcnow()

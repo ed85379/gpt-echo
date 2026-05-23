@@ -755,7 +755,6 @@ const SCENE_FIELD_OPTIONS = [
   { key: "conflict", label: "Conflict", nsfwOnly: false },
   { key: "boundaries", label: "Boundaries", nsfwOnly: false },
   { key: "continuity_notes", label: "Continuity Notes", nsfwOnly: false },
-  { key: "secrets_iris_should_know", label: "Secrets Iris Should Know", nsfwOnly: false },
   { key: "desired_pacing", label: "Desired Pacing", nsfwOnly: false },
   { key: "image_style", label: "Image Style", nsfwOnly: false },
 

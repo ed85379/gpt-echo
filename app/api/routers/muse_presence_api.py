@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter, Request, BackgroundTasks, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, BackgroundTasks, UploadFile, File, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from app.services.tts_core import synthesize_speech, stream_speech
 from collections import defaultdict
@@ -11,11 +11,12 @@ from app.core.files_core import get_all_message_ids_for_files
 from app.core.utils import get_adaptive_top_k, slugify, strip_muse_thoughts
 from app.core.states_core import set_active_project
 from app.core.muse_responder import route_user_input
-from app.core.prompt_profiles import build_api_prompt, build_speaker_prompt
+from app.core.prompt_profiles import build_api_prompt, build_scene_api_prompt, build_speaker_prompt
 from app.services.openai_client import api_openai_client, speak_openai_client
 from app.api.queues import broadcast_queue, log_queue
 from app.interfaces.websocket_server import broadcast_message
 from app.core.journal_core import load_journal_index, save_journal_index
+from app.core.threads_core import get_thread_type
 import numpy as np
 from app.databases.memory_indexer import assign_message_id
 
@@ -200,27 +201,46 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         project_id=project_id,
     )
 
+
+    # Determine thread type:
+    thread_type = None
+    if thread_id:
+        thread_type = get_thread_type(thread_id)
+        if thread_type is None:
+            raise HTTPException(status_code=404, detail="Thread not found")
+
     # Call prompt_profiles to build the prompt for the frontend UI
     timestamp_for_context = datetime.now(timezone.utc).isoformat()
-    # dev_prompt, system_prompt, user_prompt, ephemeral_images, user_assistant_messages = build_api_prompt(
-    dev_prompt, user_assistant_messages, tool_bundle = build_api_prompt(
-        user_input,
-        source="frontend",
-        timestamp=timestamp_for_context,
-        message_ids_to_exclude=message_ids_to_exclude,
-        final_top_k=final_top_k,
-        injected_file_ids=injected_file_ids,
-        ephemeral_files=ephemeral_files,
+
+    prompt_kwargs = {
+        "source": "frontend",
+        "timestamp": timestamp_for_context,
+        "message_ids_to_exclude": message_ids_to_exclude,
+        "final_top_k": final_top_k,
+        "injected_file_ids": injected_file_ids,
+        "ephemeral_files": ephemeral_files,
+
         # ui states
-        thread_id=thread_id,
-        extended_history=extended_history,
-        unsummarized_only=unsummarized_only,
-        project_id=project_id,
-        blend_ratio=blend_ratio,
-        active_project_report=active_project_report,
-    )
+        "thread_id": thread_id,
+        "extended_history": extended_history,
+        "unsummarized_only": unsummarized_only,
+        "project_id": project_id,
+        "blend_ratio": blend_ratio,
+        "active_project_report": active_project_report,
+    }
+
+    if thread_id and thread_type == "scene":
+        dev_prompt, user_assistant_messages, tool_bundle = build_scene_api_prompt(
+            user_input,
+            **prompt_kwargs,
+        )
+    else:
+        dev_prompt, user_assistant_messages, tool_bundle = build_api_prompt(
+            user_input,
+            **prompt_kwargs,
+        )
     #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
-    #print(user_assistant_messages)
+    print(user_assistant_messages)
     user_msg = {
         "message": user_input,
         "timestamp": user_timestamp or datetime.now(timezone.utc).isoformat(),
