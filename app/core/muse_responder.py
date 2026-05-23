@@ -619,9 +619,9 @@ COMMANDS = {
             "hidden": entry
         }
     },
-    "remember_project_fact": {
-        "triggers": ["remember project fact", "save this for the project", "record in project"],
-        "format": "[COMMAND: remember_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"<project_id from Projects List>\"} [/COMMAND]",
+    "save_project_fact": {
+        "triggers": ["save project fact", "save this for the project", "record in project"],
+        "format": "[COMMAND: save_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"<project_id from Projects List>\"} [/COMMAND]",
         "handler": lambda payload: remember_project_fact_handler(payload),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')} to {entry.get('doc_id')}",
