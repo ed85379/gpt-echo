@@ -653,3 +653,7 @@ def strip_muse_thoughts(text: str) -> str:
     text = re.sub(r"<muse-experience>.*?</muse-experience>", "", text, flags=re.DOTALL)
     text = re.sub(r"<muse-interlude>.*?</muse-interlude>", "", text, flags=re.DOTALL)
     return text
+
+def strip_gm_notes(text: str) -> str:
+    text = re.sub(r"<gm-note>.*?</gm-note>", "", text, flags=re.DOTALL)
+    return text

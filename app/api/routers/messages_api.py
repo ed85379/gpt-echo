@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse
 from typing import Any
 from bson import ObjectId
-from app.core.utils import strip_muse_thoughts, serialize_doc
+from app.core.utils import strip_muse_thoughts, serialize_doc, strip_gm_notes
 from app.databases.mongo_connector import mongo, mongo_system
 from app.databases.memory_indexer import update_qdrant_metadata_for_messages
 from app.config import muse_settings, MONGO_CONVERSATION_COLLECTION, MONGO_STATES_COLLECTION
@@ -134,13 +134,18 @@ def get_messages(
     thought_view_enabled = (
             muse_settings.get_section("muse_features") or {}
     ).get("ENABLE_THOUGHT_VIEW", True)
+    gm_view_enabled = (
+            muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_GM_VIEW", False)
 
     result = []
     for msg in logs:
+        text = msg.get("message") or ""
         if not thought_view_enabled:
-            text = strip_muse_thoughts(msg.get("message") or "")
-        else:
-            text = msg.get("message") or ""
+            text = strip_muse_thoughts(text)
+        if not gm_view_enabled:
+            text = strip_gm_notes(text)
+
         mapped = {
             "from": msg.get("from") or msg.get("role") or "iris",
             "text": text,
@@ -191,13 +196,17 @@ def get_deleted_messages(
     thought_view_enabled = (
         muse_settings.get_section("muse_features") or {}
     ).get("ENABLE_THOUGHT_VIEW", True)
+    gm_view_enabled = (
+            muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_GM_VIEW", False)
 
     result = []
     for msg in logs:
+        text = msg.get("message") or ""
         if not thought_view_enabled:
-            text = strip_muse_thoughts(msg.get("message") or "")
-        else:
-            text = msg.get("message") or ""
+            text = strip_muse_thoughts(text)
+        if not gm_view_enabled:
+            text = strip_gm_notes(text)
 
         mapped = {
             "from": msg.get("from") or msg.get("role") or "iris",
@@ -581,22 +590,31 @@ def get_messages_by_day(
         limit=1000,
     )
 
-    return {"messages": [
-        {
-            "_id": str(msg["_id"]),
-            "from": msg.get("role"),
-            "text": msg.get("message"),
+    thought_view_enabled = (
+            muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_THOUGHT_VIEW", True)
+    gm_view_enabled = (
+            muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_GM_VIEW", False)
+
+    result = []
+    for msg in logs:
+        text = msg.get("message") or ""
+        if not thought_view_enabled:
+            text = strip_muse_thoughts(text)
+        if not gm_view_enabled:
+            text = strip_gm_notes(text)
+
+        mapped = {
+            "from": msg.get("from") or msg.get("role") or "iris",
+            "text": text,
             "timestamp": msg["timestamp"].isoformat() + "Z"
-                if isinstance(msg["timestamp"], datetime) else str(msg["timestamp"]),
-            "exported_on": msg.get("exported_on"),
-            "username": (
-                msg.get("metadata", {}).get("author_display_name")
-                or msg.get("metadata", {}).get("author_name")
-                or None
-            ),
-            "user_tags": msg.get("user_tags", []),
+            if isinstance(msg["timestamp"], datetime)
+            else str(msg["timestamp"]),
+            "_id": str(msg["_id"]),
             "message_id": msg.get("message_id") or "",
             "source": msg.get("source", ""),
+            "user_tags": msg.get("user_tags", []),
             "is_private": msg.get("is_private", False),
             "is_hidden": msg.get("is_hidden", False),
             "remembered": msg.get("remembered", False),
@@ -605,6 +623,12 @@ def get_messages_by_day(
             "thread_ids": msg.get("thread_ids", []),
             "flags": msg.get("flags", []),
             "metadata": msg.get("metadata", {}),
+            "username": (
+                msg.get("metadata", {}).get("author_display_name")
+                or msg.get("metadata", {}).get("author_name")
+                or None
+            ),
         }
-        for msg in logs
-    ]}
+        result.append(mapped)
+
+    return {"messages": result}

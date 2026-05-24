@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from app.config import JOURNAL_DIR, muse_settings
 from app.core.muse_profile import muse_profile
 from app.core.files_core import get_all_message_ids_for_files
-from app.core.utils import get_adaptive_top_k, slugify, strip_muse_thoughts
+from app.core.utils import get_adaptive_top_k, slugify, strip_muse_thoughts, strip_gm_notes
 from app.core.states_core import set_active_project
 from app.core.muse_responder import route_user_input
 from app.core.prompt_profiles import build_api_prompt, build_scene_api_prompt, build_speaker_prompt
@@ -240,7 +240,6 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
             **prompt_kwargs,
         )
     #print(f"DEVELOPER_PROMPT:\n" + dev_prompt)
-    print(user_assistant_messages)
     user_msg = {
         "message": user_input,
         "timestamp": user_timestamp or datetime.now(timezone.utc).isoformat(),
@@ -316,31 +315,34 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     }
     muse_message_id = assign_message_id(muse_msg)
     muse_msg["message_id"] = muse_message_id
+
     if project_id and auto_assign:
         muse_msg["project_id"] = project_id
     if thread_id:
         muse_msg["thread_id"] = thread_id
-    #print(f"DEBUG user_msg: {muse_msg}")
+
     thought_view_enabled = (
             muse_settings.get_section("muse_features") or {}
     ).get("ENABLE_THOUGHT_VIEW", True)
+
+    gm_view_enabled = (
+            muse_settings.get_section("muse_features") or {}
+    ).get("ENABLE_GM_VIEW", False)
+
+    broadcast_text = final_text
     if not thought_view_enabled:
-        private_response = strip_muse_thoughts(final_text)
-        muse_broadcast_msg = {
-            "message": private_response,
-            "timestamp": response_timestamp,
-            "role": "muse",
-            "source": "frontend",
-            "to": "frontend",
-            "message_id": muse_message_id,
-        }
-    else:
-        muse_broadcast_msg = muse_msg
+        broadcast_text = strip_muse_thoughts(broadcast_text)
+    if not gm_view_enabled:
+        broadcast_text = strip_gm_notes(broadcast_text)
+
+    muse_broadcast_msg = muse_msg.copy()
+    muse_broadcast_msg["message"] = broadcast_text
+
     await broadcast_queue.put(muse_broadcast_msg)
     await log_queue.put(user_msg)
     await log_queue.put(muse_msg)
 
-    return {"response": final_text}
+    return {"response": broadcast_text}
 
 @muse_router.post("/speaker")
 async def speaker_endpoint(request: Request, background_tasks: BackgroundTasks):

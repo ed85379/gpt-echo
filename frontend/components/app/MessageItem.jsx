@@ -22,7 +22,7 @@ function splitCustomBlocks(raw) {
   let lastIndex = 0;
 
   const regex =
-    /<(command-response|muse-(experience|interlude))>([\s\S]*?)<\/\1>/gi;
+    /<(command-response|muse-(experience|interlude)|gm-note)>([\s\S]*?)<\/\1>/gi;
   let match;
 
   while ((match = regex.exec(raw)) !== null) {
@@ -48,6 +48,8 @@ function splitCustomBlocks(raw) {
       }
 
       result.push({ type: "command", text: visible });
+    } else if (match[1] === "gm-note") {
+      result.push({ type: "gm", text: match[3].trim() });
     } else {
       const museType = match[2]; // "experience" or "interlude"
       result.push({ type: "muse", museType, text: match[3].trim() });
@@ -81,6 +83,22 @@ function MuseBlock({ museType, text }) {
     museType === "experience" ? "Muse Experience" : "Muse Interlude";
   return (
     <details open className="text-sm text-neutral-300 italic my-4 mt-4">
+      <summary className="cursor-pointer select-none text-purple-400">
+        {label}
+      </summary>
+      <div className="mt-0 pl-3 border-l border-neutral-700">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {text}
+        </ReactMarkdown>
+      </div>
+    </details>
+  );
+}
+
+function GmNote({ gmType, text }) {
+  const label = "GM Note";
+  return (
+    <details className="text-sm text-neutral-300 italic my-4 mt-4">
       <summary className="cursor-pointer select-none text-purple-400">
         {label}
       </summary>
@@ -398,6 +416,10 @@ const MessageItem = React.memo(
                   />
                 );
               }
+
+            if (block.type === "gm") {
+              return <GmNote key={idx} text={block.text} />;
+            }
 
               return null;
             })}

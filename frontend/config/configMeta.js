@@ -186,6 +186,11 @@ export const SETTINGS_META = {
       description:
         "Your muse has inner thoughts. If enabled, your muse’s inner thoughts will appear for you to see in their response.",
     },
+    ENABLE_GM_VIEW: {
+      label: "GM View",
+      description:
+        "When in Scene mode, your muse may leave notes for themselves in their response. If enabled, these will appear for you to see. We recommend keeping this disabled.",
+    },
     ENABLE_MOTD: {
       label: "MOTD / Muse Message",
       description:
