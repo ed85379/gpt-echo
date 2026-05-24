@@ -62,8 +62,8 @@ coverage.xml
 .DS_Store
 
 # App and secrets
-addons/*
-!addons/.gitkeep
+#addons/*
+#!addons/.gitkeep
 iris/
 assets/patent/
 assets/private/
