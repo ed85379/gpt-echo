@@ -621,9 +621,43 @@ COMMANDS = {
     "save_project_fact": {
         "triggers": ["save project fact", "save this for the project", "record in project"],
         "format": "[COMMAND: save_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"<project_id from Projects List>\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: remember_project_fact_handler(payload, **kwargs),
+        "handler": lambda payload, **kwargs: save_project_fact_handler(payload, **kwargs),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')} to {entry.get('doc_id')}",
+            "hidden": entry
+        },
+        "note_schema": {
+            "include": ["doc_id", "id", "text"],
+            "rename": {
+                "doc_id": "layer_id",
+                "id": "ID",
+                "text": "text",
+            },
+        },
+    },
+    "save_plot_point": {
+        "triggers": [],
+        "format": "[COMMAND: save_plot_point] {\"text\": \"<TEXT>\"} [/COMMAND]",
+        "handler": lambda payload, **kwargs: save_scene_fact_handler(payload, **kwargs),
+        "filter": lambda entry: {
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a plot point.",
+            "hidden": entry
+        },
+        "note_schema": {
+            "include": ["doc_id", "id", "text"],
+            "rename": {
+                "doc_id": "layer_id",
+                "id": "ID",
+                "text": "text",
+            },
+        },
+    },
+    "resolve_plot_point": {
+        "triggers": [],
+        "format": "[COMMAND: resolve_plot_point] {\"id\": \"<ID>\"} [/COMMAND]",
+        "handler": lambda payload, **kwargs: resolve_scene_fact_handler(payload, **kwargs),
+        "filter": lambda entry: {
+            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has resolved a plot point.",
             "hidden": entry
         },
         "note_schema": {
@@ -1562,21 +1596,49 @@ async def handle_journal_command(payload, entry_type="public", source=None):
         "skip_index": True
     })
 
-def remember_project_fact_handler(payload, **kwargs):
+def save_project_fact_handler(payload, **kwargs):
     fact_text = payload.get("text", "").strip()
     project_id = payload.get("project_id")
 
     if not project_id:
-        #project_state = get_active_project_state() or {}
-        #project_id = project_state.get("project_id")
         project_id = kwargs.get("project_id")
-
-    #if not project_id:
-    #    raise ValueError("remember_project_fact called without a valid project_id")
 
     return manager.add_entry(
         f"project_facts_{project_id}",
         {"text": fact_text}
+    )
+
+def save_scene_fact_handler(payload, **kwargs):
+    fact_text = payload.get("text", "").strip()
+    thread_type = kwargs.get("thread_type")
+    thread_id = kwargs.get("thread_id")
+
+    if not thread_id or thread_type != "scene":
+        raise ValueError("save_plot_point called without a valid thread_id or for a non-scene type.")
+    if not fact_text:
+        raise ValueError("save_plot_point called with empty text.")
+
+    return manager.add_entry(
+        f"scene_facts_{thread_id}",
+        {"text": fact_text}
+    )
+
+def resolve_scene_fact_handler(payload, **kwargs):
+    entry_id = str(payload.get("id", "")).strip()
+    thread_type = kwargs.get("thread_type")
+    thread_id = kwargs.get("thread_id")
+
+    if not thread_id or thread_type != "scene":
+        raise ValueError(
+            "resolve_plot_point called without a valid thread_id or for a non-scene type."
+        )
+
+    if not entry_id:
+        raise ValueError("resolve_plot_point called without an entry id.")
+
+    return manager.recycle_entry(
+        f"scene_facts_{thread_id}",
+        entry_id
     )
 
 def manage_memories_handler(payload):

@@ -4,7 +4,10 @@ from fastapi import APIRouter, HTTPException, status
 from typing import Dict
 import httpx
 from app.core import threads_core
-from app.config import API_URL, MONGO_THREADS_COLLECTION
+from app.config import API_URL
+from app.databases.mongo_connector import mongo
+from app.config import MONGO_MEMORY_COLLECTION
+
 
 router = APIRouter(prefix="/api/threads", tags=["threads"])
 
@@ -32,6 +35,22 @@ def create_thread(body: dict):
             "created_at": thread.get("created_at"),
             "updated_at": thread.get("updated_at"),
         }
+
+        # Create the companion Scene Facts doc
+        scene_facts = {
+            "id": f"scene_facts_{thread_id}",
+            "type": "scene_layer",
+            "thread_id": thread_id,
+            "name": "Scene Plot Points",
+            "purpose": "Scene-local continuity, planning, hidden state, and plot notes.",
+            "max_entries": 50,
+            "order": 97,
+            "entries": [],
+            "created_at": thread.get("created_at"),
+            "updated_at": thread.get("updated_at"),
+        }
+        mongo.insert_one_document(MONGO_MEMORY_COLLECTION, scene_facts)
+
         return {"thread": thread_response}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

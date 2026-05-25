@@ -83,14 +83,13 @@ def build_scene_api_prompt(user_input, **kwargs):
             ],
         },
         "layers": [
-            "user_info",
-            "facts",
-            "insights",
-            "inner_monologue",
             "project_facts",
+            "scene_facts",
         ],
         "commands": [
             "save_project_fact",
+            "save_plot_point",
+            "resolve_plot_point",
             # later dice commands and scene memory commands
         ],
         "tools": [

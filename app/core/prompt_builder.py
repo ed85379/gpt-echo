@@ -1494,7 +1494,7 @@ class PromptBuilder:
             "text": "\n\n".join(parts),
         }
 
-    def add_memory_layers(self, project_id=None, user_query="continuity", layers=None):
+    def add_memory_layers(self, project_id=None, thread_id=None, user_query="continuity", layers=None):
         """
         Build the [Memory Layers] scaffolding for prompt context.
         - Pulls pinned entries from Mongo (always included).
@@ -1562,6 +1562,16 @@ class PromptBuilder:
             )
             layers.extend(inner_layer_doc)
 
+        # Scene layer (Mongo-only)
+        if "scene_facts" in requested_layers and thread_id:
+            scene_layer_doc = mongo.find_documents(
+                collection_name=MONGO_MEMORY_COLLECTION,
+                query={"type": "scene_layer", "thread_id": thread_id},
+                sort=1,
+                sort_field="order"
+            )
+            layers.extend(scene_layer_doc)
+
         layers = sorted(layers, key=lambda l: l.get("order", 999))
 
         # --- Charter (static preamble) ---
@@ -1587,7 +1597,7 @@ class PromptBuilder:
             entries = layer.get("entries", [])
             entries = [e for e in entries if not e.get("is_deleted")]
 
-            if layer["type"] == "inner_layer":
+            if layer["type"] == "inner_layer" or layer["type"] == "scene_layer":
                 return entries  # Mongo-only, no pins/semantic split
 
             # Pinned from Mongo

@@ -1128,7 +1128,7 @@ class MemoryLayerManager:
         self.cortex.update_doc(doc_id, doc)
         self._log("add_entry", f"Added entry {entry['id']} to {doc_id}")
         # Only index semantically relevant layers
-        if doc_id not in ("inner_monologue", "reminders"):
+        if doc_id not in ("inner_monologue", "reminders", "scene_facts"):
             asyncio.create_task(index_memory_queue.put(entry['id']))
         # Add the doc_id only after it is done with entry, before returning it
         entry['doc_id'] = doc_id
