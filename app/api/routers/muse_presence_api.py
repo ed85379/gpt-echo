@@ -219,11 +219,10 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
         "final_top_k": final_top_k,
         "injected_file_ids": injected_file_ids,
         "ephemeral_files": ephemeral_files,
-
-        # ui states
-        "thread_id": thread_id,
         "extended_history": extended_history,
         "unsummarized_only": unsummarized_only,
+        # ui states
+        "thread_id": thread_id,
         "project_id": project_id,
         "blend_ratio": blend_ratio,
         "active_project_report": active_project_report,

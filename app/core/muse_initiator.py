@@ -98,7 +98,6 @@ async def run_thread_summarization(
         client=continuity_openai_client,
         user_assistant_messages=user_assistant_messages,
         prompt_type="summarizer",
-        images=None,
         model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"),
         tools=tool_bundle["tools"],
         tool_choice=tool_bundle["tool_choice"],

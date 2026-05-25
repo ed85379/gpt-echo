@@ -1077,9 +1077,7 @@ class RouteUserInputResult:
 
 async def route_user_input(
         dev_prompt: str,
-        user_prompt: str = None,
         user_assistant_messages: list = None,
-        images=None,
         client=None,
         prompt_type="api",
         apply_cmd_filters=True,
@@ -1091,7 +1089,6 @@ async def route_user_input(
         client=client,
         user_assistant_messages=user_assistant_messages,
         prompt_type=prompt_type,
-        images=images,
         model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
         tools=tool_bundle["tools"],
         tool_choice=tool_bundle["tool_choice"],
@@ -1162,7 +1159,6 @@ async def handle_muse_decision(
         client=client,
         user_assistant_messages=user_assistant_messages,
         prompt_type="whispergate",
-        images=None,
         model=model,
         tools=tool_bundle["tools"],
         tool_choice=tool_bundle["tool_choice"],

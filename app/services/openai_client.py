@@ -271,10 +271,8 @@ def build_payload_for_model(model: str,
 async def get_openai_response(
     dev_prompt,
     client,
-    user_prompt=None,
     user_assistant_messages = None,
     prompt_type="default",
-    images=None,
     model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
     tools=None,
     handlers=None,
@@ -283,12 +281,7 @@ async def get_openai_response(
     max_tool_turns=4,
 ):
     try:
-        user_content = build_user_content(user_prompt, images)
-        user_content = [{"role": "user", "content": user_content}]
-        if user_assistant_messages:
-            compiled_messages = build_openai_input_messages(user_assistant_messages)
-        else:
-            compiled_messages = user_content
+        compiled_messages = build_openai_input_messages(user_assistant_messages)
         dev_content = build_dev_content(
             dev_prompt,
             muse_settings.get_section("muse_config").get("MUSE_NAME")
