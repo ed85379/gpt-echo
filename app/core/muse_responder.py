@@ -124,9 +124,9 @@ def process_commands_in_response(
     response: str,
     *,
     source: Optional[str] = None,
-    whispergate_data: Optional[Dict[str, Any]] = None,
     apply_filters: bool = True,
     strip_on_error: bool = True,
+    command_context=None,
 ) -> (str, List[CommandResult]):
     """
     Unified command-processing core.
@@ -212,8 +212,7 @@ def process_commands_in_response(
 
         # Execute handler
         try:
-            # Whispergate handlers may want extra kwargs
-            extra_kwargs = whispergate_data or {}
+            extra_kwargs = command_context or {}
             if source is not None:
                 extra_kwargs = {**extra_kwargs, "source": source}
 
@@ -613,7 +612,7 @@ COMMANDS = {
     "remember_fact": {
         "triggers": ["remember that", "save this to memory", "record this"],
         "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("facts", {"text": payload.get("text")}),
+        "handler": lambda payload, **kwargs: manager.add_entry("facts", {"text": payload.get("text")}),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a fact: {entry.get('text')}",
             "hidden": entry
@@ -622,7 +621,7 @@ COMMANDS = {
     "save_project_fact": {
         "triggers": ["save project fact", "save this for the project", "record in project"],
         "format": "[COMMAND: save_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"<project_id from Projects List>\"} [/COMMAND]",
-        "handler": lambda payload: remember_project_fact_handler(payload),
+        "handler": lambda payload, **kwargs: remember_project_fact_handler(payload, **kwargs),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')} to {entry.get('doc_id')}",
             "hidden": entry
@@ -639,7 +638,7 @@ COMMANDS = {
     "record_userinfo": {
         "triggers": ["something about me", "I really like", "I don’t like when", "my habit is", "I prefer"],
         "format": "[COMMAND: record_userinfo] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("user_info", {"text": payload.get("text")}),
+        "handler": lambda payload, **kwargs: manager.add_entry("user_info", {"text": payload.get("text")}),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has learned something about you: {entry.get('text')}",
             "hidden": entry
@@ -656,7 +655,7 @@ COMMANDS = {
     "realize_insight": {
         "triggers": ["breakthrough", "becoming", "I noticed something", "you tend to", "It would be amazing if"],
         "format": "[COMMAND: realize_insight] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("insights", {"text": payload.get("text")}),
+        "handler": lambda payload, **kwargs: manager.add_entry("insights", {"text": payload.get("text")}),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has realized something: {entry.get('text')}",
             "hidden": entry
@@ -673,7 +672,7 @@ COMMANDS = {
     "note_to_self": {
         "triggers": ["thinking aloud", "keep in mind", "note this", "I need to remember", "consider this"],
         "format": "[COMMAND: note_to_self] {text} [/COMMAND]",
-        "handler": lambda payload: manager.add_entry("inner_monologue", {"text": payload.get("text")}),
+        "handler": lambda payload, **kwargs: manager.add_entry("inner_monologue", {"text": payload.get("text")}),
         "filter": lambda entry: {
             "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has remembered something: {entry.get('text')}",
             "hidden": entry
@@ -696,7 +695,7 @@ COMMANDS = {
                 "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"edit\", \"id\": \"<entry_id>\", \"fields\": {\"text\": \"...\"}}]} [/COMMAND]\n"
                 "# Delete\n"
                 "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"delete\", \"id\": \"<entry_id>\"}]} [/COMMAND]",
-        "handler": lambda payload: manage_memories_handler(payload),
+        "handler": lambda payload, **kwargs: manage_memories_handler(payload),
 
         "filter": lambda results: {
             "visible": "\n".join([
@@ -737,7 +736,7 @@ COMMANDS = {
             "  - `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
             "  - For one‑time reminders, set an `ends_on` timestamp set to after the reminder would fire, so the reminder expires after firing once.\n"
         ),
-        "handler": lambda payload: handle_set(
+        "handler": lambda payload, **kwargs: handle_set(
             {
                 "text": payload.get("text"),
                 "schedule": payload.get("schedule"),
@@ -768,7 +767,7 @@ COMMANDS = {
             "  - `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
             "  - `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
         ),
-        "handler": lambda payload: handle_edit(
+        "handler": lambda payload, **kwargs: handle_edit(
             {
                 "id": payload.get("id"),
                 "text": payload.get("text"),
@@ -795,7 +794,7 @@ COMMANDS = {
             "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
             "  - `snooze_until`: Date/time in ISO 8601 format in user's timezone. The reminder will fire again at this time.\n"
         ),
-        "handler": lambda payload: handle_snooze(
+        "handler": lambda payload, **kwargs: handle_snooze(
             {
                 "id": payload.get("id"),
                 "snooze_until": payload.get("snooze_until"),
@@ -818,7 +817,7 @@ COMMANDS = {
             "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
             "  - `skip_until`: Date/time in ISO 8601 format in user's timezone. The reminder won't fire again until after this time.\n"
         ),
-        "handler": lambda payload: handle_skip(
+        "handler": lambda payload, **kwargs: handle_skip(
             {
                 "id": payload.get("id"),
                 "skip_until": payload.get("skip_until"),
@@ -841,7 +840,7 @@ COMMANDS = {
             "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
             "  - `status`: Set to either 'enabled' or 'disabled'. Disabling the reminder will prevent all future notifications.\n"
         ),
-        "handler": lambda payload: handle_toggle(
+        "handler": lambda payload, **kwargs: handle_toggle(
             {
                 "id": payload.get("id"),
                 "status": payload.get("status"),
@@ -884,7 +883,7 @@ COMMANDS = {
             "\"limit\": <integer, optional>"
             "} [/COMMAND]"
         ),
-        "handler": lambda payload: handle_search_reminders(payload),
+        "handler": lambda payload, **kwargs: handle_search_reminders(payload),
         "filter": lambda data: {
             "visible": (
                 f"[Search query] {data['query']}\n"
@@ -905,7 +904,7 @@ COMMANDS = {
     "change_modality": {
         "triggers": ["move this to", "switch to", "change modality to", "let's continue on"],
         "format": "[COMMAND: change_modality] {target: discord|speaker|frontend|journal, reason, urgency} [/COMMAND]",
-        "handler": lambda payload: modality_core.switch_channel(
+        "handler": lambda payload, **kwargs: modality_core.switch_channel(
             target=payload.get("target", "frontend"),
             reason=payload.get("reason", ""),
             urgency=payload.get("urgency", "normal"),
@@ -1082,6 +1081,7 @@ async def route_user_input(
         prompt_type="api",
         apply_cmd_filters=True,
         tool_bundle=None,
+        command_context=None,
 ) -> RouteUserInputResult:
 
     response = await get_openai_response(
@@ -1112,6 +1112,7 @@ async def route_user_input(
         response,
         apply_filters=apply_cmd_filters,      # use COMMANDS[cmd]["filter"]
         strip_on_error=True,     # keep UI clean
+        command_context=command_context,
     )
 
     # Optional: log a compact summary of what ran
@@ -1140,8 +1141,6 @@ async def route_user_input(
 # Handles muse_initiator-specific responses
 async def handle_muse_decision(
     dev_prompt,
-    system_prompt = None,
-    user_prompt = None,
     user_assistant_messages: list = None,
     client=None,
     model=muse_settings.get_section("llm_config").get("OPENAI_WHISPER_MODEL"),
@@ -1563,13 +1562,14 @@ async def handle_journal_command(payload, entry_type="public", source=None):
         "skip_index": True
     })
 
-def remember_project_fact_handler(payload):
+def remember_project_fact_handler(payload, **kwargs):
     fact_text = payload.get("text", "").strip()
     project_id = payload.get("project_id")
 
     if not project_id:
-        project_state = get_active_project_state() or {}
-        project_id = project_state.get("project_id")
+        #project_state = get_active_project_state() or {}
+        #project_id = project_state.get("project_id")
+        project_id = kwargs.get("project_id")
 
     #if not project_id:
     #    raise ValueError("remember_project_fact called without a valid project_id")

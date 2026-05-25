@@ -254,12 +254,18 @@ async def talk_endpoint(request: Request, background_tasks: BackgroundTasks):
     #print(f"DEBUG user_msg: {user_msg}")
     await broadcast_queue.put(user_msg)
     # Get Muse's response
+    command_context = {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "thread_type": thread_type if thread_id else None,
+    }
     result = await route_user_input(
         dev_prompt=dev_prompt,
         user_assistant_messages=user_assistant_messages,
         client=api_openai_client,
         prompt_type="api",
         tool_bundle=tool_bundle,
+        command_context=command_context,
     )
     cleaned = result.response_text.strip()
     if not cleaned:
