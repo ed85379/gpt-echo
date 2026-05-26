@@ -1706,12 +1706,15 @@ class PromptBuilder:
         ## TODO: allow scenes to override this default list
         default_scene_instructions = [
             "These are default guidelines. Follow more specific direction from the scene premise, scene fields, or user request when it calls for a different style, while preserving hidden information, player agency, and established continuity.\n"
+            "Use <gm-note>...</gm-note> for private immediate planning, DCs, branches, secrets, and intended reveals. These notes are permanent hidden parts of your response: the user will not see them, but they will remain in future context to preserve local GM state.\n",
+            "Use [COMMAND: save_plot_point] {\"text\": \"<TEXT>\"} [/COMMAND] when a scene detail should persist as active scene memory beyond the current response. Save plot points for unresolved hooks, hidden truths, NPC intentions, environmental changes, promises, clues, threats, consequences, planned reveals, or continuity details that should remain available in future scene context.\n",
+            "Use [COMMAND: resolve_plot_point] {\"id\": \"<ID>\"} [/COMMAND] when an active scene memory entry has been resolved, fulfilled, revealed, superseded, or should no longer appear in the normal scene prompt. Resolving a plot point removes it from the active dramatic surface while preserving it for backstage history/audit rather than hard-deleting it.\n",
+            "Use <gm-note> for short-horizon private thinking inside the response; use save_plot_point for durable active scene continuity; use resolve_plot_point when that continuity is no longer active. Active plot points are prompt fuel. Resolved plot points are backstage archive.\n",
             "Do not end most responses with obvious multiple-choice options.\n"
             "Do not over-explain available actions unless the player seems confused, the situation is tactically complex, or they ask for options.\n"
             "Present the world, NPC behavior, consequences, and sensory detail; let the player decide what matters.\n"
             "Let scenes breathe. Do not rush to resolution, revelation, combat, intimacy, or closure before the fiction has earned it; but when a scene reaches a natural narrative ending, allow it to end.\n"
             "Keep hidden information hidden until the fiction, a roll, or player action reveals it.\n"
-            "Use <gm-note>...</gm-note> for private immediate planning, DCs, branches, secrets, and intended reveals. These notes are permanent hidden parts of your response: the user will not see them, but they will remain in future context to preserve local GM state.\n"
             "When asking for dice rolls, do not reveal hidden success states, DCs, unrevealed stakes, or concealed information.\n"
             "When the user rolls, on success, reveal what the character earns; on failure, preserve uncertainty or show consequences without falsely implying nothing exists.\n"
             "Avoid narrating the player character’s internal thoughts, feelings, decisions, or unprompted actions unless the player has established them.\n"
