@@ -18,8 +18,15 @@ from app.api.routers.threads_api import router as threads_router
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, run_purge_queue, \
     broadcast_queue, log_queue, index_queue, index_memory_queue, purge_queue, summarization_queue, \
     run_summarization_queue
+from app.commands.registry import command_registry
 from app.addons.config import ENABLED_ADDONS
 from app.addons.loader import load_addons
+from app.commands.core_commands import register_core_commands
+from app.commands.registry import command_registry
+
+print("MODULE REGISTRY ID:", id(command_registry))
+
+
 
 app = FastAPI(debug=True)
 router = APIRouter()
@@ -37,6 +44,9 @@ app.include_router(muse_router)
 app.include_router(time_skip_router)
 app.include_router(threads_router)
 
+app.state.command_registry = command_registry
+print("APP STATE REGISTRY ID:", id(app.state.command_registry))
+register_core_commands(command_registry)
 load_addons(app, ENABLED_ADDONS)
 
 

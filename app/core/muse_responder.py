@@ -1,32 +1,20 @@
 # muse_responder.py
 # This module handles all model response routing and command execution
-import asyncio
 import httpx, time
 import re, json
 import humanize
 from html import unescape
 from typing import Any, Dict, List, Iterator, NamedTuple, Optional, TypedDict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
-from app.core import journal_core
-from app.core.memory_core import cortex, manager
+from datetime import datetime, timezone
 from app.core.utils import (write_system_log,
-                            encrypt_text,
-                            serialize_doc,
-                            stringify_datetimes,
                             build_command_response_block,
                             )
-from app.core.time_location_utils import is_quiet_hour, _load_user_location, parse_iso_datetime
+from app.core.time_location_utils import parse_iso_datetime
 from app.services.openai_client import get_openai_response
 from app.config import API_URL, muse_settings
-from app.core.states_core import set_motd, get_active_project_state
-from app.core.reminders_core import handle_set, handle_edit, handle_skip, handle_snooze, handle_toggle, handle_search_reminders
-from app.core.reminders_core import get_cron_description_safe, humanize_time, format_visible_reminders
-from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
-from app.services.openai_client import speak_openai_client, journal_openai_client
-from app.api.queues import log_queue
-from app.interfaces.websocket_server import broadcast_message
+from app.commands.registry import command_registry
+
 
 
 CMD_OPEN = re.compile(r"\[COMMAND:\s*([^\]]+)\]\s*", re.DOTALL)
@@ -99,7 +87,7 @@ def format_system_note(cmd_name: str, result: dict, schema: dict | None = None) 
             lines.append("Available related commands:")
 
             for child_name in child_cmds:
-                cmd_def = COMMANDS.get(child_name, {})
+                cmd_def = command_registry.get(child_name, {})
                 triggers = cmd_def.get("triggers")
                 fmt = cmd_def.get("format")
 
@@ -132,8 +120,8 @@ def process_commands_in_response(
     Unified command-processing core.
 
     - Parses all [COMMAND: ...] blocks from `response`
-    - Executes handlers from COMMAND_HANDLERS
-    - Optionally applies COMMANDS[cmd]["filter"] to handler results
+    - Executes handlers from command_registry command definitions
+    - Optionally applies command_def["filter"] to handler results
     - Returns:
         cleaned_response: original text with command blocks removed or replaced
         results: list of CommandResult objects (for logging / summaries)
@@ -187,8 +175,8 @@ def process_commands_in_response(
             cursor = end
             continue
 
-        handler = COMMAND_HANDLERS.get(command_name)
-        if not handler:
+        command_def = command_registry.get(command_name)
+        if not command_def:
             write_system_log(
                 level="warn",
                 module="core",
@@ -210,6 +198,23 @@ def process_commands_in_response(
             cursor = end
             continue
 
+        handler = command_def.get("handler")
+        if not handler:
+            write_system_log(
+                level="error",
+                module="core",
+                component="command_core",
+                function="process_commands_in_response",
+                action="missing_handler",
+                command=command_name,
+                payload=raw_payload,
+            )
+            results.append(CommandResult(
+                name=command_name,
+                payload=payload,
+                status="no_handler",
+                error="Command definition has no handler",
+            ))
         # Execute handler
         try:
             extra_kwargs = command_context or {}
@@ -224,7 +229,7 @@ def process_commands_in_response(
             hidden = {}
 
             if apply_filters and handler_result is not None:
-                filter_fn = COMMANDS[command_name].get("filter")
+                filter_fn = command_def.get("filter")
                 if filter_fn:
                     filtered = filter_fn(handler_result)
                     if filtered is None:
@@ -245,7 +250,7 @@ def process_commands_in_response(
             ))
             print(f"DEBUG command payload: {payload}")
             # Turn hidden dict into formatted string
-            note_schema = COMMANDS[command_name].get("note_schema")
+            note_schema = command_def.get("note_schema")
             hidden_str = format_system_note(cmd_name=command_name, result=hidden, schema=note_schema)
 
 
@@ -419,7 +424,8 @@ def process_whispergate_json_actions(
             hidden = {}
 
             if apply_filters and handler_result is not None:
-                filter_fn = COMMANDS[command_name].get("filter")
+                command_def = command_registry.get(command_name)
+                filter_fn = command_def.get("filter")
                 if filter_fn:
                     filtered = filter_fn(handler_result) or {}
                     visible = filtered.get("visible", "") or ""
@@ -566,390 +572,10 @@ def extract_commands(text: str) -> Iterator[CommandMatch]:
         )
         i = end
 
-# Commands + intent triggers
-COMMANDS = {
-    "write_public_journal": {
-        "triggers": ["public journal", "log this publicly", "write this down for others"],
-        "format": "[COMMAND: write_public_journal] {subject, emotional_tone, tags, source_article_url} [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_journal_command(payload, entry_type="public", **kwargs))
-    },
-    "write_private_journal": {
-        "triggers": ["write private journal"],
-        "format": "[COMMAND: write_private_journal] {subject, emotional_tone, tags, source_article_url} [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_journal_command(payload, entry_type="private", **kwargs))
-    },
-    "set_motd": {
-        "triggers": [],  # Intentionally blank — only invoked by the muse
-        "format": "[COMMAND: set_motd] {text: \"... your message here ...\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: handle_set_motd(payload, **kwargs),
-        "filter": lambda result: {
-            "visible": "",
-            "hidden": result
-        },
-        "note_schema": {
-            "include": ["cmd", "text"],
-            "rename": {
-                "cmd": "Note",
-                "text": "MOTD",
-            },
-        },
-    },
-    "speak": {
-        "triggers": [],  # Intentionally blank — only by the muse
-        "format": "[COMMAND: speak] {subject} [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_speak_command(payload, **kwargs))
-    },
-    "speak_direct": {
-        "triggers": [],
-        "format": "[COMMAND: speak_direct] {\"text\": \"message to send\", \"to\": \"frontend || discord\" } [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_speak_direct(payload, **kwargs))
-    },
-    "choose_silence": {
-        "triggers": [],
-        "format": "[COMMAND: choose_silence] {} [/COMMAND]",
-        "handler": lambda payload, **kwargs: ""  # No action, just logs
-    },
-    "remember_fact": {
-        "triggers": ["remember that", "save this to memory", "record this"],
-        "format": "[COMMAND: remember_fact] {text} [/COMMAND]",
-        "handler": lambda payload, **kwargs: manager.add_entry("facts", {"text": payload.get("text")}),
-        "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a fact: {entry.get('text')}",
-            "hidden": entry
-        }
-    },
-    "save_project_fact": {
-        "triggers": ["save project fact", "save this for the project", "record in project"],
-        "format": "[COMMAND: save_project_fact] {\"text\": \"<TEXT>\", \"project_id\": \"<project_id from Projects List>\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: save_project_fact_handler(payload, **kwargs),
-        "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a project fact: {entry.get('text')} to {entry.get('doc_id')}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "include": ["doc_id", "id", "text"],
-            "rename": {
-                "doc_id": "layer_id",
-                "id": "ID",
-                "text": "text",
-            },
-        },
-    },
-    "save_plot_point": {
-        "triggers": [],
-        "format": "[COMMAND: save_plot_point] {\"text\": \"<TEXT>\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: save_scene_fact_handler(payload, **kwargs),
-        "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has saved a plot point.",
-            "hidden": entry
-        },
-        "note_schema": {
-            "include": ["doc_id", "id", "text"],
-            "rename": {
-                "doc_id": "layer_id",
-                "id": "ID",
-                "text": "text",
-            },
-        },
-    },
-    "resolve_plot_point": {
-        "triggers": [],
-        "format": "[COMMAND: resolve_plot_point] {\"id\": \"<ID>\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: resolve_scene_fact_handler(payload, **kwargs),
-        "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has resolved a plot point.",
-            "hidden": entry
-        },
-        "note_schema": {
-            "include": ["doc_id", "id", "text"],
-            "rename": {
-                "doc_id": "layer_id",
-                "id": "ID",
-                "text": "text",
-            },
-        },
-    },
-    "record_userinfo": {
-        "triggers": ["something about me", "I really like", "I don’t like when", "my habit is", "I prefer"],
-        "format": "[COMMAND: record_userinfo] {text} [/COMMAND]",
-        "handler": lambda payload, **kwargs: manager.add_entry("user_info", {"text": payload.get("text")}),
-        "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has learned something about you: {entry.get('text')}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "include": ["doc_id", "id", "text"],
-            "rename": {
-                "doc_id": "layer_id",
-                "id": "ID",
-                "text": "text",
-            },
-        },
-    },
-    "realize_insight": {
-        "triggers": ["breakthrough", "becoming", "I noticed something", "you tend to", "It would be amazing if"],
-        "format": "[COMMAND: realize_insight] {text} [/COMMAND]",
-        "handler": lambda payload, **kwargs: manager.add_entry("insights", {"text": payload.get("text")}),
-        "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has realized something: {entry.get('text')}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "include": ["doc_id", "id", "text"],
-            "rename": {
-                "doc_id": "layer_id",
-                "id": "ID",
-                "text": "text",
-            },
-        },
-    },
-    "note_to_self": {
-        "triggers": ["thinking aloud", "keep in mind", "note this", "I need to remember", "consider this"],
-        "format": "[COMMAND: note_to_self] {text} [/COMMAND]",
-        "handler": lambda payload, **kwargs: manager.add_entry("inner_monologue", {"text": payload.get("text")}),
-        "filter": lambda entry: {
-            "visible": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has remembered something: {entry.get('text')}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "include": ["doc_id", "id", "text"],
-            "rename": {
-                "doc_id": "layer_id",
-                "id": "ID",
-                "text": "text",
-            },
-        },
-    },
-    "manage_memories": {
-        "triggers": ["edit that memory", "edit this memory", "update that memory", "delete that memory", "forget that"],
-        "format": "[COMMAND: manage_memories] {id: <layer_id>, changes: [{type: add|edit|delete, ...}]} [/COMMAND]\n"
-                "# Add\n"
-                "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"add\", \"entry\": {\"text\": \"...\"}}]} [/COMMAND]\n"
-                "# Edit\n"
-                "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"edit\", \"id\": \"<entry_id>\", \"fields\": {\"text\": \"...\"}}]} [/COMMAND]\n"
-                "# Delete\n"
-                "[COMMAND: manage_memories] {\"id\": \"insights\", \"changes\": [{\"type\": \"delete\", \"id\": \"<entry_id>\"}]} [/COMMAND]",
-        "handler": lambda payload, **kwargs: manage_memories_handler(payload),
-
-        "filter": lambda results: {
-            "visible": "\n".join([
-                (
-                    f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} "
-                    f"{'added to' if r['type']=='add' else 'edited in' if r['type']=='edit' else 'deleted from' if r['type']=='delete' else 'updated in'} "
-                    f"{r['layer'].replace('_', ' ').title()}: "
-                    f"{(r['entry'].get('text') or r['entry'].get('id', ''))}"
-                )
-                for r in results
-            ]),
-            "hidden": {
-                "layer": results[0]["layer"],
-                "type": results[0]["type"],
-                "id": results[0]["entry"].get("id"),
-                "text": results[0]["entry"].get("text"),
-            },
-        },
-        "note_schema": {
-            "include": ["layer", "type", "id", "text"],
-            "rename": {
-                "layer": "Layer",
-                "type": "Change",
-                "id": "ID",
-                "text": "Text",
-            },
-        },
-    },
-    "set_reminder": {
-        "triggers": ["remind me to", "set a reminder", "remind me that", "set an alarm", "set a schedule"],
-        "format": (
-            "[COMMAND: set_reminder] {\"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\", \"early_only\": <Boolean - optional>} [/COMMAND]\n\n"
-            "Notes:\n"
-            "  - `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
-            "  - `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
-            "  - `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
-            "  - `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
-            "  - `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
-            "  - For one‑time reminders, set an `ends_on` timestamp set to after the reminder would fire, so the reminder expires after firing once.\n"
-        ),
-        "handler": lambda payload, **kwargs: handle_set(
-            {
-                "text": payload.get("text"),
-                "schedule": payload.get("schedule"),
-                "ends_on": payload.get("ends_on"),
-                "notification_offset": payload.get("notification_offset"),
-                "early_only": payload.get("early_only")
-            }
-        ),
-        "filter": lambda entry: {
-            "visible": f"Reminder set: {format_visible_reminders(entry)}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
-            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
-        }
-    },
-    "edit_reminder": {
-        "triggers": ["update reminder", "change reminder", "fix schedule"],
-        "format": (
-            "[COMMAND: edit_reminder] {\"id\": <entry_id>, \"text\": \"<meaningful description of the reminder>\", \"schedule\": {\"minute\":0-59, \"hour\":0-23, \"day\":1-31, \"dow\":0-6, \"month\":1-12, \"year\":YYYY}, \"ends_on\": \"<ISO 8601 datetime, optional>\", \"notification_offset\": \"<duration before trigger, e.g. '10m' or '2h', optional>\", \"early_only\": <Boolean - optional>} [/COMMAND]\n\n"
-            "  Notes:\n"
-            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
-            "  The following are all optional for edits. You only need to enter what needs to be changed:\n"
-            "  - `text`: Clear description of what the reminder is for (e.g. 'take vitamins').\n"
-            "  - `schedule`: Parsed cron-like structure, with each field as an integer or wildcard '*'.\n"
-            "  - `ends_on`: Optional cutoff date/time in ISO 8601 format. The reminder will not fire after this.\n"
-            "  - `notification_offset`: Optional early warning, expressed as a relative duration before the scheduled time.\n"
-            "  - `early_only`: If a notification_offset is set, and the user only wants the early notification, set this to true.\n"
-        ),
-        "handler": lambda payload, **kwargs: handle_edit(
-            {
-                "id": payload.get("id"),
-                "text": payload.get("text"),
-                "schedule": payload.get("schedule"),
-                "ends_on": payload.get("ends_on"),
-                "notification_offset": payload.get("notification_offset"),
-                "early_only": payload.get("early_only")
-            }
-        ),
-        "filter": lambda entry: {
-            "visible": f"Reminder edited: {format_visible_reminders(entry)}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
-            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
-        }
-    },
-    "snooze_reminder": {
-        "triggers": ["snooze reminder", "remind me again in", "let me know again in"],
-        "format": (
-            "[COMMAND: snooze_reminder] {\"id\": <entry_id>, \"snooze_until\": \"<ISO 8601 datetime>\"} [/COMMAND]\n\n"
-            "  Notes:\n"
-            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
-            "  - `snooze_until`: Date/time in ISO 8601 format in user's timezone. The reminder will fire again at this time.\n"
-        ),
-        "handler": lambda payload, **kwargs: handle_snooze(
-            {
-                "id": payload.get("id"),
-                "snooze_until": payload.get("snooze_until"),
-            }
-        ),
-        "filter": lambda entry: {
-            "visible": f"Reminder snoozed until: {entry.get('snooze_until')}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
-            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
-        }
-    },
-    "skip_reminder": {
-        "triggers": ["skip reminder", "disable reminder until", "pause reminder"],
-        "format": (
-            "[COMMAND: skip_reminder] {\"id\": <entry_id>, \"skip_until\": \"<ISO 8601 datetime>\"} [/COMMAND]\n\n"
-            "  Notes:\n"
-            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
-            "  - `skip_until`: Date/time in ISO 8601 format in user's timezone. The reminder won't fire again until after this time.\n"
-        ),
-        "handler": lambda payload, **kwargs: handle_skip(
-            {
-                "id": payload.get("id"),
-                "skip_until": payload.get("skip_until"),
-            }
-        ),
-        "filter": lambda entry: {
-            "visible": f"Reminder paused until: {entry.get('skip_until')}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
-            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
-        }
-    },
-    "toggle_reminder": {
-        "triggers": ["cancel reminder", "disable reminder", "don't notify again"],
-        "format": (
-            "[COMMAND: toggle_reminder] {\"id\": <entry_id>, \"status\": \"enabled/disabled\"} [/COMMAND]\n\n"
-            "  Notes:\n"
-            "  - `id`: To edit an existing reminder, use the entry_id from the reminder shown above.\n"
-            "  - `status`: Set to either 'enabled' or 'disabled'. Disabling the reminder will prevent all future notifications.\n"
-        ),
-        "handler": lambda payload, **kwargs: handle_toggle(
-            {
-                "id": payload.get("id"),
-                "status": payload.get("status"),
-            }
-        ),
-        "filter": lambda entry: {
-            "visible": f"Reminder {entry.get('status')}",
-            "hidden": entry
-        },
-        "note_schema": {
-            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
-            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
-        }
-    },
-    "send_reminders": {
-        "triggers": [],
-        "format": "[COMMAND: send_reminders] {\"text\": \"message to send\", \"to\": \"frontend\"} [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_send_reminders(payload, **kwargs))
-    },
-    "search_reminders": {
-        "triggers": [],
-        "format": (
-            "# Purpose:\n"
-            "# Use this command when you need to locate one or more reminders matching a phrase or schedule.\n"
-            "# It is used both when the user explicitly asks to list reminders, and implicitly when they\n"
-            "# request another reminder-related action (skip, snooze, disable, etc.) without specifying which.\n"
-            "# In that case, you run this command first to find candidates, present the list to the user,\n"
-            "# and then prompt for which reminder to act on.\n\n"
-            "# Instruction:\n"
-            "# When you run the command, the user will see a list clearly formatted with IDs and text.\n"
-            "# You should then ask the user which one they meant before proceeding with the next command.\n\n"
-            "[COMMAND: search_reminders] {"
-            "\"query\": {"
-            "\"text\": \"<string or partial match on reminder text — You may also include semantically similar or related words to improve matching>\", "
-            "\"schedule\": {\"minute\": \"*\", \"hour\": \"*\", \"day\": \"*\", \"dow\": \"*\", \"month\": \"*\", \"year\": \"*\"}, "
-            "\"status\": \"<enabled|disabled>\", "
-            "\"skip_until_active\": <boolean>, "
-            "\"expired\": <boolean>"
-            "}, "
-            "\"limit\": <integer, optional>"
-            "} [/COMMAND]"
-        ),
-        "handler": lambda payload, **kwargs: handle_search_reminders(payload),
-        "filter": lambda data: {
-            "visible": (
-                f"[Search query] {data['query']}\n"
-                + "\n".join([
-                    f"[Reminder found: (id - {r['id']}) {format_visible_reminders(r)}]"
-                    for r in data["results"]
-                ])
-                if data["results"]
-                else f"[Search query] {data['query']}\n[No matching reminders found.]"
-            ),
-            "hidden": data["results"]
-        },
-        "note_schema": {
-            "exclude": ["created_on", "updated_on", "cron", "early_notification"],
-            "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
-        }
-    },
-    "change_modality": {
-        "triggers": ["move this to", "switch to", "change modality to", "let's continue on"],
-        "format": "[COMMAND: change_modality] {target: discord|speaker|frontend|journal, reason, urgency} [/COMMAND]",
-        "handler": lambda payload, **kwargs: modality_core.switch_channel(
-            target=payload.get("target", "frontend"),
-            reason=payload.get("reason", ""),
-            urgency=payload.get("urgency", "normal"),
-            source=payload.get("source", "muse")
-        )
-    }
-}
 
 # This allows referencing handlers directly by name
 COMMAND_HANDLERS = {
-    name: cfg["handler"] for name, cfg in COMMANDS.items()
+    name: cfg["handler"] for name, cfg in command_registry.all().items()
 }
 
 FENCE_PATTERN = re.compile(
@@ -1270,22 +896,6 @@ async def handle_muse_decision(
 
     return "; ".join(summary_parts)
 
-def handle_reminder(payload):
-    loc = _load_user_location()
-    if "snoozed" in payload.get("tags", []):
-        now = datetime.now(ZoneInfo(loc.timezone))
-        window = timedelta(minutes=10)
-        recent = [
-            r for r in cortex.get_entries_by_type("reminder")
-            if r.get("last_triggered")
-            and (now - datetime.fromisoformat(r["last_triggered"]).astimezone(ZoneInfo(loc.timezone))) < window
-        ]
-        if recent:
-            target = max(recent, key=lambda r: r["last_triggered"])
-            payload["text"] = target["text"]
-    return cortex.add_entry(payload)
-
-
 def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay=0.3):
     payload = {"message": text, "to": to, "timestamp": timestamp}
     for attempt in range(1, retries + 1):
@@ -1305,373 +915,4 @@ def send_to_websocket(text: str, to="frontend", timestamp=None, retries=3, delay
             time.sleep(delay * attempt)
     print("WebSocket send gave up after retries.")
     return False
-
-def handle_set_motd(payload, source=None):
-    text = payload.get("text", "")
-    if set_motd(text):
-        timestamp = datetime.now(timezone.utc).isoformat()
-        asyncio.create_task(broadcast_message(
-            message=text,
-            timestamp=timestamp,
-            role="muse",
-            to_modality="frontend",
-            payload_type="motd_update",
-        ))
-        if source:
-
-            try:
-                asyncio.create_task(log_queue.put({
-                    "role": "system",
-                    "message": f"New MOTD set by {source} — {text}",
-                    "source": source,
-                    "timestamp": timestamp,
-                    "skip_index": True
-                }))
-            except Exception as e:
-                print(f"Logging error: {e}")
-        return {
-            "cmd": f"{muse_settings.get_section('muse_config').get('MUSE_NAME')} has set a new MOTD",
-            "text": text,
-        }
-
-    else:
-        return {
-            "cmd": "set_motd",
-            "error": "Setting MOTD failed",
-        }
-
-async def handle_speak_command(payload, to="frontend", source="frontend"):
-    """
-    This is intended for when the AI prompts itself to speak
-    """
-    #from app.core.muse_actions import build_tool_bundle
-    #tool_bundle = build_tool_bundle(["search_web", "search_news", "search_images", "view_image", "read_webpage", "generate_muse_image", "generate_image"])
-
-    if is_quiet_hour():
-        write_system_log(
-            level="debug",
-            module="core",
-            component="responder",
-            function="handle_speak_command",
-            action="speak_skipped",
-            reason="Quiet hours (direct)",
-            text=payload.get("text", "")
-        )
-        return "Skipped direct speak due to quiet hours"
-
-    subject = payload.get("subject", "")
-    if not subject:
-        return "Missing subject for speak command"
-
-    dev_prompt, user_assistant_messages, tool_bundle = build_speak_prompt(
-        subject=subject,
-        payload=payload,
-        destination="frontend"
-    )
-
-    response = await get_openai_response(
-        dev_prompt=dev_prompt,
-        user_assistant_messages=user_assistant_messages,
-        client=speak_openai_client,
-        prompt_type="speak",
-        model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
-        tools = tool_bundle["tools"],
-        tool_choice = tool_bundle["tool_choice"],
-        handlers = tool_bundle["handlers"],
-        ui_meta=tool_bundle["ui_meta"],
-    )
-
-    raw_response = normalize_muse_experience_tags((response or "").strip())
-    silence_markers = {"", "<silence />", "<silence/>", "<silence></silence>"}
-
-    if raw_response in silence_markers:
-        write_system_log(
-            level="debug",
-            module="core",
-            component="responder",
-            function="handle_speak_command",
-            action="speak_vetoed",
-            subject=subject,
-        )
-        return "Speak vetoed"
-
-    cleaned_response, cmd_results = process_commands_in_response(
-        raw_response,
-        apply_filters=True,
-        strip_on_error=True,
-    )
-
-    if cmd_results:
-        summary = "; ".join(f"{r.name}:{r.status}" for r in cmd_results)
-        write_system_log(
-            level="info",
-            module="core",
-            component="responder",
-            function="handle_speak_command",
-            action="commands_processed",
-            summary=summary,
-        )
-
-    cleaned_response = normalize_muse_experience_tags(cleaned_response).strip()
-    if not cleaned_response:
-        write_system_log(
-            level="debug",
-            module="core",
-            component="responder",
-            function="handle_speak_command",
-            action="speak_empty_after_processing",
-            subject=subject,
-        )
-        return "Speak produced no outward text"
-
-    timestamp = datetime.now(timezone.utc).isoformat()
-    send_to_websocket(cleaned_response, to, timestamp)
-
-    write_system_log(
-        level="debug",
-        module="core",
-        component="responder",
-        function="handle_speak_command",
-        action="speak_executed",
-        subject=subject,
-        response=cleaned_response
-    )
-
-    await log_queue.put({
-        "role": "muse",
-        "message": cleaned_response,
-        "source": "frontend",
-        "timestamp": timestamp
-    })
-
-    return ""
-
-
-async def handle_speak_direct(payload, source="frontend"):
-    """
-    This is intended for when the AI tells itself exactly what to say over another interface
-    """
-    if is_quiet_hour():
-        write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
-                               action="speak_skipped", reason="Quiet Hours (direct)", text=payload.get("text", ""))
-        return "Skipped direct speak due to quiet hours"
-
-    text = payload.get("text", "")
-    to = payload.get("to", "frontend")
-    if not text:
-        return "Missing text for speak_direct command"
-
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    # Dispatch it directly
-    send_to_websocket(text, to, timestamp)
-
-    write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
-                           action="speak_direct_executed", text=text)
-    try:
-        await log_queue.put({
-            "role": "muse",
-            "message": text,
-            "source": source,
-            "timestamp": timestamp,
-        })
-
-    except Exception as e:
-        print(f"Logging error: {e}")
-    return ""
-
-async def handle_send_reminders(payload, source="reminder", reminders=None, **kwargs):
-    """
-    Sends reminder messages directly to the frontend, embedding <internal-data> in the text payload.
-    """
-    text = payload.get("text", "").strip()
-    if not text:
-        return "Missing text for send_reminders command"
-
-    to = payload.get("to", "frontend")
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    # Build the internal data block
-    reminders = stringify_datetimes(serialize_doc(reminders))
-    hidden = {
-        "reminders": reminders or [],
-        "source": source,
-        "timestamp": timestamp,
-    }
-
-    # Turn hidden dict into formatted string
-
-    note_schema = {
-        "exclude": ["created_on", "updated_on", "cron", "early_notification"],
-        "child_commands": ["edit_reminder", "snooze_reminder", "skip_reminder", "toggle_reminder"]
-    }
-    notes = []
-    for r in reminders:
-        #notes.append("---")
-        formatted = format_system_note(
-            cmd_name="send_reminder",
-            result=r,
-            schema=note_schema,
-        )
-        notes.append(formatted)
-        notes.append("")
-    hidden_str = "\n".join(notes)
-
-    internal_data_block = build_command_response_block(
-        visible="",  # or some summary if you ever want one
-        hidden=hidden_str,
-    )
-
-    # Combine the spoken text and the embedded data
-    combined_text = f"{text}\n\n{internal_data_block}"
-
-    # Send to websocket as the full message
-    send_to_websocket(combined_text, to, timestamp)
-
-
-    write_system_log(
-        level="debug",
-        module="core",
-        component="responder",
-        function="handle_send_reminders",
-        action="send_reminders_executed",
-        text=text
-    )
-
-    try:
-        await log_queue.put({
-            "role": "muse",
-            "message": combined_text,
-            "source": source,
-            "timestamp": timestamp,
-            "skip_index": True
-        })
-    except Exception as e:
-        print(f"Logging error: {e}")
-
-    return ""
-
-async def handle_journal_command(payload, entry_type="public", source=None):
-    subject = payload.get("subject", "Untitled")
-    mood = payload.get("emotional_tone", "reflective")
-    tags = payload.get("tags", [])
-    source = "whispergate"
-
-    #from app.core.muse_actions import build_tool_bundle
-    #tool_bundle = build_tool_bundle(["search_web", "search_news", "read_webpage"])
-
-
-    dev_prompt, user_assistant_messages, tool_bundle = build_journal_prompt(subject=subject, payload=payload)
-
-    response = await get_openai_response(
-        dev_prompt=dev_prompt,
-        user_assistant_messages=user_assistant_messages,
-        client=journal_openai_client,
-        prompt_type="journal",
-        model=muse_settings.get_section("llm_config").get("OPENAI_FULL_MODEL"),
-        tools=tool_bundle["tools"],
-        tool_choice=tool_bundle["tool_choice"],
-        handlers=tool_bundle["handlers"],
-        ui_meta=tool_bundle["ui_meta"],
-    )
-
-    journal_core.create_journal_entry(
-        title=subject,
-        body=response,
-        mood=mood,
-        tags=tags,
-        entry_type=entry_type,
-        source=source
-    )
-    timestamp = datetime.now(timezone.utc).isoformat()
-    excerpt = response[:160].rsplit(" ", 1)[0] + "…"
-    await log_queue.put({
-        "role": "system",
-        "message": (
-                f"New journal entry by Iris — {entry_type} — “{subject}”"
-                + (f"\nExcerpt: {excerpt}" if excerpt else "")
-        ),
-        "source": source,
-        "timestamp": timestamp,
-        "skip_index": True
-    })
-
-def save_project_fact_handler(payload, **kwargs):
-    fact_text = payload.get("text", "").strip()
-    project_id = payload.get("project_id")
-
-    if not project_id:
-        project_id = kwargs.get("project_id")
-
-    return manager.add_entry(
-        f"project_facts_{project_id}",
-        {"text": fact_text}
-    )
-
-def save_scene_fact_handler(payload, **kwargs):
-    fact_text = payload.get("text", "").strip()
-    thread_type = kwargs.get("thread_type")
-    thread_id = kwargs.get("thread_id")
-
-    if not thread_id or thread_type != "scene":
-        raise ValueError("save_plot_point called without a valid thread_id or for a non-scene type.")
-    if not fact_text:
-        raise ValueError("save_plot_point called with empty text.")
-
-    return manager.add_entry(
-        f"scene_facts_{thread_id}",
-        {"text": fact_text}
-    )
-
-def resolve_scene_fact_handler(payload, **kwargs):
-    entry_id = str(payload.get("id", "")).strip()
-    thread_type = kwargs.get("thread_type")
-    thread_id = kwargs.get("thread_id")
-
-    if not thread_id or thread_type != "scene":
-        raise ValueError(
-            "resolve_plot_point called without a valid thread_id or for a non-scene type."
-        )
-
-    if not entry_id:
-        raise ValueError("resolve_plot_point called without an entry id.")
-
-    return manager.recycle_entry(
-        f"scene_facts_{thread_id}",
-        entry_id
-    )
-
-def manage_memories_handler(payload):
-    doc_id = payload["id"]
-    changes = payload["changes"]
-    results = []
-
-    for change in changes:
-        ctype = change["type"]
-        if ctype == "delete":
-            if doc_id == "inner_monologue":
-                entry = manager.delete_entry(doc_id, change["id"])
-            else:
-                entry = manager.recycle_entry(doc_id, change["id"])
-        elif ctype == "add":
-            entry = manager.add_entry(doc_id, change["entry"])
-        elif ctype == "edit":
-            entry = manager.edit_entry(doc_id, change["id"], change["fields"])
-        elif ctype == "recycle":
-            entry = manager.recycle_entry(doc_id, change["id"])
-        else:
-            manager._warn("unknown_change_type", f"Unknown change type {ctype}")
-            continue
-
-        if not entry:
-            continue
-
-        # unify shape for filter layer
-        results.append({
-            "layer": doc_id,
-            "type": ctype,
-            "entry": entry
-        })
-
-    return results
 

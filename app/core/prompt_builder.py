@@ -1100,7 +1100,7 @@ class PromptBuilder:
         return {"role": "system", "text": display_block}
 
     def add_intent_listener(self, command_names: list[str]):
-        from app.core.muse_responder import COMMANDS  # local import to avoid circular issues
+        from app.commands.registry import command_registry
 
         listener_lines = []
         listener_lines.append(
@@ -1108,20 +1108,11 @@ class PromptBuilder:
             "# The <command-response> output alone does not mean the command has run. You must use the [COMMAND: ...] syntax to perform the action.\n"
         )
         for name in command_names:
-            cmd = COMMANDS.get(name)
+            cmd = command_registry.get(name)
             if not cmd:
                 continue
             triggers = cmd.get("triggers", [])
             format_str = cmd.get("format", "[COMMAND: ...]")
-            # Replace placeholder if project_id is present
-            #print(f"DEBUG project_id={project_id!r}")
-            #if project_id:
-            #    # handle if project_id is a list
-            #    if isinstance(project_id, list) and project_id:
-            #        pid = project_id[0]
-            #    else:
-            #        pid = project_id
-            #    format_str = format_str.replace("{{project_id}}", str(pid))
             joined_triggers = ", ".join(f'"{t}"' for t in triggers)
             listener_lines.append(
                 f"- If the user says something like {joined_triggers}, respond as normal but also include:\n  {format_str}")
@@ -1136,7 +1127,6 @@ class PromptBuilder:
                 f"- {muse_settings.get_section('muse_config').get('MUSE_NAME')} may invoke any of these commands at their discretion, without waiting for a user request or explicit prompt. They are trusted to use judgment, context, and care when choosing to remember, remind, or use any of these commands without asking first.\n\n"
                 "Example:\n[COMMAND: remember_fact] {\"text\": \"Tuesday night is Ed's Hogwarts game night.\"} [/COMMAND]"
             )
-
             return {"role": "system", "text": listener_block}
 
     def add_dot_status(self):
