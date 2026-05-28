@@ -417,7 +417,7 @@ def build_whispergate_prompt(**kwargs):
             "write_public_journal",
             "write_private_journal",
             "set_motd",
-        ] + ([] if is_conversation_active() else ["speak"]),
+        ] + ([] if is_conversation_active() else ["mention"]),
         "tools": [
             "search_memory",
             "search_web",
@@ -461,7 +461,7 @@ def build_discoveryfeeds_prompt(**kwargs):
         ],
         "commands": [
             "write_public_journal",
-        ] + ([] if is_conversation_active() else ["speak"]),
+        ] + ([] if is_conversation_active() else ["mention"]),
         "tools": [
             "search_memory",
             "search_web",

@@ -18,6 +18,7 @@ api_openai_client = openai.OpenAI()
 discord_openai_client = openai.OpenAI()
 continuity_openai_client = openai.OpenAI()
 speak_openai_client = openai.OpenAI()
+mention_openai_client = openai.OpenAI()
 journal_openai_client = openai.OpenAI()
 audio_openai_client = openai.OpenAI()
 mnemosyne_openai_client = openai.OpenAI()
@@ -32,7 +33,7 @@ PROMPT_CACHE_KEYS = {
     "discord": "iris_discord_v1",
     "whispergate": "iris_whispergate_v1",
     "discovery": "iris_whispergate_v1",
-    "speak": "iris_speak_v1",
+    "mention": "iris_mention_v1",
     "journal": "iris_journal_v1",
     "audio": "iris_audio_v1",
     "mnemosyne": "iris_mnemosyne_v1",

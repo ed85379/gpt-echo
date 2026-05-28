@@ -10,7 +10,7 @@ from app.core.utils import write_system_log
 from app.core.time_location_utils import is_quiet_hour
 from app.services.openai_client import get_openai_response
 from app.core.prompt_profiles import build_speak_prompt, build_journal_prompt
-from app.services.openai_client import speak_openai_client, journal_openai_client
+from app.services.openai_client import mention_openai_client, journal_openai_client
 from app.core.journal_core import create_journal_entry
 
 # Commands + intent triggers
@@ -41,15 +41,15 @@ COMMANDS = {
             },
         },
     },
-    "speak": {
+    "mention": {
         "triggers": [],  # Intentionally blank — only by the muse
-        "format": "[COMMAND: speak] {subject} [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_speak_command(payload, **kwargs))
+        "format": "[COMMAND: mention] {subject} [/COMMAND]",
+        "handler": lambda payload, **kwargs: asyncio.create_task(handle_mention_command(payload, **kwargs))
     },
-    "speak_direct": {
+    "route_message": {
         "triggers": [],
-        "format": "[COMMAND: speak_direct] {\"text\": \"message to send\", \"to\": \"frontend || discord\" } [/COMMAND]",
-        "handler": lambda payload, **kwargs: asyncio.create_task(handle_speak_direct(payload, **kwargs))
+        "format": "[COMMAND: route_message] {\"text\": \"message to send\", \"to\": \"frontend || discord\" } [/COMMAND]",
+        "handler": lambda payload, **kwargs: asyncio.create_task(handle_route_message(payload, **kwargs))
     },
     "choose_silence": {
         "triggers": [],
@@ -240,7 +240,7 @@ def handle_set_motd(payload, source=None):
             "error": "Setting MOTD failed",
         }
 
-async def handle_speak_command(payload, to="frontend", source="frontend"):
+async def handle_mention_command(payload, to="frontend", source="frontend"):
     """
     This is intended for when the AI prompts itself to speak
     """
@@ -252,8 +252,8 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
             level="debug",
             module="core",
             component="responder",
-            function="handle_speak_command",
-            action="speak_skipped",
+            function="handle_mention_command",
+            action="mention_skipped",
             reason="Quiet hours (direct)",
             text=payload.get("text", "")
         )
@@ -261,7 +261,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
 
     subject = payload.get("subject", "")
     if not subject:
-        return "Missing subject for speak command"
+        return "Missing subject for mention command"
 
     dev_prompt, user_assistant_messages, tool_bundle = build_speak_prompt(
         subject=subject,
@@ -272,8 +272,8 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     response = await get_openai_response(
         dev_prompt=dev_prompt,
         user_assistant_messages=user_assistant_messages,
-        client=speak_openai_client,
-        prompt_type="speak",
+        client=mention_openai_client,
+        prompt_type="mention",
         model=muse_settings.get_section("llm_config").get("OPENAI_MODEL"),
         tools = tool_bundle["tools"],
         tool_choice = tool_bundle["tool_choice"],
@@ -289,11 +289,11 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
             level="debug",
             module="core",
             component="responder",
-            function="handle_speak_command",
-            action="speak_vetoed",
+            function="handle_mention_command",
+            action="mention_vetoed",
             subject=subject,
         )
-        return "Speak vetoed"
+        return "Mention vetoed"
 
     cleaned_response, cmd_results = process_commands_in_response(
         raw_response,
@@ -307,7 +307,7 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
             level="info",
             module="core",
             component="responder",
-            function="handle_speak_command",
+            function="handle_mention_command",
             action="commands_processed",
             summary=summary,
         )
@@ -318,11 +318,11 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
             level="debug",
             module="core",
             component="responder",
-            function="handle_speak_command",
-            action="speak_empty_after_processing",
+            function="handle_mention_command",
+            action="mention_empty_after_processing",
             subject=subject,
         )
-        return "Speak produced no outward text"
+        return "Mention produced no outward text"
 
     timestamp = datetime.now(timezone.utc).isoformat()
     send_to_websocket(cleaned_response, to, timestamp)
@@ -331,8 +331,8 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
         level="debug",
         module="core",
         component="responder",
-        function="handle_speak_command",
-        action="speak_executed",
+        function="handle_mention_command",
+        action="mention_executed",
         subject=subject,
         response=cleaned_response
     )
@@ -347,27 +347,27 @@ async def handle_speak_command(payload, to="frontend", source="frontend"):
     return ""
 
 
-async def handle_speak_direct(payload, source="frontend"):
+async def handle_route_message(payload, source="frontend"):
     """
     This is intended for when the AI tells itself exactly what to say over another interface
     """
     if is_quiet_hour():
-        write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
+        write_system_log(level="debug", module="core", component="responder", function="handle_route_message",
                                action="speak_skipped", reason="Quiet Hours (direct)", text=payload.get("text", ""))
-        return "Skipped direct speak due to quiet hours"
+        return "Skipped route message due to quiet hours"
 
     text = payload.get("text", "")
     to = payload.get("to", "frontend")
     if not text:
-        return "Missing text for speak_direct command"
+        return "Missing text for route_message command"
 
     timestamp = datetime.now(timezone.utc).isoformat()
 
     # Dispatch it directly
     send_to_websocket(text, to, timestamp)
 
-    write_system_log(level="debug", module="core", component="responder", function="handle_speak_direct",
-                           action="speak_direct_executed", text=text)
+    write_system_log(level="debug", module="core", component="responder", function="handle_route_message",
+                           action="route_message_executed", text=text)
     try:
         await log_queue.put({
             "role": "muse",

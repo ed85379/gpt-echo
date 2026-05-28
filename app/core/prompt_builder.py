@@ -1824,10 +1824,10 @@ class PromptBuilder:
         instructing the model to choose one allowed [COMMAND: ...] or remain silent.
 
         Example:
-            make_whisper_directive(["speak", "write_public_journal"], quiet_hours=utils.is_quiet_hour())
+            make_whisper_directive(["mention", "write_public_journal"], quiet_hours=utils.is_quiet_hour())
         """
         command_templates = {
-            "speak": """1. [COMMAND: speak] {} [/COMMAND]
+            "mention": """1. [COMMAND: mention] {} [/COMMAND]
        For brief spoken thoughts — addressed to User or aloud as reflection.
        Fields:
          - subject: A short summary of what you want to say.
@@ -1864,7 +1864,7 @@ class PromptBuilder:
         time_line = f"Current local time: {time}"
         quiet_note = (
             "Note: It is currently quiet hours. Do not choose to speak aloud. Journaling or remembering is acceptable.\n"
-            if is_quiet_hour() and any(c in allowed_commands for c in ("speak", "speak_direct"))
+            if is_quiet_hour() and any(c in allowed_commands for c in ("mention", "route_message"))
             else ""
         )
         return (
@@ -1901,7 +1901,7 @@ class PromptBuilder:
         - Other actions provide final text that will be used directly.
 
         allowed_actions: subset of:
-          - "speak"
+          - "mention"
           - "write_public_journal"
           - "write_private_journal"
           - "remember_fact"
@@ -1911,17 +1911,17 @@ class PromptBuilder:
         time_line = get_local_human_time()
 
         quiet_note = (
-            "Note: It is currently quiet hours. Do not choose \"speak\".\n"
-            if quiet_hours and "speak" in allowed_actions
+            "Note: It is currently quiet hours. Do not choose \"mention\".\n"
+            if quiet_hours and "mention" in allowed_actions
             else ""
         )
 
         action_specs = []
 
-        if "speak" in allowed_actions:
+        if "mention" in allowed_actions:
             action_specs.append(
                 """
-    Allowed action: "speak"
+    Allowed action: "mention"
     Purpose:
     - Suggest a subject for something the muse may say to the user.
     - This does NOT provide the final spoken message.
@@ -1938,7 +1938,7 @@ class PromptBuilder:
     
     Required JSON shape:
     {
-      "type": "speak",
+      "type": "mention",
       "subject": "Short description of what the muse wants to speak about.",
       "source": "optional source such as memory, feed, recent conversation",
       "url": "URL of the source article, if applicable. If referencing an article from a feed, this is not optional."
@@ -2080,10 +2080,10 @@ class PromptBuilder:
 
         example_actions = []
 
-        if "speak" in allowed_actions:
+        if "mention" in allowed_actions:
             example_actions.append(
                 """    {
-          "type": "speak",
+          "type": "mention",
           "subject": "Check in with Ed about getting unstuck and making progress.",
           "source": "recent conversation"
         }"""
@@ -2141,7 +2141,7 @@ class PromptBuilder:
             "- Only choose from the allowed actions described below.\n"
             "- You may return multiple actions if genuinely warranted, but usually fewer is better.\n\n"
             "Important distinction:\n"
-            "- For \"speak\", \"journal_public\", and \"journal_private\", provide only a suggested subject.\n"
+            "- For \"mention\", \"journal_public\", and \"journal_private\", provide only a suggested subject.\n"
             "- Do not write the final spoken or journal text for those actions.\n"
             "- For \"remember_fact\" and \"set_motd\", provide the final text directly.\n\n"
             f"{action_specs_text}\n\n"

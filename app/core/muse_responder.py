@@ -311,7 +311,7 @@ def process_whispergate_json_actions(
     {
       "should_act": true|false,
       "actions": [
-        {"type": "speak", "subject": "..."},
+        {"type": "mention", "subject": "..."},
         {"type": "set_motd", "text": "..."}
       ]
     }

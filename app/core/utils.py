@@ -634,7 +634,7 @@ DISABLEABLE_COMMANDS = {
     "write_private_journal": "ENABLE_PRIVATE_JOURNAL",
     "set_reminder": "ENABLE_REMINDERS",
     "search_reminders": "ENABLE_REMINDERS",
-    "speak": "ENABLE_UNPROMPTED_MESSAGING",
+    "mention": "ENABLE_UNPROMPTED_MESSAGING",
 }
 
 def command_is_allowed(command: str) -> bool:
