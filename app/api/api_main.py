@@ -18,9 +18,8 @@ from app.api.routers.threads_api import router as threads_router
 from .queues import run_broadcast_queue, run_log_queue, run_index_queue, run_memory_index_queue, run_purge_queue, \
     broadcast_queue, log_queue, index_queue, index_memory_queue, purge_queue, summarization_queue, \
     run_summarization_queue
-from app.commands.registry import command_registry
-from app.addons.config import ENABLED_ADDONS
-from app.addons.loader import load_addons
+from app.addon_loader.config import ENABLED_ADDONS
+from app.addon_loader.loader import load_addons
 from app.commands.core_commands import register_core_commands
 from app.commands.registry import command_registry
 

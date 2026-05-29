@@ -2,7 +2,9 @@ from fastapi import APIRouter, Request, UploadFile, File, WebSocket
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from app.services.tts_core import synthesize_speech, stream_speech
 import numpy as np
-
+import time
+import traceback
+from fastapi import WebSocketDisconnect
 from moonshine_voice import (
     Transcriber,
     TranscriptEventListener,
@@ -71,10 +73,6 @@ class ConsoleListener(TranscriptEventListener):
     def on_line_completed(self, event):
         print(f"{event.line.start_time:.2f}s: completed: {event.line.text}")
 
-
-import time
-import traceback
-from fastapi import WebSocketDisconnect
 
 @tts_router.websocket("/stream-moonshine")
 async def moonshine_stream(websocket: WebSocket):
