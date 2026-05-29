@@ -1,7 +1,7 @@
 from .api.routers.tts_api import tts_router
 from .reminders.router import reminders_router
 from .reminders.commands import register_reminder_commands
-from app.commands.registry import command_registry
+
 
 
 def register(app):

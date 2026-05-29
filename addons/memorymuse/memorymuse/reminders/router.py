@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Literal, Optional
-#from app.core.reminders_core import handle_snooze, handle_skip, handle_toggle
 from .reminders_core import handle_snooze, handle_skip, handle_toggle
 
 
