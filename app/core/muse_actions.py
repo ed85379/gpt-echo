@@ -86,34 +86,42 @@ def search_memory(
         )
 
     if mode == "semantic":
-        if not query:
-            return _system_result(
-                "Semantic search requires a query, but none was provided."
+        print("Starting semantic memory search...")
+        try:
+            if not query:
+                return _system_result(
+                    "Semantic search requires a query, but none was provided."
+                )
+
+            if limit is None:
+                limit = 5
+
+            if limit <= 0:
+                return _system_result(
+                    "Semantic search needs a positive limit. I received 0 or less, so no memory results were returned."
+                )
+
+            limit = min(limit, MAX_LIMIT)
+
+            results = search_memory_semantic(
+                query=query,
+                project_ids=project_ids,
+                start_time=start_time,
+                end_time=end_time,
+                limit=limit,
             )
+            print(f"SEMANTIC MEMORY SEARCH RESULTS:\n{_format_results(results)}\n")
 
-        if limit is None:
-            limit = 5
-
-        if limit <= 0:
-            return _system_result(
-                "Semantic search needs a positive limit. I received 0 or less, so no memory results were returned."
-            )
-
-        limit = min(limit, MAX_LIMIT)
-
-        results = search_memory_semantic(
-            query=query,
-            project_ids=project_ids,
-            start_time=start_time,
-            end_time=end_time,
-            limit=limit,
-        )
-        print(f"SEMANTIC MEMORY SEARCH RESULTS:\n{_format_results(results)}\n")
-
-        return {
-            "tool_output": _format_results(results),
-            "attachments": [],
-        }
+            return {
+                "tool_output": _format_results(results),
+                "attachments": [],
+            }
+        except Exception as e:
+            print(f"Semantic web search failed: {e}")
+            return {
+                "tool_output": _format_results(f"Error in memory command: {e}"),
+                "attachments": [],
+            }
 
     elif mode == "recent":
         if limit is None:
